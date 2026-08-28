@@ -1,0 +1,9 @@
+# dsh-agent-toolkit bundle patch：向组合挂载本插件。
+#
+# host 半（数据路由）与 client 半（__ModuleLoader__ UI）都由官方 bundle 流程
+# 依 package.json 的 dsh.client / main 字段解析，无需手动配双 entry。
+#
+# 安装：dsh plugin --profile web add <本包路径或 git 地址>
+- insert:
+    - id: agent-toolkit
+      name: 'dsh-agent-toolkit'

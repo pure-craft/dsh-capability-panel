@@ -1,0 +1,874 @@
+/**
+ * Browser half: a toolbar button in the composer trailing row, and the panel
+ * it opens. The trigger keeps ContextMeter's chrome (28×28 ghost button,
+ * pill radius, hover wash, 14px layers glyph, Tooltip 200ms); the panel
+ * itself is a Base UI Popover with enter/exit animation and proper focus
+ * management, anchored `side=top align=end` to the trigger.
+ *
+ * Component strategy (docs/plugin-architecture.md): interactive behavior comes
+ * from @base-ui/react — Switch for toggles, Collapsible for disclosures,
+ * Tabs for the three capability sections, Popover for the shell, Input for
+ * the always-visible filter. We write only token skins. Base UI is bundled per-plugin (Plan A):
+ * it is a devDependency because tsdown auto-externalizes `dependencies`, and
+ * the browser has no node_modules to resolve a leaked require.
+ *
+ * Information architecture: three sections become tabs (a 320px-wide stacked
+ * list forced scrolling past whole sections to reach the next). While the
+ * filter query is active the tabs collapse into one flat, fully-expanded
+ * result list — a match can come from a description, so hidden detail would
+ * make "why did this row match" unanswerable.
+ *
+ * Colors/typography come from the host's `--dsw-*` design tokens with hex
+ * fallbacks so the panel never renders unstyled while a token is absent;
+ * chips tint via color-mix on the same tokens, so dark mode stays free.
+ */
+import type { McpServerEntry, SkillEntry, SkillLoadState, ToolEntry } from '../contract.js';
+import { subscribe, getSnapshot, toggle, close, refresh, reset, setCapability } from './store.js';
+import { filterPayload } from './filter.js';
+import { MCP_TOOL_ROOT_CLASS, ROW_HEADER_CLASS, ROW_ROOT_CLASS, resolveDisclosure } from './disclosure.js';
+
+// React comes through the module loader's `require`, which resolves the HOST's
+// copy — the runtime calls `apply(ctx, config)`, never `apply(ctx, react)`.
+// tsdown keeps this import external so no second React instance is bundled.
+import * as React from 'react';
+// Same story for primitives: the module system resolves it to the host graph's
+// row (every shipped UI bundle requires it the same way), keeping Tooltip's
+// theme and i18n context singular. tsdown must NOT bundle it.
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
+// Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
+// the host instance, exactly like our own (verified against shipped bundles).
+import { Switch } from '@base-ui/react/switch';
+import { Collapsible } from '@base-ui/react/collapsible';
+import { Input } from '@base-ui/react/input';
+import { Popover } from '@base-ui/react/popover';
+import { Tabs } from '@base-ui/react/tabs';
+
+interface SlotContext {
+  readonly slots: {
+    inject(name: string, callback: () => (() => void) | void): void;
+    register(spec: Record<string, unknown>, component: unknown): () => void;
+  };
+  /** Cordis lifecycle/event verb, on the dynamic facade's whitelist. */
+  on(event: 'connection/reset', listener: () => void): void;
+  effect(factory: () => (() => void) | void, label?: string): void;
+}
+
+interface DockProps {
+  readonly sessionId?: string;
+  /** InputZone owner prop: the live input snapshot (we only read the draft). */
+  readonly input?: { readonly draft?: string };
+  /**
+   * Standard prop published by ui-conversation's input kit. The panel only
+   * fills the draft — submitting stays with the user (Enter / send button).
+   */
+  readonly inputActions?: {
+    setDraft(text: string): void;
+  };
+}
+
+/** The host's React, typed loosely because its identity must stay the host's. */
+type ReactLike = {
+  createElement(this: void, type: unknown, props?: unknown, ...children: unknown[]): unknown;
+  useState<T>(initial: T): [T, (next: T | ((prev: T) => T)) => void];
+  useRef<T>(initial: T): { current: T };
+  useSyncExternalStore<T>(subscribe: (cb: () => void) => () => void, get: () => T): T;
+  useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void;
+};
+
+// Fallbacks are the host's true LIGHT-theme values, verified against the
+// installed theme bundle (static neutral-bluish/deepseek/red/green/amber
+// scales) rather than guessed: a wrong fallback is invisible while the theme
+// loads and then wrong for anyone whose theme fails to.
+const TOK = {
+  textPrimary: 'var(--dsw-alias-label-primary, #0f1115)',
+  textSecondary: 'var(--dsw-alias-label-secondary, #61666b)',
+  textTertiary: 'var(--dsw-alias-label-tertiary, #81858c)',
+  link: 'var(--dsw-alias-state-business-primary, #4176e6)',
+  border: 'var(--dsw-alias-border-l1, rgba(0,0,0,.04))',
+  // Switch track/thumb colors: business-primary when on, the STRONGER border
+  // token when off, bg-layer-1 thumb.
+  switchOn: 'var(--dsw-alias-state-business-primary, #4176e6)',
+  switchOff: 'var(--dsw-alias-border-l2, rgba(0,0,0,.1))',
+  switchThumb: 'var(--dsw-alias-bg-layer-1, #ffffff)',
+  switchEase: 'var(--ds-ease-in-out, cubic-bezier(.4, 0, .2, 1))',
+  // Menu surface, exactly the ContextMeter panel's three tokens.
+  menuBg: 'var(--dsw-specific-menu, #ffffff)',
+  menuBorder: 'var(--dsw-alias-border-inverted, rgba(0,0,0,.1))',
+  menuShadow: 'var(--dsw-shadow-lv3, 0 12px 32px rgba(0,0,0,.22))',
+  bgBase: 'var(--dsw-alias-bg-base, #ffffff)',
+  fontFamily:
+    'var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif)',
+  success: 'var(--dsw-alias-state-success-primary, #22c55e)',
+  warn: 'var(--dsw-alias-state-warn-primary, #f59e0b)',
+  error: 'var(--dsw-alias-state-error-primary, #ec1313)',
+} as const;
+
+const STATE_LABEL: Record<SkillLoadState, string> = {
+  loaded: '已加载',
+  evicted: '已挤出',
+  unloaded: '未加载',
+};
+
+/**
+ * Order by how much the reader needs to act on it: what fell out of context
+ * first, then what is in it, then the rest.
+ */
+const STATE_ORDER: Record<SkillLoadState, number> = { evicted: 0, loaded: 1, unloaded: 2 };
+
+function sortSkills(skills: readonly SkillEntry[]): SkillEntry[] {
+  return [...skills].sort(
+    (a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state] || a.name.localeCompare(b.name),
+  );
+}
+
+export function apply(ctx: SlotContext): void {
+  const react = React as unknown as ReactLike;
+  const h = react.createElement;
+
+  // A host restart drops every fact the panel shows; ui-skill clears its
+  // caches on the same event. The store's reset also invalidates in-flight
+  // answers from the dead connection.
+  ctx.on('connection/reset', reset);
+
+  // Pseudo-class states can't be expressed inline: one small stylesheet for
+  // hover, focus-visible, enter/exit animation, the tabs skin, collapsible
+  // height animation, and row-level content-visibility. Colors stay on the
+  // same --dsw-* tokens the inline styles use. Lifecycle follows the
+  // workspace rule: ctx.effect + data-plugin tag, so HMR/unload removes it
+  // and a fresh apply can update the content.
+  ctx.effect(() => {
+    if (typeof document === 'undefined') return () => {};
+    const style = document.createElement('style');
+    style.dataset.plugin = 'dsh-agent-toolkit';
+    style.textContent = [
+      '.ci-trigger:focus-visible,.ci-switch:focus-visible,.ci-iconbtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px;border-radius:999px}',
+      '.ci-disclosure-trigger:focus-visible,.ci-server-trigger:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px;border-radius:4px}',
+      '.ci-tab:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px;border-radius:6px}',
+      '.ci-trigger:hover,.ci-iconbtn:hover,.ci-server-trigger:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
+      '.ci-switch:hover:not(:disabled){filter:brightness(1.12)}',
+      '.ci-row-head{display:flex;align-items:center;gap:8px;padding:6px 8px;margin:0 -8px;border-radius:8px}',
+      '.ci-row-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
+      // Low-frequency actions stay out of the row until its own header is hovered or focused.
+      '.ci-row-head .ci-send{opacity:0;transition:opacity .12s}',
+      '.ci-row-head:hover .ci-send,.ci-row-head:focus-within .ci-send{opacity:1}',
+      // Inline `outline: none` on the input is only legal with a visible
+      // replacement: border on :focus plus this ring on :focus-visible.
+      '.ci-filter:focus{border-color:var(--dsw-alias-state-business-primary,#4176e6)}',
+      '.ci-filter:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:0}',
+      '.ci-filter::placeholder{color:var(--dsw-alias-label-tertiary,#81858c)}',
+      // Popover enter/exit: Base UI applies data-starting-style for the first
+      // frame and data-ending-style while animating out.
+      '.ci-panel{transform-origin:var(--transform-origin);transition:opacity .14s var(--ds-ease-in-out,ease),transform .14s var(--ds-ease-in-out,ease)}',
+      '.ci-panel[data-starting-style],.ci-panel[data-ending-style]{opacity:0;transform:scale(.96) translateY(4px)}',
+      // Collapsible height animation driven by the measured panel height var.
+      '.ci-collapse{height:var(--collapsible-panel-height);transition:height .14s var(--ds-ease-in-out,ease);overflow:hidden}',
+      '.ci-collapse[data-starting-style],.ci-collapse[data-ending-style]{height:0}',
+      // Every capability header uses the same full-width hover boundary. Nested
+      // MCP tools keep hierarchy through indentation, not a different hover skin.
+      '.ci-toolrow{content-visibility:auto;contain-intrinsic-size:auto 30px}',
+      '.ci-disclosure-trigger{min-width:0;display:flex;align-items:center;gap:6px;flex:1 1 auto;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}',
+      '.ci-disclosure-trigger:disabled,.ci-server-trigger:disabled{cursor:default}',
+      '.ci-disclosure-trigger:hover .ci-name{color:var(--dsw-alias-label-primary,#0f1115)}',
+      '.ci-description{padding:3px 0 0 24px;line-height:18px;color:var(--dsw-alias-label-tertiary,#81858c);word-break:break-word}',
+      // Disclosure chevron: right when collapsed, down when expanded.
+      '.ci-chevron{display:grid;place-items:center;width:18px;height:18px;flex:none;color:var(--dsw-alias-label-tertiary,#81858c);border-radius:4px}',
+      '.ci-chevron svg{transition:transform .12s var(--ds-ease-in-out,ease)}',
+      '.ci-server-trigger[aria-expanded="true"] .ci-chevron svg,.ci-disclosure-trigger[aria-expanded="true"] .ci-chevron svg{transform:rotate(90deg)}',
+      // Segmented tabs: track on bg-base with a hairline so it reads in dark
+      // mode too; active tab raised on the menu surface.
+      '.ci-tabs{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--dsw-alias-bg-base,#ffffff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.04))}',
+      '.ci-tab{flex:1;height:24px;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#61666b);font:inherit;font-size:12px;line-height:1;cursor:pointer;font-variant-numeric:tabular-nums;padding:0 4px}',
+      '.ci-tab:hover{color:var(--dsw-alias-label-primary,#0f1115)}',
+      '.ci-tab[data-active]{background:var(--dsw-specific-menu,#fff);color:var(--dsw-alias-label-primary,#0f1115);box-shadow:0 1px 2px rgba(0,0,0,.08)}',
+      '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',
+    ].join('\n');
+    document.head.appendChild(style);
+    return () => { style.remove(); };
+  }, 'agent-toolkit: stylesheet');
+
+  /** "Layers" glyph drawn at currentColor — stands for the context stack. */
+  const layersIcon = (size: number) =>
+    h(
+      'svg',
+      { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
+      h('path', {
+        d: 'M8 1.8 14.2 5 8 8.2 1.8 5 8 1.8Z',
+        stroke: 'currentColor',
+        strokeWidth: 1.2,
+        strokeLinejoin: 'round',
+      }),
+      h('path', {
+        d: 'M2.6 8 8 11 13.4 8',
+        stroke: 'currentColor',
+        strokeWidth: 1.2,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }),
+      h('path', {
+        d: 'M2.6 10.8 8 13.8 13.4 10.8',
+        stroke: 'currentColor',
+        strokeWidth: 1.2,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }),
+    );
+
+  /** "Magnifier" glyph sitting inside the filter input. */
+  const searchIcon = (size: number) =>
+    h(
+      'svg',
+      { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
+      h('circle', { cx: 7, cy: 7, r: 4.2, stroke: 'currentColor', strokeWidth: 1.2 }),
+      h('path', {
+        d: 'M10.2 10.2 13.4 13.4',
+        stroke: 'currentColor',
+        strokeWidth: 1.2,
+        strokeLinecap: 'round',
+      }),
+    );
+
+  /** "Return" bent arrow: the row action lands the command in the composer,
+   *  ready for the user's own Enter. */
+  const insertIcon = (size: number) =>
+    h(
+      'svg',
+      { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
+      h('path', {
+        d: 'M6 6.8 2.8 10l3.2 3.2',
+        stroke: 'currentColor',
+        strokeWidth: 1.3,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }),
+      h('path', {
+        d: 'M13.5 2.8v4.5c0 1.5-1.2 2.7-2.7 2.7H2.8',
+        stroke: 'currentColor',
+        strokeWidth: 1.3,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }),
+    );
+
+  ctx.slots.inject('conversation.input.right', () =>
+    ctx.slots.register({ name: 'conversation.input.right', id: 'agent-toolkit', order: 1000 }, (props: DockProps) => {
+      const snap = react.useSyncExternalStore(subscribe, getSnapshot);
+      // Per-row detail expansion, keyed so a reordered list keeps each row's
+      // state. While a filter query is active every visible row is forced
+      // open so the text it matched on shows without a second click.
+      const [expanded, setExpanded] = react.useState<Record<string, boolean>>({});
+      const [query, setQuery] = react.useState('');
+      const [tab, setTab] = react.useState('skills');
+      const sessionId = props.sessionId ?? null;
+
+      // Refetch when the panel opens rather than polling: the answer is only
+      // interesting while someone is looking at it.
+      react.useEffect(() => {
+        if (snap.open) void refresh(sessionId);
+      }, [snap.open, sessionId]);
+
+      // The store owns the open flag (it outlives this component); the
+      // Popover is controlled by it and reports its own dismissal intents
+      // (outside press, Escape) back through this sync.
+      const syncOpen = (open: boolean) => {
+        const current = getSnapshot().open;
+        if (open && !current) toggle();
+        else if (!open && current) close();
+      };
+
+      const filtering = query.trim() !== '';
+      const payload = snap.payload;
+      const view = payload === null ? null : filterPayload(payload, query);
+      const skills = view === null ? [] : sortSkills(view.skills);
+      const mcp = view?.mcp ?? [];
+      const systemTools = view?.systemTools ?? [];
+      const blocked = payload?.blocked ?? {};
+      const totals = {
+        skills: payload?.skills.length ?? 0,
+        mcp: payload?.mcp.length ?? 0,
+        systemTools: payload?.systemTools.length ?? 0,
+      };
+      const totalAll = totals.skills + totals.mcp + totals.systemTools;
+
+      const setOpen = (key: string, open: boolean) => {
+        setExpanded((prev) => ({ ...prev, [key]: open }));
+      };
+
+      /**
+       * Stable pill geometry for every skill state: green means loaded,
+       * neutral means unloaded, amber means evicted, and the independent red
+       * pill records blocked attempts after a capability was disabled.
+       */
+      const chip = (text: string, color: string) =>
+        h(
+          'span',
+          {
+            style: {
+              flex: '0 0 auto',
+              fontSize: '11px',
+              lineHeight: '16px',
+              padding: '1px 7px',
+              borderRadius: '999px',
+              color,
+              background: `color-mix(in srgb, ${color} 14%, transparent)`,
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap',
+            },
+          },
+          text,
+        );
+
+      // A blocked attempt is the strongest signal a toggle gives: the agent
+      // still reached for the capability after the user turned it off.
+      const blockedChip = (count: number) => (count > 0 ? chip(`拦截 ×${count}`, TOK.error) : null);
+
+      const metaText = (text: string) =>
+        h(
+          'span',
+          {
+            style: {
+              flex: '0 0 auto',
+              fontSize: '11px',
+              color: TOK.textTertiary,
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap',
+            },
+          },
+          text,
+        );
+
+      // Skill state always occupies the same pill-shaped visual slot. Color,
+      // not geometry, communicates meaning: loaded is green, unloaded stays
+      // neutral, and evicted is amber because it may need attention.
+      const stateMeta = (skill: SkillEntry) => {
+        const text = STATE_LABEL[skill.state] + (skill.loadCount > 1 ? ` ×${skill.loadCount}` : '');
+        const color = skill.state === 'loaded' ? TOK.success : skill.state === 'evicted' ? TOK.warn : TOK.textTertiary;
+        return chip(text, color);
+      };
+
+      // Base UI Switch renders the button with role/aria-checked wired; we
+      // keep the track sizing and token colors.
+      const switchControl = (kind: 'skill' | 'mcp-server' | 'mcp-tool' | 'system-tool', name: string, enabled: boolean) =>
+        h(
+          Switch.Root,
+          {
+            className: 'ci-switch',
+            checked: enabled,
+            disabled: sessionId === null || snap.loading,
+            'aria-label': `${enabled ? '关闭' : '开启'} ${name}`,
+            onCheckedChange: (checked: boolean) => {
+              if (sessionId !== null) void setCapability(sessionId, kind, name, checked);
+            },
+            style: {
+              position: 'relative',
+              width: '32px',
+              height: '18px',
+              padding: 0,
+              border: 'none',
+              borderRadius: '999px',
+              background: enabled ? TOK.switchOn : TOK.switchOff,
+              cursor: sessionId === null || snap.loading ? 'not-allowed' : 'pointer',
+              opacity: snap.loading ? 0.65 : 1,
+              flex: '0 0 auto',
+            },
+          },
+          h(Switch.Thumb, {
+            className: 'ci-thumb',
+            style: {
+              display: 'block',
+              width: '14px',
+              height: '14px',
+              margin: '2px',
+              borderRadius: '999px',
+              background: TOK.switchThumb,
+              boxShadow: '0 1px 2px rgba(0,0,0,.22)',
+              transform: enabled ? 'translateX(14px)' : 'translateX(0)',
+              transition: `transform .12s ${TOK.switchEase}`,
+            },
+          }),
+        );
+
+      /** Chevron that rotates from pointing right to pointing down. */
+      const chevronIcon = h(
+        'svg',
+        { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
+        h('path', {
+          d: 'M6 3.5 10.5 8 6 12.5',
+          stroke: 'currentColor',
+          strokeWidth: 1.4,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+        }),
+      );
+
+      const groupLabel = (text: string, first: boolean) =>
+        h(
+          'div',
+          {
+            key: `group:${text}`,
+            style: {
+              fontWeight: 500,
+              color: TOK.textTertiary,
+              fontVariantNumeric: 'tabular-nums',
+              margin: first ? '0 0 2px' : '12px 0 2px',
+            },
+          },
+          text,
+        );
+
+      const nameText = (text: string) =>
+        h(
+          'span',
+          {
+            className: 'ci-name',
+            style: {
+              flex: '1 1 auto',
+              wordBreak: 'break-all',
+              color: TOK.textPrimary,
+              fontWeight: 500,
+            },
+          },
+          text,
+        );
+
+      /**
+       * Shared disclosure row for Skills, MCP tools, and System tools. The
+       * trigger owns only chevron + label; trailing actions remain independent
+       * buttons and never toggle the description.
+       */
+      const disclosureRow = (
+        key: string,
+        enabled: boolean,
+        label: string,
+        description: string | undefined,
+        actions: readonly unknown[],
+        className = ROW_ROOT_CLASS,
+      ) => {
+        const hasDescription = description !== undefined && description !== '';
+        const disclosure = resolveDisclosure(expanded[key] === true, filtering, label, '描述');
+        if (!hasDescription) {
+          return h(
+            'div',
+            {
+              key,
+              className,
+              style: { opacity: enabled ? 1 : 0.55 },
+            },
+            h(
+              'div',
+              { className: ROW_HEADER_CLASS },
+              h('span', { style: { width: '18px', flex: 'none' } }),
+              nameText(label),
+              ...actions,
+            ),
+          );
+        }
+        return h(
+          Collapsible.Root,
+          {
+            key,
+            open: disclosure.open,
+            onOpenChange: (open: boolean) => { setOpen(key, open); },
+            className,
+            style: { opacity: enabled ? 1 : 0.55 },
+          },
+          h(
+            'div',
+            { className: ROW_HEADER_CLASS },
+            h(
+              Collapsible.Trigger,
+              {
+                className: 'ci-disclosure-trigger',
+                disabled: disclosure.disabled,
+                'aria-label': disclosure.label,
+              },
+              h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
+              nameText(label),
+            ),
+            ...actions,
+          ),
+          h(
+            Collapsible.Panel,
+            { className: 'ci-collapse' },
+            h('div', { className: 'ci-description' }, description),
+          ),
+        );
+      };
+
+      /**
+       * Put a skill's slash command into the composer — never auto-submit:
+       * whether to send is the user's call (Enter). A non-empty draft is
+       * appended to, never replaced. Works for disabled skills too: the
+       * disable shadow keeps userInvocable: true by design.
+       */
+      const insertCommand = (name: string) => {
+        const actions = props.inputActions;
+        if (actions === undefined) return;
+        const draft = props.input?.draft ?? '';
+        actions.setDraft(draft.trim() === '' ? `/${name} ` : `${draft} /${name} `);
+        close();
+      };
+
+      const insertButton = (name: string) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'ci-iconbtn ci-send',
+            'aria-label': `把 /${name} 填入输入框`,
+            disabled: props.inputActions === undefined,
+            onClick: () => { insertCommand(name); },
+            style: {
+              display: 'grid',
+              placeItems: 'center',
+              width: '20px',
+              height: '20px',
+              padding: 0,
+              border: 'none',
+              borderRadius: '999px',
+              background: 'transparent',
+              color: TOK.textTertiary,
+              cursor: props.inputActions === undefined ? 'not-allowed' : 'pointer',
+              flex: 'none',
+              font: 'inherit',
+            },
+          },
+          insertIcon(12),
+        );
+
+      const skillRow = (skill: SkillEntry) =>
+        disclosureRow(`skill:${skill.name}`, skill.enabled, skill.name, skill.description, [
+          stateMeta(skill),
+          insertButton(skill.name),
+          blockedChip(blocked[skill.name] ?? 0),
+          switchControl('skill', skill.name, skill.enabled),
+        ]);
+
+      const mcpToolRow = (tool: McpServerEntry['tools'][number], serverEnabled: boolean) =>
+        disclosureRow(`mcp-tool:${tool.name}`, tool.enabled, tool.label, tool.description, [
+          blockedChip(blocked[tool.name] ?? 0),
+          serverEnabled ? switchControl('mcp-tool', tool.name, tool.enabled) : null,
+        ], MCP_TOOL_ROOT_CLASS);
+
+      const serverRow = (server: McpServerEntry) => {
+        const serverBlocked = server.tools.reduce((sum, tool) => sum + (blocked[tool.name] ?? 0), 0);
+        const key = `mcp:${server.server}`;
+        const disclosure = resolveDisclosure(expanded[key] === true, filtering, server.server, '工具');
+        // The server root owns state and the panel; only its header owns hover
+        // feedback, so nested tool hover never paints the whole server.
+        return h(
+          Collapsible.Root,
+          {
+            key,
+            open: disclosure.open,
+            onOpenChange: (open: boolean) => { setOpen(key, open); },
+            style: { opacity: server.enabled ? 1 : 0.55 },
+          },
+          h(
+            'div',
+            { className: ROW_HEADER_CLASS },
+            h(
+              Collapsible.Trigger,
+              {
+                className: 'ci-server-trigger',
+                disabled: disclosure.disabled,
+                'aria-label': disclosure.label,
+                style: {
+                  display: 'grid',
+                  placeItems: 'center',
+                  width: '18px',
+                  height: '18px',
+                  padding: 0,
+                  border: 'none',
+                  borderRadius: '4px',
+                  background: 'transparent',
+                  color: TOK.textTertiary,
+                  cursor: disclosure.disabled ? 'default' : 'pointer',
+                  flex: 'none',
+                  font: 'inherit',
+                },
+              },
+              h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
+            ),
+            nameText(server.server),
+            metaText(`${server.tools.length} 工具`),
+            blockedChip(serverBlocked),
+            switchControl('mcp-server', server.server, server.enabled),
+          ),
+          h(
+            Collapsible.Panel,
+            { className: 'ci-collapse' },
+            h(
+              'div',
+              {
+                style: {
+                  marginTop: '2px',
+                  marginLeft: '4px',
+                  paddingLeft: '8px',
+                  borderLeft: `2px solid ${TOK.border}`,
+                },
+              },
+              // One tool per row; each description is a second-level disclosure
+              // using the same hover/chevron language as Skills and System tools.
+              ...server.tools.map((tool) => mcpToolRow(tool, server.enabled)),
+            ),
+          ),
+        );
+      };
+
+      const systemRow = (tool: ToolEntry) =>
+        disclosureRow(`sys:${tool.name}`, tool.enabled, tool.label, tool.description, [
+          blockedChip(blocked[tool.name] ?? 0),
+          // run_code is the reserved Code Mode transport: the registry
+          // refuses to restrict it, so no switch.
+          tool.reserved === true ? null : switchControl('system-tool', tool.name, tool.enabled),
+        ]);
+
+      const emptyNote = (text: string) =>
+        h('div', { key: `empty:${text}`, style: { color: TOK.textTertiary, padding: '8px 2px' } }, text);
+
+
+      const notices = [
+        snap.loading && payload === null
+          ? h('div', { key: 'loading', 'aria-live': 'polite', style: { color: TOK.textTertiary, padding: '4px 0' } }, '读取中…')
+          : null,
+        // A transport failure must not be mistaken for an empty catalog.
+        snap.error !== null
+          ? h(
+              'div',
+              { key: 'error', 'aria-live': 'polite', style: { color: TOK.error, padding: '4px 0' } },
+              `读取失败：${snap.error}（可尝试刷新页面；Host 改动需重启 dsh 后生效）`,
+            )
+          : null,
+        // Partial reads are reported, so a short list is never silently wrong.
+        payload?.degraded !== undefined
+          ? h(
+              'div',
+              { key: 'degraded', style: { color: TOK.warn, padding: '2px 0' } },
+              ...payload.degraded.map((note) => h('div', { key: note }, `⚠ ${note}`)),
+            )
+          : null,
+      ];
+
+      // Filtered: one flat, fully expanded result list. Otherwise: tabs.
+      const body = filtering
+        ? [
+            view !== null && view.total === 0 ? emptyNote('无匹配项') : null,
+            skills.length > 0 ? groupLabel(`技能 (${skills.length}/${totals.skills})`, true) : null,
+            ...skills.map(skillRow),
+            mcp.length > 0 ? groupLabel(`MCP (${mcp.length}/${totals.mcp})`, skills.length === 0) : null,
+            ...mcp.map(serverRow),
+            systemTools.length > 0
+              ? groupLabel(`系统工具 (${systemTools.length}/${totals.systemTools})`, skills.length === 0 && mcp.length === 0)
+              : null,
+            ...systemTools.map(systemRow),
+          ]
+        : [
+            h(
+              Tabs.Root,
+              {
+                key: 'tabs',
+                value: tab,
+                onValueChange: (value: string) => { setTab(value); },
+                style: { marginTop: '2px' },
+              },
+              h(
+                Tabs.List,
+                { 'aria-label': '上下文分区', className: 'ci-tabs', style: { marginBottom: '6px' } },
+                h(Tabs.Tab, { value: 'skills', className: 'ci-tab' }, `技能 ${totals.skills}`),
+                h(Tabs.Tab, { value: 'mcp', className: 'ci-tab' }, `MCP ${totals.mcp}`),
+                h(Tabs.Tab, { value: 'system', className: 'ci-tab', 'aria-label': `系统工具 ${totals.systemTools}` }, `工具 ${totals.systemTools}`),
+              ),
+              h(
+                Tabs.Panel,
+                { value: 'skills' },
+                skills.length === 0 && payload !== null && !snap.loading
+                  ? emptyNote('无可用技能')
+                  : h('div', {}, ...skills.map(skillRow)),
+              ),
+              h(
+                Tabs.Panel,
+                { value: 'mcp' },
+                mcp.length === 0 && payload !== null && !snap.loading
+                  ? emptyNote('无 MCP 服务器')
+                  : h('div', {}, ...mcp.map(serverRow)),
+              ),
+              h(
+                Tabs.Panel,
+                { value: 'system' },
+                systemTools.length === 0 && payload !== null && !snap.loading
+                  ? emptyNote('无系统工具')
+                  : h('div', {}, ...systemTools.map(systemRow)),
+              ),
+            ),
+          ];
+
+      return h(
+        Popover.Root,
+        { open: snap.open, onOpenChange: syncOpen },
+        // The ContextMeter trigger's chrome, verbatim: 28×28, pill radius,
+        // secondary label color, hover-only wash.
+        h(
+          Tooltip,
+          { label: '会话上下文：技能与 MCP', side: 'top', delayMs: 200, disabled: snap.open },
+          h(
+            Popover.Trigger,
+            {
+              className: 'ci-trigger',
+              'aria-label': '会话上下文：技能与 MCP',
+              style: {
+                display: 'grid',
+                placeItems: 'center',
+                width: '28px',
+                height: '28px',
+                padding: 0,
+                border: 'none',
+                borderRadius: '999px',
+                background: 'transparent',
+                color: TOK.textSecondary,
+                cursor: 'pointer',
+                flex: 'none',
+                font: 'inherit',
+              },
+            },
+            layersIcon(14),
+          ),
+        ),
+        h(
+          Popover.Portal,
+          {},
+          h(
+            Popover.Positioner,
+            { side: 'top', align: 'end', sideOffset: 8, collisionPadding: 8, style: { zIndex: 100 } },
+            h(
+              Popover.Popup,
+              {
+                className: 'ci-panel',
+                'aria-label': '会话上下文',
+                style: {
+                  boxSizing: 'border-box',
+                  width: '360px',
+                  maxHeight: 'min(60vh, var(--available-height, 60vh))',
+                  overflowY: 'auto',
+                  padding: '10px 12px',
+                  background: TOK.menuBg,
+                  color: TOK.textSecondary,
+                  border: `1px solid ${TOK.menuBorder}`,
+                  borderRadius: '12px',
+                  boxShadow: TOK.menuShadow,
+                  fontFamily: TOK.fontFamily,
+                  fontSize: '12px',
+                  lineHeight: '20px',
+                  cursor: 'default',
+                },
+              },
+
+              // Header: the filter is always one keystroke away — opening the
+              // panel lands focus in this input (first focusable in the popup),
+              // so no toggle stands between the user and narrowing the list.
+              h(
+                'div',
+                { style: { marginBottom: '6px' } },
+                h(
+                  'div',
+                  { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
+                  h(
+                    'div',
+                    { style: { position: 'relative', flex: '1 1 auto', display: 'flex', alignItems: 'center' } },
+                    h(
+                      'span',
+                      {
+                        style: {
+                          position: 'absolute',
+                          left: '8px',
+                          color: TOK.textTertiary,
+                          display: 'grid',
+                          pointerEvents: 'none',
+                        },
+                      },
+                      searchIcon(12),
+                    ),
+                    h(Input, {
+                      className: 'ci-filter',
+                      value: query,
+                      placeholder: '筛选名称或描述…',
+                      'aria-label': '筛选技能与工具',
+                      // Not a credential field: keep password managers and the
+                      // spellchecker out of it.
+                      autoComplete: 'off',
+                      spellCheck: false,
+                      name: 'ci-filter',
+                      onChange: (event: { target: { value: string } }) => { setQuery(event.target.value); },
+                      onKeyDown: (event: { key: string; stopPropagation: () => void }) => {
+                        // With a query, Escape clears it and the panel stays
+                        // open; empty, it bubbles up and closes the panel.
+                        if (event.key !== 'Escape' || query === '') return;
+                        event.stopPropagation();
+                        setQuery('');
+                      },
+                      style: {
+                        flex: '1 1 auto',
+                        minWidth: 0,
+                        height: '26px',
+                        boxSizing: 'border-box',
+                        padding: '0 8px 0 26px',
+                        border: `1px solid ${TOK.border}`,
+                        borderRadius: '6px',
+                        background: TOK.bgBase,
+                        color: TOK.textPrimary,
+                        font: 'inherit',
+                        outline: 'none',
+                      },
+                    }),
+                  ),
+                  query !== ''
+                    ? h(
+                        'button',
+                        {
+                          type: 'button',
+                          onClick: () => { setQuery(''); },
+                          className: 'ci-iconbtn',
+                          'aria-label': '清空筛选',
+                          style: {
+                            display: 'grid',
+                            placeItems: 'center',
+                            width: '20px',
+                            height: '20px',
+                            padding: 0,
+                            border: 'none',
+                            borderRadius: '999px',
+                            background: 'transparent',
+                            color: TOK.textTertiary,
+                            cursor: 'pointer',
+                            flex: 'none',
+                            font: 'inherit',
+                            fontSize: '14px',
+                            lineHeight: 1,
+                          },
+                        },
+                        '×',
+                      )
+                    : null,
+                ),
+                filtering
+                  ? h(
+                      'div',
+                      {
+                        'aria-live': 'polite',
+                        style: { marginTop: '4px', color: TOK.textTertiary, fontVariantNumeric: 'tabular-nums' },
+                      },
+                      `匹配 ${view?.total ?? 0} / ${totalAll} 项`,
+                    )
+                  : null,
+              ),
+
+              ...notices,
+              ...body,
+            ),
+          ),
+        ),
+      );
+    }),
+  );
+}
+
+export const inject = ['slots'];

@@ -1,0 +1,8 @@
+node_modules/
+lib/
+dist/
+*.log
+.DS_Store
+coverage/
+*.tsbuildinfo
+.oxlintcache
