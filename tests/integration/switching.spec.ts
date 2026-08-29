@@ -385,3 +385,78 @@ describe('when the session has no usable agent', () => {
     expect(errorOf(body)).toMatch(/session agent is not available/);
   });
 });
+
+describe('idempotence and remaining service failures', () => {
+  it('disabling an MCP tool twice masks it once', async () => {
+    const { route, rec } = bootHost();
+    await post(route.handler, { kind: 'mcp-tool', name: 'mcp__doubao-search__web_search', enabled: false });
+    const afterFirst = rec.restrictCalls.length;
+    await post(route.handler, { kind: 'mcp-tool', name: 'mcp__doubao-search__web_search', enabled: false });
+
+    expect(rec.restrictCalls).toHaveLength(afterFirst);
+  });
+
+  it('disabling an MCP server twice masks it once', async () => {
+    const { route, rec } = bootHost();
+    await post(route.handler, { kind: 'mcp-server', name: 'doubao-search', enabled: false });
+    const afterFirst = rec.restrictCalls.length;
+    await post(route.handler, { kind: 'mcp-server', name: 'doubao-search', enabled: false });
+
+    expect(rec.restrictCalls).toHaveLength(afterFirst);
+  });
+
+  it('re-enabling an MCP tool that was never masked is a no-op', async () => {
+    const { route, rec } = bootHost();
+    const { status } = await post(route.handler, {
+      kind: 'mcp-tool',
+      name: 'mcp__doubao-search__web_search',
+      enabled: true,
+    });
+
+    expect(status).toBe(200);
+    expect(rec.restrictDisposed).toBe(0);
+  });
+
+  it('refuses a skill toggle when the skills service is absent', async () => {
+    const { route } = bootHost({ skills: undefined });
+    const { status, body } = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
+
+    expect(status).toBe(500);
+    expect(errorOf(body)).toMatch(/skills service unavailable/);
+  });
+
+  it('refuses to shadow a skill this session cannot see', async () => {
+    // Shadowing an unknown name would register a phantom entry the panel
+    // could never explain.
+    const { route } = bootHost({
+      skills: {
+        list: () => Promise.resolve([{ name: 'find-skills' }]),
+        get: () => Promise.resolve(undefined),
+      },
+    });
+    const { status, body } = await post(route.handler, { kind: 'skill', name: 'ghost', enabled: false });
+
+    expect(status).toBe(500);
+    expect(errorOf(body)).toMatch(/not available in this session/);
+  });
+
+  it('reports a missing agent for an MCP tool toggle', async () => {
+    const { route } = bootHost({ agents: { get: () => undefined } });
+    const { status, body } = await post(route.handler, {
+      kind: 'mcp-tool',
+      name: 'mcp__doubao-search__web_search',
+      enabled: false,
+    });
+
+    expect(status).toBe(500);
+    expect(errorOf(body)).toMatch(/session agent is not available/);
+  });
+
+  it('reports a missing agent for an MCP server toggle', async () => {
+    const { route } = bootHost({ agents: { get: () => undefined } });
+    const { status, body } = await post(route.handler, { kind: 'mcp-server', name: 'doubao-search', enabled: false });
+
+    expect(status).toBe(500);
+    expect(errorOf(body)).toMatch(/session agent is not available/);
+  });
+});

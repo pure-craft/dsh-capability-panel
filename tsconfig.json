@@ -18,9 +18,13 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "rootDir": "src",
     "outDir": "lib",
     "types": ["react", "node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  // `tests` is included so type-aware lint resolves test files too: oxlint
+  // reads the nearest tsconfig, and a file outside every `include` gets no
+  // types at all — every node: import silently degrades to `error`, which
+  // then shows up as a wall of no-unsafe-* violations. The build itself is
+  // driven by tsdown, so this wider include costs nothing there.
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts"]
 }
