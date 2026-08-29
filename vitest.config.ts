@@ -23,10 +23,12 @@ export default defineConfig({
       // `perFile`: the two cannot be combined — `perFile` applies the global
       // numbers to every file and a glob entry never overrides them. Grouping
       // this way keeps the same property (no file hides behind a well-covered
-      // neighbour) while letting one file carry a justified exception.
+      // neighbour) while naming every gated file explicitly.
       thresholds: {
-        // Everything except the host half: fully covered, and expected to stay
-        // that way. An uncovered line here is usually dead code.
+        // Every measured file gates at 100% on all four metrics. An uncovered
+        // line or branch is either a missing test or dead code the gate is
+        // correctly flagging for deletion — both are actionable, neither is
+        // waived.
         'src/{loopback,wire,stats,load-state}.ts': {
           statements: 100,
           branches: 100,
@@ -39,17 +41,9 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        // The host half reaches 100% on lines and functions — nothing in it is
-        // dead. The residual branches are unreachable fallbacks on the `??`
-        // and `?.` operators guarding optional host services
-        // (`ctx.tools?.schemas() ?? []`, `req.url ?? '/'`). Hitting them would
-        // require a host that contradicts itself — a service both present and
-        // absent within one call — so a test written to move the counter would
-        // assert nothing about behaviour. The bar is set to what the real
-        // paths reach, and lines/functions stay pinned at 100%.
         'src/index.ts': {
-          statements: 99,
-          branches: 94,
+          statements: 100,
+          branches: 100,
           functions: 100,
           lines: 100,
         },

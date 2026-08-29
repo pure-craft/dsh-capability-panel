@@ -14,7 +14,7 @@ type Waterfall = (assembly: unknown, context: unknown, next: () => Promise<unkno
 type Guard = (execution: unknown) => string | undefined;
 type ResultListener = (execution: unknown, result: unknown) => void;
 
-function bootHost() {
+function bootHost(options: { schemas?: { name: string; description: string }[] } = {}) {
   const routes: { path: string; handler: Handler }[] = [];
   const effects: (() => (() => void) | void)[] = [];
   const listeners: Record<string, unknown> = {};
@@ -44,11 +44,12 @@ function bootHost() {
       get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c' }),
     },
     tools: {
-      schemas: () => [
-        { name: 'bash', description: 'run a shell command' },
-        { name: 'read', description: 'read a file' },
-        { name: 'mcp__doubao-search__web_search', description: 'search' },
-      ],
+      schemas: () =>
+        options.schemas ?? [
+          { name: 'bash', description: 'run a shell command' },
+          { name: 'read', description: 'read a file' },
+          { name: 'mcp__doubao-search__web_search', description: 'search' },
+        ],
       guard(callback: Guard) {
         guard = callback;
         return () => {};
@@ -64,6 +65,9 @@ function bootHost() {
     effect(factory: () => (() => void) | void) {
       effects.push(factory);
     },
+    get(name: string) {
+      return (this as unknown as Record<string, unknown>)[name];
+    },
   };
 
   apply(ctx as never);
@@ -76,6 +80,8 @@ function bootHost() {
     waterfall: listeners['system-prompt/assemble'] as Waterfall,
     onResult: listeners['tools/result'] as ResultListener,
     getGuard: () => guard,
+    /** The fake context itself, so a test can vanish a service mid-session. */
+    ctx: ctx as Record<string, unknown>,
   };
 }
 
@@ -103,6 +109,20 @@ async function disable(handler: Handler, kind: string, name: string, session = '
   const res = { writeHead(code: number) { status = code; }, end(chunk?: string) { body = chunk ?? ''; } };
   await handler(req, res);
   if (status !== 200) throw new Error(`toggle failed: ${body}`);
+}
+
+/** GET the stats endpoint and parse the body. */
+async function readStatsBody(handler: Handler): Promise<{ blocked: Record<string, number> }> {
+  let body = '';
+  const req = {
+    method: 'GET',
+    url: '/api/agent-toolkit/stats',
+    headers: { host: '127.0.0.1:3080' },
+    socket: { remoteAddress: '127.0.0.1' },
+    on: () => req,
+  };
+  await handler(req, { writeHead() {}, end(chunk?: string) { body = chunk ?? ''; } });
+  return JSON.parse(body) as { blocked: Record<string, number> };
 }
 
 describe('the system-prompt waterfall hides a masked tool', () => {
@@ -245,5 +265,49 @@ describe('the result listener ignores what it should', () => {
     await disable(host.route.handler, 'system-tool', 'bash');
 
     expect(() => { host.onResult({ agent: { id: 's1' }, name: 'bash' }, { isError: true }); }).not.toThrow();
+  });
+});
+
+describe('disabledToolNames under a shifting host', () => {
+  it('expands a server mask only over servers that are actually masked', async () => {
+    // Two servers in the global view, one masked: the expansion must skip the
+    // unmasked server's tools, or an unrelated server would count as blocked.
+    const host = bootHost({ schemas: [
+      { name: 'mcp__alpha__search', description: 'a' },
+      { name: 'mcp__beta__search', description: 'b' },
+    ] });
+    await disable(host.route.handler, 'mcp-server', 'alpha');
+    host.onResult(
+      { agent: { id: 's1' }, name: 'mcp__beta__search' },
+      { isError: true, error: { info: { code: 'UNKNOWN_TOOL' }, message: 'unknown tool' } },
+    );
+
+    const body = await readStatsBody(host.route.handler);
+    expect(body.blocked['mcp__beta__search']).toBeUndefined();
+  });
+
+  it('still counts direct masks when the tools service disappears mid-session', async () => {
+    // ctx.get is read per call, so a service vanishing between the toggle and
+    // a later result event must not throw — the server expansion silently
+    // cannot run, but direct single-tool masks still classify.
+    const host = bootHost({
+      schemas: [
+        { name: 'mcp__alpha__search', description: 'a' },
+        { name: 'mcp__alpha__read', description: 'a2' },
+      ],
+    });
+    await disable(host.route.handler, 'mcp-server', 'alpha');
+    await disable(host.route.handler, 'mcp-tool', 'mcp__alpha__search');
+    // Only now does the service vanish: masks are already in place, and the
+    // next result event must classify against them without the global view.
+    host.ctx['tools'] = undefined;
+
+    host.onResult(
+      { agent: { id: 's1' }, name: 'mcp__alpha__search' },
+      { isError: true, error: { info: { code: 'UNKNOWN_TOOL' }, message: 'unknown tool' } },
+    );
+
+    const body = await readStatsBody(host.route.handler);
+    expect(body.blocked['mcp__alpha__search']).toBe(1);
   });
 });

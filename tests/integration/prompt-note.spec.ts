@@ -81,6 +81,9 @@ function bootHost({ withSystemPrompt = true }: { withSystemPrompt?: boolean } = 
     effect(factory: () => (() => void) | void) {
       effects.push(factory);
     },
+    get(name: string) {
+      return (this as unknown as Record<string, unknown>)[name];
+    },
   };
 
   apply(ctx as never);
@@ -183,13 +186,14 @@ describe('teardown releases every mask', () => {
     await disable(host.route.handler, 'skill', 'find-skills');
     await disable(host.route.handler, 'system-tool', 'bash');
     await disable(host.route.handler, 'mcp-server', 'doubao-search');
+    await disable(host.route.handler, 'mcp-tool', 'mcp__doubao-search__web_search');
     expect(host.rec.disposedMasks).toBe(0);
 
     host.teardownAll();
 
-    // Three masks plus the note: nothing may outlive the plugin, or a tool
+    // Four masks plus the note: nothing may outlive the plugin, or a tool
     // would stay hidden with no panel left to restore it.
-    expect(host.rec.disposedMasks).toBe(3);
+    expect(host.rec.disposedMasks).toBe(4);
     expect(host.rec.disposedContexts).toBe(1);
   });
 

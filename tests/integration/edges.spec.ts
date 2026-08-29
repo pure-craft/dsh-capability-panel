@@ -5,7 +5,7 @@
  * refactor cannot quietly turn one into a silent success.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { env } from 'node:process';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -53,6 +53,7 @@ function bootHost(overrides: Record<string, unknown> = {}) {
   const ctx: Record<string, unknown> = Object.fromEntries(
     Object.entries(merged).filter(([, value]) => value !== undefined),
   );
+  ctx['get'] = (name: string) => ctx[name];
 
   apply(ctx as never);
   for (const factory of effects) factory();
@@ -81,7 +82,7 @@ async function postRaw(
   handler: Handler,
   raw: string | string[],
   streamable = true,
-  streamError?: Error,
+  streamError?: unknown,
 ): Promise<{ status: number; body: string }> {
   let status = 0;
   let out = '';
@@ -294,6 +295,9 @@ describe('server masks expand over the global tool view', () => {
         if (event === 'tools/result') onResult = listener as (execution: unknown, result: unknown) => void;
       },
       effect(factory: () => (() => void) | void) { effects.push(factory); },
+      get(name: string) {
+        return (this as unknown as Record<string, unknown>)[name];
+      },
     };
     apply(ctx as never);
     for (const factory of effects) factory();
@@ -443,5 +447,130 @@ describe('tool descriptions', () => {
     const payload = parsed as { systemTools: { name: string; description?: string }[] };
     expect(payload.systemTools.find((t) => t.name === 'bash')).not.toHaveProperty('description');
     expect(payload.systemTools.find((t) => t.name === 'read')?.description).toBe('read a file');
+  });
+});
+
+describe('boundary shape variants', () => {
+  it('keeps a skill whose description is not a string, without the field', async () => {
+    const route = bootHost({
+      skills: {
+        list: () => Promise.resolve([{ name: 'find-skills', description: 42 }]),
+        get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c' }),
+      },
+    });
+    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    const payload = parsed as { skills: { name: string; description?: string }[] };
+    const skill = payload.skills.find((s) => s.name === 'find-skills');
+    expect(skill).toBeDefined();
+    expect(skill).not.toHaveProperty('description');
+  });
+
+  it('reports a tools service that throws a non-Error', async () => {
+    const route = bootHost({
+      tools: {
+        schemas: () => {
+          // oxlint-disable-next-line typescript/only-throw-error
+          throw 'registry exploded';
+        },
+        guard: () => () => {},
+      },
+    });
+    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    expect(status).toBe(200);
+    const payload = parsed as { degraded?: string[] };
+    expect(payload.degraded?.some((note) => note.includes('registry exploded'))).toBe(true);
+  });
+
+  it('carries degraded notes on the no-session payload too', async () => {
+    const route = bootHost({
+      tools: {
+        schemas: () => {
+          throw new Error('registry exploded');
+        },
+        guard: () => () => {},
+      },
+    });
+    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit');
+
+    expect(status).toBe(200);
+    const payload = parsed as { sessionId: null; degraded?: string[] };
+    expect(payload.sessionId).toBeNull();
+    expect(payload.degraded?.some((note) => note.includes('registry exploded'))).toBe(true);
+  });
+
+  it('answers a request whose url is absent, as the catalog root', async () => {
+    const route = bootHost();
+    let status = 0;
+    let body = '';
+    const req = {
+      method: 'GET',
+      headers: { host: '127.0.0.1:3080' },
+      socket: { remoteAddress: '127.0.0.1' },
+      on: () => req,
+    };
+    await route.handler(req, { writeHead(code: number) { status = code; }, end(chunk?: string) { body = chunk ?? ''; } });
+
+    expect(status).toBe(200);
+    expect((JSON.parse(body) as { sessionId: null }).sessionId).toBeNull();
+  });
+
+  it('wraps a non-Error stream failure in an Error', async () => {
+    const route = bootHost();
+    const { status, body } = await postRaw(route.handler, '{}', true, 'socket reset');
+
+    expect(status).toBe(500);
+    expect(body).toMatch(/socket reset/);
+  });
+
+  it('stringifies a non-Error thrown out of a service call', async () => {
+    const route = bootHost({
+      agents: {
+        get: () => {
+          // oxlint-disable-next-line typescript/only-throw-error
+          throw 'agent registry gone';
+        },
+      },
+    });
+    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    expect(status).toBe(500);
+    expect((parsed as { error: string }).error).toMatch(/agent registry gone/);
+  });
+});
+
+describe('stats file location', () => {
+  it('falls back to the home directory when DSH_HOME is unset', async () => {
+    const previous = env['DSH_HOME'];
+    delete env['DSH_HOME'];
+    try {
+      const route = bootHost();
+      const { parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
+
+      expect((parsed as { logFile: string }).logFile).toBe(join(homedir(), 'agent-toolkit', 'stats.jsonl'));
+    } finally {
+      if (previous !== undefined) env['DSH_HOME'] = previous;
+    }
+  });
+});
+
+describe('MCP tool descriptions', () => {
+  it('omits the field for a tool whose description is empty', async () => {
+    const route = bootHost({
+      tools: {
+        schemas: () => [
+          { name: 'mcp__doubao-search__web_search', description: '' },
+          { name: 'mcp__doubao-search__image_search', description: 'search images' },
+        ],
+        guard: () => () => {},
+      },
+    });
+    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    const payload = parsed as { mcp: { tools: { name: string; description?: string }[] }[] };
+    const tools = payload.mcp[0]?.tools ?? [];
+    expect(tools.find((t) => t.name === 'mcp__doubao-search__web_search')).not.toHaveProperty('description');
+    expect(tools.find((t) => t.name === 'mcp__doubao-search__image_search')?.description).toBe('search images');
   });
 });

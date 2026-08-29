@@ -109,6 +109,9 @@ function fakeHost() {
       effectFactories.push(factory);
       effectLabels.push(label);
     },
+    get(name: string) {
+      return (this as unknown as Record<string, unknown>)[name];
+    },
   };
 
   const disposers: (() => void)[] = [];
@@ -151,7 +154,7 @@ function fakeHost() {
 describe('every registration goes through ctx.effect', () => {
   it('registers the data route lazily, so effect owns its disposal', () => {
     const host = fakeHost();
-    apply(host.ctx);
+    apply(host.ctx as never);
 
     // Before effects run, the route must NOT exist: registering eagerly and
     // handing the disposer to effect would unregister it immediately.
@@ -164,7 +167,7 @@ describe('every registration goes through ctx.effect', () => {
 
   it('labels every effect, so a leak is attributable in diagnostics', () => {
     const host = fakeHost();
-    apply(host.ctx);
+    apply(host.ctx as never);
     host.runEffects();
 
     expect(host.effectLabels).toContain('agent-toolkit: tool guard');
@@ -177,7 +180,7 @@ describe('every registration goes through ctx.effect', () => {
 
   it('removes the route when the fiber unwinds', () => {
     const host = fakeHost();
-    apply(host.ctx);
+    apply(host.ctx as never);
     host.runEffects();
     expect(host.routeDisposed).toEqual([]);
 
@@ -187,7 +190,7 @@ describe('every registration goes through ctx.effect', () => {
 
   it('removes the execution guard when the fiber unwinds', () => {
     const host = fakeHost();
-    apply(host.ctx);
+    apply(host.ctx as never);
     expect(host.guardRegistered).toBe(true);
     expect(host.guardDisposed).toBe(false);
 
@@ -244,7 +247,7 @@ describe('per-session masks are released on teardown', () => {
 
   it('disposes a skill shadow registered through the route', async () => {
     const host = fakeHost();
-    apply(host.ctx);
+    apply(host.ctx as never);
     host.runEffects();
 
     const result = await toggle(host, { kind: 'skill', name: 'find-skills', enabled: false });
@@ -258,7 +261,7 @@ describe('per-session masks are released on teardown', () => {
 
   it('disposes the prompt note registered alongside the first mask', async () => {
     const host = fakeHost();
-    apply(host.ctx);
+    apply(host.ctx as never);
     host.runEffects();
 
     await toggle(host, { kind: 'skill', name: 'find-skills', enabled: false });
@@ -273,7 +276,7 @@ describe('per-session masks are released on teardown', () => {
 
   it('re-enabling disposes the shadow immediately, without waiting for teardown', async () => {
     const host = fakeHost();
-    apply(host.ctx);
+    apply(host.ctx as never);
     host.runEffects();
 
     await toggle(host, { kind: 'skill', name: 'find-skills', enabled: false });
@@ -285,7 +288,7 @@ describe('per-session masks are released on teardown', () => {
 
   it('is idempotent: disposing twice must not throw', () => {
     const host = fakeHost();
-    apply(host.ctx);
+    apply(host.ctx as never);
     host.runEffects();
     host.dispose();
     expect(() => {
@@ -302,7 +305,7 @@ describe('apply degrades instead of throwing', () => {
     // the service is the case this asserts.
     const { webServer: _webServer, ...ctxWithoutServer } = host.ctx;
     expect(() => {
-      apply(ctxWithoutServer);
+      apply(ctxWithoutServer as never);
     }).not.toThrow();
     host.runEffects();
     expect(host.routes).toEqual([]);
@@ -315,7 +318,7 @@ describe('apply degrades instead of throwing', () => {
       tools: { schemas: host.ctx.tools.schemas },
     };
     expect(() => {
-      apply(ctxWithoutGuard);
+      apply(ctxWithoutGuard as never);
     }).not.toThrow();
   });
 });

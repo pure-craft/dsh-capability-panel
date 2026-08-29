@@ -39,6 +39,38 @@ interface SessionCapabilityState {
   noteDispose?: () => void;
 }
 
+interface AgentsService {
+  get(sessionId: string): AgentLike | undefined;
+}
+
+interface SkillsService {
+  list(lookup: { cwd?: string; scope?: unknown }): Promise<readonly SkillSummary[]>;
+  get(name: string, lookup: { cwd?: string; scope?: unknown }): Promise<SkillDefinitionLike | undefined>;
+}
+
+interface ToolsService {
+  schemas(scope?: unknown): Iterable<{ name?: unknown; description?: unknown }>;
+  /**
+   * A synchronous execution guard; returning a string denies that call.
+   * Registering at the host level covers every agent, and the guard itself
+   * matches on the exact agent id.
+   */
+  guard?(guard: (execution: { name?: unknown; agent?: { id?: unknown } }) => string | undefined): () => void;
+}
+
+interface SessionQueryService {
+  /**
+   * Full raw log, replay-validated; events keep `data` (arguments, message).
+   * Typed `unknown` on purpose: this interface is hand-written, and the last
+   * hand-written version of it lied (a guessed `{ events }` wrapper that
+   * listEvents never had). The boundary validates the real shape and reports
+   * `degraded` instead of trusting the type.
+   */
+  readSession(sessionId: string): Promise<{ readonly events?: unknown }>;
+  /** Light per-event records — the fold verdicts only; NO data payload. */
+  listEvents(sessionId: string): Promise<unknown>;
+}
+
 interface HostServices {
   readonly webServer?: {
     register(spec: {
@@ -47,32 +79,17 @@ interface HostServices {
       handler: (req: IncomingLike, res: ServerResponseLike) => Promise<void> | void;
     }): () => void;
   };
-  readonly agents?: { get(sessionId: string): AgentLike | undefined };
-  readonly skills?: {
-    list(lookup: { cwd?: string; scope?: unknown }): Promise<readonly SkillSummary[]>;
-    get(name: string, lookup: { cwd?: string; scope?: unknown }): Promise<SkillDefinitionLike | undefined>;
-  };
-  readonly tools?: {
-    schemas(scope?: unknown): Iterable<{ name?: unknown; description?: unknown }>;
-    /**
-     * A synchronous execution guard; returning a string denies that call.
-     * Registering at the host level covers every agent, and the guard itself
-     * matches on the exact agent id.
-     */
-    guard?(guard: (execution: { name?: unknown; agent?: { id?: unknown } }) => string | undefined): () => void;
-  };
-  readonly sessionQuery?: {
-    /**
-     * Full raw log, replay-validated; events keep `data` (arguments, message).
-     * Typed `unknown` on purpose: this interface is hand-written, and the last
-     * hand-written version of it lied (a guessed `{ events }` wrapper that
-     * listEvents never had). The boundary validates the real shape and reports
-     * `degraded` instead of trusting the type.
-     */
-    readSession(sessionId: string): Promise<{ readonly events?: unknown }>;
-    /** Light per-event records — the fold verdicts only; NO data payload. */
-    listEvents(sessionId: string): Promise<unknown>;
-  };
+  /**
+   * Optional services are read through ctx.get, NOT declared in `inject`: a
+   * missing service must degrade one panel section (named in the payload's
+   * `degraded` list), never hold the whole plugin in Cordis's waiting state.
+   * Reads happen per request/call rather than once at apply(), so a service
+   * that appears after boot is picked up on the next poll.
+   */
+  get(name: 'agents'): AgentsService | undefined;
+  get(name: 'skills'): SkillsService | undefined;
+  get(name: 'tools'): ToolsService | undefined;
+  get(name: 'sessionQuery'): SessionQueryService | undefined;
   /** Scoped event verb; a host-level listener observes every agent. */
   on(
     event: 'tools/result',
@@ -164,13 +181,13 @@ async function readAvailable(
   degraded: string[],
   disabledSkills: ReadonlySet<string>,
 ): Promise<{ name: string; description?: string }[]> {
-  const skills = services.skills;
+  const skills = services.get('skills');
   if (skills === undefined) {
     degraded.push('skills service unavailable');
     return [];
   }
   try {
-    const agent = services.agents?.get(sessionId);
+    const agent = services.get('agents')?.get(sessionId);
     const cwd = agent?.session?.header?.cwd;
     // `scope: agent` is what resolves the agent's own view rather than a global
     // registry dump — without it a preset's private skills are missed.
@@ -244,16 +261,19 @@ async function readLogFacts(
   sessionId: string,
   degraded: string[],
 ): Promise<{ loads: ReturnType<typeof collectLoadRecords>; shadowed: Set<number> }> {
-  const query = services.sessionQuery;
+  const query = services.get('sessionQuery');
   if (query === undefined) {
     // Without the fold there is no honest way to tell `loaded` from `evicted`.
     degraded.push('sessionQuery unavailable: eviction state cannot be determined');
     return { loads: [], shadowed: new Set() };
   }
   try {
-    let settled: { rawEvents: readonly RawEvent[]; records: readonly EventSurfaceRecord[] } | null = null;
-    let lastPair: { rawEvents: readonly RawEvent[]; records: readonly EventSurfaceRecord[] } | null = null;
-    for (let attempt = 0; attempt < 2 && settled === null; attempt++) {
+    // Read the two cuts and compare their last seq: a session writing between
+    // the reads yields a mismatched pair. One retry absorbs a single in-flight
+    // write; a still-moving log is reported degraded rather than presented as
+    // a clean read. The loop always returns — `while` is the shape that lets
+    // TS see there is no fall-through, so no unreachable post-loop guard.
+    for (let attempt = 0; ; attempt++) {
       const [raw, listed] = await Promise.all([query.readSession(sessionId), query.listEvents(sessionId)]);
       const rawEvents = requireEventArray(
         raw !== null && typeof raw === 'object' ? (raw as { events?: unknown }).events : undefined,
@@ -262,17 +282,14 @@ async function readLogFacts(
       );
       const records = toSurfaceRecords(listed, 'listEvents()', degraded);
       if (rawEvents === null || records === null) return { loads: [], shadowed: new Set() };
-      lastPair = { rawEvents, records };
-      if (lastSeq(rawEvents) === lastSeq(records)) settled = lastPair;
+      const agreed = lastSeq(rawEvents) === lastSeq(records);
+      if (!agreed && attempt === 0) continue;
+      if (!agreed) degraded.push('session log moved while reading; load states may straddle a write');
+      const loads = collectLoadRecords(rawEvents);
+      const surfaceBySeq = new Map<number, string>(records.map((record) => [record.seq, record.surface]));
+      const shadowed = shadowedLoadSeqs(loads, indexToolResultSeqs(rawEvents), surfaceBySeq);
+      return { loads, shadowed };
     }
-    if (lastPair === null) return { loads: [], shadowed: new Set() };
-    if (settled === null) degraded.push('session log moved while reading; load states may straddle a write');
-    const { rawEvents, records } = lastPair;
-
-    const loads = collectLoadRecords(rawEvents);
-    const surfaceBySeq = new Map<number, string>(records.map((record) => [record.seq, record.surface]));
-    const shadowed = shadowedLoadSeqs(loads, indexToolResultSeqs(rawEvents), surfaceBySeq);
-    return { loads, shadowed };
   } catch (error) {
     degraded.push(`event read failed: ${error instanceof Error ? error.message : String(error)}`);
     return { loads: [], shadowed: new Set() };
@@ -285,7 +302,7 @@ function readMcp(
   disabledServers: ReadonlySet<string>,
   disabledTools: ReadonlySet<string>,
 ): McpServerEntry[] {
-  const tools = services.tools;
+  const tools = services.get('tools');
   if (tools === undefined) {
     degraded.push('tools service unavailable');
     return [];
@@ -336,7 +353,7 @@ function readSystemTools(
   disabledTools: ReadonlySet<string>,
   agent?: AgentLike,
 ): ToolEntry[] {
-  const tools = services.tools;
+  const tools = services.get('tools');
   if (tools === undefined) return [];
   try {
     const byName = new Map<string, ToolEntry>();
@@ -394,7 +411,7 @@ async function buildPayload(
     };
   }
 
-  const agent = services.agents?.get(sessionId);
+  const agent = services.get('agents')?.get(sessionId);
 
   // Skills catalog and log facts are independent services, so they run
   // together. Within readLogFacts the raw log and the fold verdicts come from
@@ -494,7 +511,7 @@ export function apply(ctx: HostServices): void {
   const disabledToolNames = (state: SessionCapabilityState): Set<string> => {
     const names = new Set([...state.mcpTools.keys(), ...state.systemTools.keys()]);
     if (state.mcpServers.size > 0) {
-      for (const schema of ctx.tools?.schemas() ?? []) {
+      for (const schema of ctx.get('tools')?.schemas() ?? []) {
         if (typeof schema.name !== 'string' || !schema.name.startsWith('mcp__')) continue;
         const server = schema.name.slice('mcp__'.length, schema.name.indexOf('__', 'mcp__'.length));
         if (state.mcpServers.has(server)) names.add(schema.name);
@@ -526,7 +543,7 @@ export function apply(ctx: HostServices): void {
     return { ...assembled, tools: assembled.tools.filter((tool) => !state.systemTools.has(String(tool.name))) };
   });
 
-  const guardDispose = ctx.tools?.guard?.((execution) => {
+  const guardDispose = ctx.get('tools')?.guard?.((execution) => {
     const sessionId = typeof execution.agent?.id === 'string' ? execution.agent.id : null;
     if (sessionId === null) return undefined;
     const state = capabilityStates.get(sessionId);
@@ -540,15 +557,19 @@ export function apply(ctx: HostServices): void {
   }
 
   ctx.on('tools/result', (exec, result) => {
-    const sessionId = typeof exec.agent?.id === 'string' ? exec.agent.id : null;
-    if (sessionId === null) return;
+    // Narrow the agent once: the guaranteed-present reference below feeds both
+    // the state lookup and the classify call (exactOptionalPropertyTypes
+    // refuses a maybe-undefined value in an optional property).
+    const agent = exec.agent;
+    if (agent === undefined || typeof agent.id !== 'string') return;
+    const sessionId = agent.id;
     const state = capabilityStates.get(sessionId);
     if (state === undefined) return;
     const hit = classifyBlockedCall(
       {
         name: exec.name,
         arguments: exec.arguments,
-        ...(exec.agent !== undefined ? { agent: exec.agent } : {}),
+        agent,
         ...(result.isError && result.error !== undefined ? { error: result.error } : {}),
       },
       new Set(state.skills.keys()),
@@ -612,7 +633,7 @@ export function apply(ctx: HostServices): void {
    * available. Re-enabling disposes the shadow and the original wins again.
    */
   const setSkillEnabled = async (sessionId: string, name: string, enabled: boolean): Promise<void> => {
-    const agent = ctx.agents?.get(sessionId);
+    const agent = ctx.get('agents')?.get(sessionId);
     const scopedSkills = agent?.ctx?.get('skills') as ScopedSkillsRegistry | undefined;
     if (agent === undefined || scopedSkills === undefined) throw new Error('session agent is not available');
     const state = stateFor(sessionId);
@@ -623,10 +644,11 @@ export function apply(ctx: HostServices): void {
       return;
     }
     if (existing !== undefined) return;
-    if (ctx.skills === undefined) throw new Error('skills service unavailable');
+    const skills = ctx.get('skills');
+    if (skills === undefined) throw new Error('skills service unavailable');
     const cwd = agent.session?.header?.cwd;
     const lookup = { ...(cwd === undefined ? {} : { cwd }), scope: agent };
-    const original = await ctx.skills.get(name, lookup);
+    const original = await skills.get(name, lookup);
     if (
       original === undefined ||
       typeof original.name !== 'string' ||
@@ -650,7 +672,7 @@ export function apply(ctx: HostServices): void {
 
   /** Turn ONE MCP server off for ONE session by denying its tools by name. */
   const setMcpServerEnabled = (sessionId: string, server: string, enabled: boolean): void => {
-    const agent = ctx.agents?.get(sessionId);
+    const agent = ctx.get('agents')?.get(sessionId);
     const scopedTools = agent?.ctx?.get('tools') as { restrict(filter: { deny: readonly string[] }): () => void } | undefined;
     if (agent === undefined || scopedTools === undefined) throw new Error('session agent is not available');
     const state = stateFor(sessionId);
@@ -665,7 +687,7 @@ export function apply(ctx: HostServices): void {
     // restricted agent no longer lists them, but restrict() denies global
     // tools by name.
     const prefix = `mcp__${server}__`;
-    const names = [...(ctx.tools?.schemas() ?? [])]
+    const names = [...(ctx.get('tools')?.schemas() ?? [])]
       .map((schema) => schema.name)
       .filter((name): name is string => typeof name === 'string' && name.startsWith(prefix));
     if (names.length === 0) throw new Error(`MCP server "${server}" exposes no tools`);
@@ -675,7 +697,7 @@ export function apply(ctx: HostServices): void {
 
   /** Turn ONE MCP tool off for ONE session. */
   const setMcpToolEnabled = (sessionId: string, name: string, enabled: boolean): void => {
-    const agent = ctx.agents?.get(sessionId);
+    const agent = ctx.get('agents')?.get(sessionId);
     const scopedTools = agent?.ctx?.get('tools') as { restrict(filter: { deny: readonly string[] }): () => void } | undefined;
     if (agent === undefined || scopedTools === undefined) throw new Error('session agent is not available');
     const state = stateFor(sessionId);
@@ -693,7 +715,7 @@ export function apply(ctx: HostServices): void {
   /** Turn ONE system (built-in) tool off for ONE session. */
   const setSystemToolEnabled = (sessionId: string, name: string, enabled: boolean): void => {
     if (name === 'run_code') throw new Error('run_code is the reserved Code Mode transport and cannot be restricted');
-    const agent = ctx.agents?.get(sessionId);
+    const agent = ctx.get('agents')?.get(sessionId);
     const scopedTools = agent?.ctx?.get('tools') as { restrict(filter: { deny: readonly string[] }): () => void } | undefined;
     if (agent === undefined || scopedTools === undefined) throw new Error('session agent is not available');
     const state = stateFor(sessionId);
@@ -708,7 +730,7 @@ export function apply(ctx: HostServices): void {
     // registry level so dispatch reports UNKNOWN_TOOL. A preset-level name is
     // only recorded in `state`: the assemble waterfall and the guard read the
     // live map (registered above), so re-enabling is just deleting the entry.
-    const isGlobal = [...(ctx.tools?.schemas() ?? [])].some((schema) => schema.name === name);
+    const isGlobal = [...(ctx.get('tools')?.schemas() ?? [])].some((schema) => schema.name === name);
     const dispose = isGlobal ? scopedTools.restrict({ deny: [name] }) : () => {};
     state.systemTools.set(name, dispose);
     ensurePromptNote(agent, state);
@@ -813,4 +835,7 @@ export function apply(ctx: HostServices): void {
   );
 }
 
-export const inject = ['webServer', 'agents', 'skills', 'tools', 'sessionQuery'];
+// Only the route is a hard dependency. Everything else is read through
+// ctx.get so a partial host gets a degraded panel instead of a plugin that
+// never starts (see HostServices.get).
+export const inject = ['webServer'];

@@ -76,6 +76,9 @@ function bootHost(overrides: Record<string, unknown> = {}) {
     effect(factory: () => (() => void) | void) {
       effects.push(factory);
     },
+    get(name: string) {
+      return (this as unknown as Record<string, unknown>)[name];
+    },
   };
 
   // An override set to `undefined` removes that service, which is how the
@@ -479,5 +482,68 @@ describe('a preset-level tool, absent from the global registry', () => {
     const { status } = await post(route.handler, { kind: 'system-tool', name: 'preset_only', enabled: true });
 
     expect(status).toBe(200);
+  });
+});
+
+describe('capability paths with partial hosts', () => {
+  it('disables a skill for an agent whose session carries no cwd', async () => {
+    const { route, rec } = bootHost({
+      agents: {
+        get: () => ({
+          id: 'agent-1',
+          ctx: {
+            get: (name: string) =>
+              name === 'skills' ? { register: (entry: { name: string }) => { rec.registeredSkills.push(entry); return () => {}; } } : undefined,
+          },
+          session: { header: {} },
+        }),
+      },
+    });
+    const { status } = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
+
+    expect(status).toBe(200);
+    expect(rec.registeredSkills[0]?.name).toBe('find-skills');
+  });
+
+  it('carries resourceBase through to the shadow when the original has one', async () => {
+    const resourceBase = { path: '/skills/find-skills' };
+    const { route, rec } = bootHost({
+      skills: {
+        list: () => Promise.resolve([{ name: 'find-skills', description: 'd' }]),
+        get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c', resourceBase }),
+      },
+    });
+    const { status } = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
+
+    expect(status).toBe(200);
+    expect((rec.registeredSkills[0] as { resourceBase?: unknown } | undefined)?.resourceBase).toEqual(resourceBase);
+  });
+
+  it('cannot expand a server mask while the global tools service is absent', async () => {
+    // The scoped registry may exist on the agent even when the host-level
+    // tools service is gone; without the global view there is no honest list
+    // of the server's tools, so the toggle refuses rather than masks nothing.
+    const { route } = bootHost({ tools: undefined });
+    const { status, body } = await post(route.handler, { kind: 'mcp-server', name: 'doubao-search', enabled: false });
+
+    expect(status).toBe(500);
+    expect(errorOf(body)).toMatch(/exposes no tools/);
+  });
+
+  it('masks a system tool through state alone when the global tools service is absent', async () => {
+    const { route, rec } = bootHost({ tools: undefined });
+    const { status } = await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: false });
+
+    expect(status).toBe(200);
+    // No global registry to restrict through: the mask is recorded in session
+    // state, where the waterfall and the guard read it, and re-enabling must
+    // find that entry again (the catalog itself cannot list the tool while
+    // the tools service is gone).
+    expect(rec.restrictCalls).toHaveLength(0);
+    const catalog = await readCatalog(route.handler);
+    expect(catalog.systemTools).toEqual([]);
+
+    const back = await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: true });
+    expect(back.status).toBe(200);
   });
 });

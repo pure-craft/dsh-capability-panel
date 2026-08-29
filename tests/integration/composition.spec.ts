@@ -110,6 +110,9 @@ export function hostWithCatalog(overrides: Record<string, unknown> = {}) {
   const ctx: Record<string, unknown> = Object.fromEntries(
     Object.entries(merged).filter(([, value]) => value !== undefined),
   );
+  // The plugin reads optional services through ctx.get(name), mirroring the
+  // Cordis channel; a deleted key is exactly "service absent".
+  ctx['get'] = (name: string) => ctx[name];
 
   apply(ctx as never);
   for (const factory of effects) factory();
