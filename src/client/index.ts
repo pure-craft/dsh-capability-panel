@@ -26,6 +26,8 @@ import type { McpServerEntry, SkillEntry, SkillLoadState, ToolEntry } from '../c
 import { subscribe, getSnapshot, toggle, close, refresh, reset, setCapability } from './store.js';
 import { filterPayload } from './filter.js';
 import { MCP_TOOL_ROOT_CLASS, ROW_HEADER_CLASS, ROW_ROOT_CLASS, resolveDisclosure } from './disclosure.js';
+import { LOCALE_NS, registerLocale } from './locale.js';
+import type { LocaleService } from './locale.js';
 
 // React comes through the module loader's `require`, which resolves the HOST's
 // copy — the runtime calls `apply(ctx, config)`, never `apply(ctx, react)`.
@@ -51,6 +53,12 @@ interface SlotContext {
   /** Cordis lifecycle/event verb, on the dynamic facade's whitelist. */
   on(event: 'connection/reset', listener: () => void): void;
   effect(factory: () => (() => void) | void, label?: string): void;
+  /**
+   * The host's locale runtime (dsh-client-locale), a hard inject like every
+   * shipped UI bundle: dictionaries register into it, and its revision
+   * observable re-renders the panel on a language switch.
+   */
+  readonly locale: LocaleService;
 }
 
 interface DockProps {
@@ -103,12 +111,6 @@ const TOK = {
   error: 'var(--dsw-alias-state-error-primary, #ec1313)',
 } as const;
 
-const STATE_LABEL: Record<SkillLoadState, string> = {
-  loaded: '已加载',
-  evicted: '已挤出',
-  unloaded: '未加载',
-};
-
 /**
  * Order by how much the reader needs to act on it: what fell out of context
  * first, then what is in it, then the rest.
@@ -124,6 +126,15 @@ function sortSkills(skills: readonly SkillEntry[]): SkillEntry[] {
 export function apply(ctx: SlotContext): void {
   const react = React as unknown as ReactLike;
   const h = react.createElement;
+
+  // Panel copy follows the host's language switch: dictionaries register into
+  // the shared locale runtime, and `t` reads the active locale per call.
+  ctx.effect(() => registerLocale(ctx.locale), 'agent-toolkit: dictionaries');
+  const t = ctx.locale.bind(LOCALE_NS);
+  // uSES channel over the locale revision: a language switch re-renders the
+  // panel even though `t` itself is a stable reference.
+  const subscribeLocale = (fn: () => void): (() => void) => ctx.locale.subscribe(fn);
+  const getLocaleSnapshot = (): { readonly active: string; readonly revision: number } => ctx.locale.getSnapshot();
 
   // A host restart drops every fact the panel shows; ui-skill clears its
   // caches on the same event. The store's reset also invalidates in-flight
@@ -252,6 +263,9 @@ export function apply(ctx: SlotContext): void {
   ctx.slots.inject('conversation.input.right', () =>
     ctx.slots.register({ name: 'conversation.input.right', id: 'agent-toolkit', order: 1000 }, (props: DockProps) => {
       const snap = react.useSyncExternalStore(subscribe, getSnapshot);
+      // Subscribed for the re-render, not the value: `t` reads the active
+      // locale at call time, so a revision bump is all the panel needs.
+      react.useSyncExternalStore(subscribeLocale, getLocaleSnapshot);
       // Per-row detail expansion, keyed so a reordered list keeps each row's
       // state. While a filter query is active every visible row is forced
       // open so the text it matched on shows without a second click.
@@ -319,7 +333,7 @@ export function apply(ctx: SlotContext): void {
 
       // A blocked attempt is the strongest signal a toggle gives: the agent
       // still reached for the capability after the user turned it off.
-      const blockedChip = (count: number) => (count > 0 ? chip(`拦截 ×${count}`, TOK.error) : null);
+      const blockedChip = (count: number) => (count > 0 ? chip(t('blocked.count', { count }), TOK.error) : null);
 
       const metaText = (text: string) =>
         h(
@@ -340,7 +354,7 @@ export function apply(ctx: SlotContext): void {
       // not geometry, communicates meaning: loaded is green, unloaded stays
       // neutral, and evicted is amber because it may need attention.
       const stateMeta = (skill: SkillEntry) => {
-        const text = STATE_LABEL[skill.state] + (skill.loadCount > 1 ? ` ×${skill.loadCount}` : '');
+        const text = t(`state.${skill.state}`) + (skill.loadCount > 1 ? ` ×${skill.loadCount}` : '');
         const color = skill.state === 'loaded' ? TOK.success : skill.state === 'evicted' ? TOK.warn : TOK.textTertiary;
         return chip(text, color);
       };
@@ -354,7 +368,7 @@ export function apply(ctx: SlotContext): void {
             className: 'ci-switch',
             checked: enabled,
             disabled: sessionId === null || snap.loading,
-            'aria-label': `${enabled ? '关闭' : '开启'} ${name}`,
+            'aria-label': t(enabled ? 'action.disable' : 'action.enable', { name }),
             onCheckedChange: (checked: boolean) => {
               if (sessionId !== null) void setCapability(sessionId, kind, name, checked);
             },
@@ -430,6 +444,19 @@ export function apply(ctx: SlotContext): void {
           text,
         );
 
+      /** The trigger's accessible name, localized with its subject. */
+      const disclosureAria = (
+        subject: string,
+        detailKey: 'detail.description' | 'detail.tools',
+        disclosure: { open: boolean; disabled: boolean },
+      ) => {
+        const detail = t(detailKey);
+        if (disclosure.disabled) return t('disclosure.pinned', { subject, detail });
+        return disclosure.open
+          ? t('disclosure.collapse', { subject, detail })
+          : t('disclosure.expand', { subject, detail });
+      };
+
       /**
        * Shared disclosure row for Skills, MCP tools, and System tools. The
        * trigger owns only chevron + label; trailing actions remain independent
@@ -444,7 +471,8 @@ export function apply(ctx: SlotContext): void {
         className = ROW_ROOT_CLASS,
       ) => {
         const hasDescription = description !== undefined && description !== '';
-        const disclosure = resolveDisclosure(expanded[key] === true, filtering, label, '描述');
+        const disclosure = resolveDisclosure(expanded[key] === true, filtering);
+        const ariaLabel = disclosureAria(label, 'detail.description', disclosure);
         if (!hasDescription) {
           return h(
             'div',
@@ -479,7 +507,7 @@ export function apply(ctx: SlotContext): void {
               {
                 className: 'ci-disclosure-trigger',
                 disabled: disclosure.disabled,
-                'aria-label': disclosure.label,
+                'aria-label': ariaLabel,
               },
               h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
               nameText(label),
@@ -514,7 +542,7 @@ export function apply(ctx: SlotContext): void {
           {
             type: 'button',
             className: 'ci-iconbtn ci-send',
-            'aria-label': `把 /${name} 填入输入框`,
+            'aria-label': t('action.insert', { name }),
             disabled: props.inputActions === undefined,
             onClick: () => { insertCommand(name); },
             style: {
@@ -552,7 +580,8 @@ export function apply(ctx: SlotContext): void {
       const serverRow = (server: McpServerEntry) => {
         const serverBlocked = server.tools.reduce((sum, tool) => sum + (blocked[tool.name] ?? 0), 0);
         const key = `mcp:${server.server}`;
-        const disclosure = resolveDisclosure(expanded[key] === true, filtering, server.server, '工具');
+        const disclosure = resolveDisclosure(expanded[key] === true, filtering);
+        const ariaLabel = disclosureAria(server.server, 'detail.tools', disclosure);
         // The server root owns state and the panel; only its header owns hover
         // feedback, so nested tool hover never paints the whole server.
         return h(
@@ -571,7 +600,7 @@ export function apply(ctx: SlotContext): void {
               {
                 className: 'ci-server-trigger',
                 disabled: disclosure.disabled,
-                'aria-label': disclosure.label,
+                'aria-label': ariaLabel,
                 style: {
                   display: 'grid',
                   placeItems: 'center',
@@ -590,7 +619,7 @@ export function apply(ctx: SlotContext): void {
               h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
             ),
             nameText(server.server),
-            metaText(`${server.tools.length} 工具`),
+            metaText(t('server.tools', { count: server.tools.length })),
             blockedChip(serverBlocked),
             switchControl('mcp-server', server.server, server.enabled),
           ),
@@ -629,14 +658,14 @@ export function apply(ctx: SlotContext): void {
 
       const notices = [
         snap.loading && payload === null
-          ? h('div', { key: 'loading', 'aria-live': 'polite', style: { color: TOK.textTertiary, padding: '4px 0' } }, '读取中…')
+          ? h('div', { key: 'loading', 'aria-live': 'polite', style: { color: TOK.textTertiary, padding: '4px 0' } }, t('status.loading'))
           : null,
         // A transport failure must not be mistaken for an empty catalog.
         snap.error !== null
           ? h(
               'div',
               { key: 'error', 'aria-live': 'polite', style: { color: TOK.error, padding: '4px 0' } },
-              `读取失败：${snap.error}（可尝试刷新页面；Host 改动需重启 dsh 后生效）`,
+              t('status.error', { error: snap.error }),
             )
           : null,
         // Partial reads are reported, so a short list is never silently wrong.
@@ -652,13 +681,13 @@ export function apply(ctx: SlotContext): void {
       // Filtered: one flat, fully expanded result list. Otherwise: tabs.
       const body = filtering
         ? [
-            view !== null && view.total === 0 ? emptyNote('无匹配项') : null,
-            skills.length > 0 ? groupLabel(`技能 (${skills.length}/${totals.skills})`, true) : null,
+            view !== null && view.total === 0 ? emptyNote(t('empty.match')) : null,
+            skills.length > 0 ? groupLabel(t('group.skills', { shown: skills.length, total: totals.skills }), true) : null,
             ...skills.map(skillRow),
-            mcp.length > 0 ? groupLabel(`MCP (${mcp.length}/${totals.mcp})`, skills.length === 0) : null,
+            mcp.length > 0 ? groupLabel(t('group.mcp', { shown: mcp.length, total: totals.mcp }), skills.length === 0) : null,
             ...mcp.map(serverRow),
             systemTools.length > 0
-              ? groupLabel(`系统工具 (${systemTools.length}/${totals.systemTools})`, skills.length === 0 && mcp.length === 0)
+              ? groupLabel(t('group.system', { shown: systemTools.length, total: totals.systemTools }), skills.length === 0 && mcp.length === 0)
               : null,
             ...systemTools.map(systemRow),
           ]
@@ -673,30 +702,30 @@ export function apply(ctx: SlotContext): void {
               },
               h(
                 Tabs.List,
-                { 'aria-label': '上下文分区', className: 'ci-tabs', style: { marginBottom: '6px' } },
-                h(Tabs.Tab, { value: 'skills', className: 'ci-tab' }, `技能 ${totals.skills}`),
-                h(Tabs.Tab, { value: 'mcp', className: 'ci-tab' }, `MCP ${totals.mcp}`),
-                h(Tabs.Tab, { value: 'system', className: 'ci-tab', 'aria-label': `系统工具 ${totals.systemTools}` }, `工具 ${totals.systemTools}`),
+                { 'aria-label': t('tabs.aria'), className: 'ci-tabs', style: { marginBottom: '6px' } },
+                h(Tabs.Tab, { value: 'skills', className: 'ci-tab' }, `${t('tab.skills')} ${totals.skills}`),
+                h(Tabs.Tab, { value: 'mcp', className: 'ci-tab' }, `${t('tab.mcp')} ${totals.mcp}`),
+                h(Tabs.Tab, { value: 'system', className: 'ci-tab', 'aria-label': t('tab.system.aria', { count: totals.systemTools }) }, `${t('tab.system')} ${totals.systemTools}`),
               ),
               h(
                 Tabs.Panel,
                 { value: 'skills' },
                 skills.length === 0 && payload !== null && !snap.loading
-                  ? emptyNote('无可用技能')
+                  ? emptyNote(t('empty.skills'))
                   : h('div', {}, ...skills.map(skillRow)),
               ),
               h(
                 Tabs.Panel,
                 { value: 'mcp' },
                 mcp.length === 0 && payload !== null && !snap.loading
-                  ? emptyNote('无 MCP 服务器')
+                  ? emptyNote(t('empty.mcp'))
                   : h('div', {}, ...mcp.map(serverRow)),
               ),
               h(
                 Tabs.Panel,
                 { value: 'system' },
                 systemTools.length === 0 && payload !== null && !snap.loading
-                  ? emptyNote('无系统工具')
+                  ? emptyNote(t('empty.system'))
                   : h('div', {}, ...systemTools.map(systemRow)),
               ),
             ),
@@ -709,12 +738,12 @@ export function apply(ctx: SlotContext): void {
         // secondary label color, hover-only wash.
         h(
           Tooltip,
-          { label: '会话上下文：技能与 MCP', side: 'top', delayMs: 200, disabled: snap.open },
+          { label: t('trigger.tooltip'), side: 'top', delayMs: 200, disabled: snap.open },
           h(
             Popover.Trigger,
             {
               className: 'ci-trigger',
-              'aria-label': '会话上下文：技能与 MCP',
+              'aria-label': t('trigger.tooltip'),
               style: {
                 display: 'grid',
                 placeItems: 'center',
@@ -743,7 +772,7 @@ export function apply(ctx: SlotContext): void {
               Popover.Popup,
               {
                 className: 'ci-panel',
-                'aria-label': '会话上下文',
+                'aria-label': t('panel.aria'),
                 style: {
                   boxSizing: 'border-box',
                   width: '360px',
@@ -790,8 +819,8 @@ export function apply(ctx: SlotContext): void {
                     h(Input, {
                       className: 'ci-filter',
                       value: query,
-                      placeholder: '筛选名称或描述…',
-                      'aria-label': '筛选技能与工具',
+                      placeholder: t('filter.placeholder'),
+                      'aria-label': t('filter.aria'),
                       // Not a credential field: keep password managers and the
                       // spellchecker out of it.
                       autoComplete: 'off',
@@ -827,7 +856,7 @@ export function apply(ctx: SlotContext): void {
                           type: 'button',
                           onClick: () => { setQuery(''); },
                           className: 'ci-iconbtn',
-                          'aria-label': '清空筛选',
+                          'aria-label': t('filter.clear'),
                           style: {
                             display: 'grid',
                             placeItems: 'center',
@@ -856,7 +885,7 @@ export function apply(ctx: SlotContext): void {
                         'aria-live': 'polite',
                         style: { marginTop: '4px', color: TOK.textTertiary, fontVariantNumeric: 'tabular-nums' },
                       },
-                      `匹配 ${view?.total ?? 0} / ${totalAll} 项`,
+                      t('filter.count', { shown: view?.total ?? 0, total: totalAll }),
                     )
                   : null,
               ),
@@ -871,4 +900,4 @@ export function apply(ctx: SlotContext): void {
   );
 }
 
-export const inject = ['slots'];
+export const inject = ['slots', 'locale'];

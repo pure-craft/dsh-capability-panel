@@ -8,32 +8,16 @@ import {
 
 describe('capability disclosure state', () => {
   it('is collapsed and interactive by default', () => {
-    expect(resolveDisclosure(false, false, 'find-skills', '描述')).toEqual({
-      open: false,
-      disabled: false,
-      label: '展开 find-skills 的描述',
-    });
+    expect(resolveDisclosure(false, false)).toEqual({ open: false, disabled: false });
   });
 
-  it('reports expanded state with an accessible collapse label', () => {
-    expect(resolveDisclosure(true, false, 'find-skills', '描述')).toEqual({
-      open: true,
-      disabled: false,
-      label: '收起 find-skills 的描述',
-    });
+  it('reports expanded state', () => {
+    expect(resolveDisclosure(true, false)).toEqual({ open: true, disabled: false });
   });
 
   it('forces matching detail open and disables a no-feedback toggle while filtering', () => {
-    expect(resolveDisclosure(false, true, 'yunxiao', '工具')).toEqual({
-      open: true,
-      disabled: true,
-      label: 'yunxiao 的工具（筛选时保持展开）',
-    });
-    expect(resolveDisclosure(true, true, 'bash', '描述')).toEqual({
-      open: true,
-      disabled: true,
-      label: 'bash 的描述（筛选时保持展开）',
-    });
+    expect(resolveDisclosure(false, true)).toEqual({ open: true, disabled: true });
+    expect(resolveDisclosure(true, true)).toEqual({ open: true, disabled: true });
   });
 });
 

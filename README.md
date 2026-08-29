@@ -23,6 +23,7 @@ This plugin turns both of those into a panel in the bottom-right of the conversa
 - **Blocked-attempt counts**: how many times the model still called a capability after it was turned off. A nonzero count means the model is acting from memory — the signal for whether the switch needs to tell the model more explicitly
 - **One-click command fill**: the button on a skill row drops `/skill-name` into the composer
 - **Filtering**: match on name or description, with matching descriptions auto-expanded while a filter is active
+- **Follows the UI language**: panel copy switches between 中文 and English with the host's language setting
 
 ## Install
 

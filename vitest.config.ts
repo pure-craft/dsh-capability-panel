@@ -35,7 +35,7 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        'src/client/{store,filter,disclosure}.ts': {
+        'src/client/{store,filter,disclosure,locale}.ts': {
           statements: 100,
           branches: 100,
           functions: 100,

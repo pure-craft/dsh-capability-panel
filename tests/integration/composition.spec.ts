@@ -35,6 +35,9 @@ describe('bundle declaration', () => {
     // injected or the browser half loads against an absent service.
     expect(dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-runtime');
     expect(dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-layout');
+    // The panel's copy registers into the locale runtime, so the locale
+    // client plugin must be mounted first or ctx.locale is absent.
+    expect(dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-locale');
   });
 
   it('exports both halves through paths the loader resolves', () => {

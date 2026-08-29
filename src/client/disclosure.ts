@@ -1,32 +1,19 @@
 export interface DisclosureState {
   readonly open: boolean;
   readonly disabled: boolean;
-  readonly label: string;
 }
 
 /**
  * Resolve one controlled disclosure's visible and interactive state.
  * Filtering deliberately preserves the user's stored preference while forcing
  * matching detail open; the disabled trigger prevents a no-feedback toggle.
+ * Labels are the caller's job — they go through the locale translate function.
  */
-export function resolveDisclosure(
-  expanded: boolean,
-  filtering: boolean,
-  subject: string,
-  detail: string,
-): DisclosureState {
+export function resolveDisclosure(expanded: boolean, filtering: boolean): DisclosureState {
   if (filtering) {
-    return {
-      open: true,
-      disabled: true,
-      label: `${subject} 的${detail}（筛选时保持展开）`,
-    };
+    return { open: true, disabled: true };
   }
-  return {
-    open: expanded,
-    disabled: false,
-    label: expanded ? `收起 ${subject} 的${detail}` : `展开 ${subject} 的${detail}`,
-  };
+  return { open: expanded, disabled: false };
 }
 
 /** Shared geometry and hover classes used by every capability header. */
