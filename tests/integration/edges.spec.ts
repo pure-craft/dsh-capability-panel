@@ -541,14 +541,16 @@ describe('boundary shape variants', () => {
 });
 
 describe('stats file location', () => {
-  it('falls back to the home directory when DSH_HOME is unset', async () => {
+  it('falls back to ~/.dsh when DSH_HOME is unset', async () => {
     const previous = env['DSH_HOME'];
     delete env['DSH_HOME'];
     try {
       const route = bootHost();
       const { parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
 
-      expect((parsed as { logFile: string }).logFile).toBe(join(homedir(), 'agent-toolkit', 'stats.jsonl'));
+      // Not `~/agent-toolkit`: a normal install does not export DSH_HOME into
+      // the server process, so this fallback is the common path, not an edge.
+      expect((parsed as { logFile: string }).logFile).toBe(join(homedir(), '.dsh', 'agent-toolkit', 'stats.jsonl'));
     } finally {
       if (previous !== undefined) env['DSH_HOME'] = previous;
     }

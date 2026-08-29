@@ -487,7 +487,13 @@ export function apply(ctx: HostServices): void {
   // turned off? JSONL append-only log plus an in-memory aggregate seeded from
   // the log at startup, so counts survive restarts. I/O failure must never
   // break the toggle path — stats are observability, not control flow.
-  const statsFile = join(process.env['DSH_HOME'] ?? homedir(), 'agent-toolkit', 'stats.jsonl');
+  // DSH_HOME is not exported into the server process in a normal install
+  // (verified against a live dsh), so the fallback must rebuild the same
+  // location rather than land in the home directory root: `~/agent-toolkit/`
+  // would pollute $HOME and sit outside the directory every other plugin
+  // keeps its state in.
+  const dshHome = process.env['DSH_HOME'] ?? join(homedir(), '.dsh');
+  const statsFile = join(dshHome, 'agent-toolkit', 'stats.jsonl');
   let blockedCounts: Record<string, number> = {};
   try {
     blockedCounts = aggregateBlocked(readFileSync(statsFile, 'utf8').split('\n'));
