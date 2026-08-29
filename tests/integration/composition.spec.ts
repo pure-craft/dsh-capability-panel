@@ -55,11 +55,16 @@ describe('bundle declaration', () => {
 });
 
 /** A minimal host exposing the services the route needs to answer a GET. */
-function hostWithCatalog() {
+/**
+ * Boot the real `apply()` over a fake host and return its registered route.
+ * `overrides` replaces whole service slots, which is how the degradation tests
+ * remove a service or make one fail without duplicating this wiring.
+ */
+export function hostWithCatalog(overrides: Record<string, unknown> = {}) {
   const routes: { path: string; handler: (req: unknown, res: unknown) => Promise<void> | void }[] = [];
   const effects: (() => (() => void) | void)[] = [];
 
-  const ctx = {
+  const base = {
     webServer: {
       register(spec: { path: string; handler: (req: unknown, res: unknown) => Promise<void> | void }) {
         routes.push(spec);
@@ -99,6 +104,13 @@ function hostWithCatalog() {
     },
   };
 
+  // `undefined` in an override removes the service, which is how the
+  // "service absent" degradations are expressed.
+  const merged: Record<string, unknown> = { ...base, ...overrides };
+  const ctx: Record<string, unknown> = Object.fromEntries(
+    Object.entries(merged).filter(([, value]) => value !== undefined),
+  );
+
   apply(ctx as never);
   for (const factory of effects) factory();
 
@@ -108,7 +120,7 @@ function hostWithCatalog() {
 }
 
 /** GET the route the way a loopback browser request arrives. */
-async function get(
+export async function get(
   handler: (req: unknown, res: unknown) => Promise<void> | void,
   url: string,
   remoteAddress = '127.0.0.1',
