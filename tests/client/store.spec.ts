@@ -199,3 +199,201 @@ describe('reset (connection/reset)', () => {
     expect(store.getSnapshot().payload).toBeNull();
   });
 });
+
+describe('error detail extraction', () => {
+  it('surfaces the host\'s error field alongside the status code', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ error: 'session agent is not available' }),
+    })));
+
+    await store.refresh('s');
+    expect(store.getSnapshot().error).toBe('HTTP 500：session agent is not available');
+  });
+
+  it('keeps the status-only message when the body is not valid JSON', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: false,
+      status: 502,
+      json: () => Promise.reject(new Error('Unexpected token < in JSON')),
+    })));
+
+    await store.refresh('s');
+    expect(store.getSnapshot().error).toBe('HTTP 502');
+  });
+
+  it('keeps the status-only message when the body carries no error string', async () => {
+    const store = await loadStore();
+    for (const body of [null, 'plain text', { error: 42 }, {}]) {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve(body),
+      })));
+      await store.refresh('s');
+      expect(store.getSnapshot().error).toBe('HTTP 503');
+    }
+  });
+
+  it('reports a non-Error rejection through String()', async () => {
+    const store = await loadStore();
+    // A fetch layer can surface a bare string; that is the condition under test.
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject('network down')));
+
+    await store.refresh('s');
+    expect(store.getSnapshot().error).toBe('network down');
+  });
+});
+
+describe('setCapability', () => {
+  it('posts the toggle and adopts the returned payload', async () => {
+    const store = await loadStore();
+    const updated = payloadOf('s');
+    const fetchMock = vi.fn(() => Promise.resolve(okResponse(updated)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await store.setCapability('s', 'skill', 'find-skills', false);
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/agent-toolkit?session=s', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ kind: 'skill', name: 'find-skills', enabled: false }),
+    }));
+    expect(store.getSnapshot().payload).toEqual(updated);
+    expect(store.getSnapshot().error).toBeNull();
+  });
+
+  it('records the failure without clearing the last good payload', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse(payloadOf('s')))));
+    await store.refresh('s');
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('boom'))));
+    await store.setCapability('s', 'skill', 'x', false);
+
+    expect(store.getSnapshot().error).toBe('boom');
+    expect(store.getSnapshot().loading).toBe(false);
+  });
+
+  it('drops a stale answer when reset lands mid-flight', async () => {
+    const store = await loadStore();
+    const gate = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(() => gate.promise));
+
+    const pending = store.setCapability('s', 'skill', 'x', false);
+    store.reset();
+    gate.resolve(okResponse(payloadOf('s')));
+    await pending;
+
+    expect(store.getSnapshot().payload).toBeNull();
+  });
+
+  it('drops a stale failure when reset lands mid-flight', async () => {
+    const store = await loadStore();
+    const gate = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(() => gate.promise));
+
+    const pending = store.setCapability('s', 'skill', 'x', false);
+    store.reset();
+    gate.reject(new Error('too late'));
+    await pending;
+
+    expect(store.getSnapshot().error).toBeNull();
+  });
+});
+
+describe('remaining guards', () => {
+  it('close() on an already-closed panel does not notify', async () => {
+    const store = await loadStore();
+    let notifications = 0;
+    const unsubscribe = store.subscribe(() => { notifications += 1; });
+
+    store.close();
+    expect(notifications).toBe(0);
+    expect(store.getSnapshot().open).toBe(false);
+    unsubscribe();
+  });
+
+  it('rejects a payload the client cannot parse, rather than showing an empty catalog', async () => {
+    const store = await loadStore();
+    // A host/client version skew delivers well-formed JSON with the wrong
+    // fields; an empty panel would misreport it as "no skills".
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ unexpected: true }),
+    })));
+
+    await store.refresh('s');
+    expect(store.getSnapshot().error).toMatch(/version skew/);
+    expect(store.getSnapshot().payload).toBeNull();
+  });
+
+  it('drops a superseded refresh answer so the newer one wins', async () => {
+    const store = await loadStore();
+    const stale = deferred<Response>();
+    const fresh = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise));
+
+    const first = store.refresh('a');
+    const second = store.refresh('b');
+    // Resolve out of order: the superseded request answers last and must lose.
+    fresh.resolve(okResponse(payloadOf('b')));
+    await second;
+    stale.resolve(okResponse(payloadOf('a')));
+    await first;
+
+    expect(store.getSnapshot().payload?.sessionId).toBe('b');
+  });
+
+  it('drops a superseded refresh failure so it cannot overwrite a good state', async () => {
+    const store = await loadStore();
+    const stale = deferred<Response>();
+    const fresh = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise));
+
+    const first = store.refresh('a');
+    const second = store.refresh('b');
+    fresh.resolve(okResponse(payloadOf('b')));
+    await second;
+    stale.reject(new Error('stale failure'));
+    await first;
+
+    expect(store.getSnapshot().error).toBeNull();
+    expect(store.getSnapshot().payload?.sessionId).toBe('b');
+  });
+});
+
+describe('final branches', () => {
+  it('close() on an open panel clears the flag', async () => {
+    const store = await loadStore();
+    store.toggle();
+    expect(store.getSnapshot().open).toBe(true);
+
+    store.close();
+    expect(store.getSnapshot().open).toBe(false);
+  });
+
+  it('a live setCapability failure reaches the panel', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('toggle rejected'))));
+
+    await store.setCapability('s', 'system-tool', 'bash', false);
+    expect(store.getSnapshot().error).toBe('toggle rejected');
+  });
+});
+
+describe('non-Error rejection in setCapability', () => {
+  it('stringifies a thrown non-Error value', async () => {
+    const store = await loadStore();
+    // A fetch layer can surface a bare string; that is the condition under test.
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject('socket closed')));
+
+    await store.setCapability('s', 'mcp-tool', 'web_search', false);
+    expect(store.getSnapshot().error).toBe('socket closed');
+  });
+});

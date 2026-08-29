@@ -90,8 +90,14 @@
           }
         ],
         "typescript/unbound-method": "error",
-        "typescript/use-unknown-in-catch-callback-variable": "error"
-      }
+        "typescript/use-unknown-in-catch-callback-variable": "error",
+        "react/rules-of-hooks": "error",
+        "react/exhaustive-deps": "error"
+      },
+      "plugins": [
+        "typescript",
+        "react"
+      ]
     }
   ]
 }

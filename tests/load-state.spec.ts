@@ -189,3 +189,33 @@ describe('groupMcpTools', () => {
     expect(groupMcpTools(['mcp__onlyserver', 'mcp__s__', 'mcp____t'])).toEqual([]);
   });
 });
+
+describe('surfaceOp variants', () => {
+  it('ignores a surface op that is not a replace', () => {
+    // Only 'replace' shrinks the surface; other op kinds carry no range and
+    // must not be read as one.
+    const events = [
+      { seq: 1, surfaceOp: { op: 'truncate', start: 0, end: 5 } },
+      { seq: 2, surfaceOp: { op: 'replace', start: 0, end: 5 } },
+    ];
+    expect(collectReplacements(events as never)).toEqual([{ seq: 2, start: 0, end: 5 }]);
+  });
+
+  it('ignores append and absent ops', () => {
+    const events = [
+      { seq: 1, surfaceOp: 'append' },
+      { seq: 2, surfaceOp: null },
+      { seq: 3 },
+    ];
+    expect(collectReplacements(events as never)).toEqual([]);
+  });
+
+  it('ignores a replace whose range or seq is not numeric', () => {
+    const events = [
+      { seq: 1, surfaceOp: { op: 'replace', start: '0', end: 5 } },
+      { seq: 2, surfaceOp: { op: 'replace', start: 0, end: null } },
+      { seq: '3', surfaceOp: { op: 'replace', start: 0, end: 5 } },
+    ];
+    expect(collectReplacements(events as never)).toEqual([]);
+  });
+});

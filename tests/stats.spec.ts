@@ -110,3 +110,48 @@ describe('aggregateBlocked', () => {
     expect(aggregateBlocked(lines)).toEqual({ 'lark-im': 2, 'mcp__a__b': 1, 'mcp__a__c': 1 });
   });
 });
+
+describe('malformed input, the defensive branches', () => {
+  const skills = new Set(['find-skills']);
+  const tools = new Set(['bash']);
+
+  it('ignores a skill denial whose error message is not a string', () => {
+    const call = {
+      name: 'skill',
+      error: { message: 42 },
+      arguments: { name: 'find-skills' },
+    };
+    expect(classifyBlockedCall(call as never, skills, tools)).toBeNull();
+  });
+
+  it('ignores a skill denial whose arguments carry no usable name', () => {
+    const denial = 'skill is not available for model invocation';
+    for (const args of [null, 'string-args', { name: 42 }, {}]) {
+      const call = { name: 'skill', error: { message: denial }, arguments: args };
+      expect(classifyBlockedCall(call as never, skills, tools)).toBeNull();
+    }
+  });
+
+  it('ignores a tool denial whose error message is not a string', () => {
+    const call = { name: 'bash', error: { message: null } };
+    expect(classifyBlockedCall(call as never, skills, tools)).toBeNull();
+  });
+
+  it('reads no session id when the agent id is not a string', () => {
+    const call = {
+      name: 'bash',
+      agent: { id: 42 },
+      error: { message: 'x', info: { code: 'UNKNOWN_TOOL' } },
+    };
+    expect(classifyBlockedCall(call as never, skills, tools)?.sessionId).toBeNull();
+  });
+
+  it('skips a persisted record whose name is not a string', () => {
+    // A hand-edited or truncated JSONL line must not corrupt the aggregate.
+    const lines = [
+      JSON.stringify({ name: 42, kind: 'blocked-tool', sessionId: 's' }),
+      JSON.stringify({ name: 'bash', kind: 'blocked-tool', sessionId: 's' }),
+    ];
+    expect(aggregateBlocked(lines)).toEqual({ bash: 1 });
+  });
+});
