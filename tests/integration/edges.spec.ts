@@ -77,7 +77,12 @@ async function getJson(handler: Handler, url: string): Promise<{ status: number;
 }
 
 /** POST with an explicit raw body, so oversize and unparseable cases are reachable. */
-async function postRaw(handler: Handler, raw: string, streamable = true): Promise<{ status: number; body: string }> {
+async function postRaw(
+  handler: Handler,
+  raw: string | string[],
+  streamable = true,
+  streamError?: Error,
+): Promise<{ status: number; body: string }> {
   let status = 0;
   let out = '';
   const req: Record<string, unknown> = {
@@ -88,12 +93,19 @@ async function postRaw(handler: Handler, raw: string, streamable = true): Promis
   };
   if (streamable) {
     let onData: ((chunk: unknown) => void) | undefined;
+    let onEnd: (() => void) | undefined;
+    let onError: ((error: unknown) => void) | undefined;
     req['on'] = (event: string, listener: (chunk?: unknown) => void) => {
       if (event === 'data') onData = listener;
-      if (event === 'end') {
-        onData?.(raw);
-        listener();
-      }
+      if (event === 'end') onEnd = listener;
+      if (event === 'error') onError = listener;
+      // Emit on a microtask: a real stream fires after every listener is
+      // attached, not synchronously inside the second on() call.
+      queueMicrotask(() => {
+        for (const chunk of Array.isArray(raw) ? raw : [raw]) onData?.(chunk);
+        if (streamError !== undefined) onError?.(streamError);
+        else onEnd?.();
+      });
       return req;
     };
   }
@@ -105,9 +117,30 @@ describe('request body limits', () => {
   it('refuses a body past the size cap rather than buffering it', async () => {
     const route = bootHost();
     const oversize = JSON.stringify({ kind: 'skill', name: 'x'.repeat(20_000), enabled: false });
-    const { status } = await postRaw(route.handler, oversize);
+    const { status, body } = await postRaw(route.handler, oversize);
 
     expect(status).toBe(500);
+    expect(body).toMatch(/too large/);
+  });
+
+  it('stops reading once the cap has fired, even if more chunks arrive', async () => {
+    // A chunked upload that crosses the cap mid-stream: the rejection must
+    // stick, later chunks must not accumulate, and `end` must not resolve
+    // over the rejection.
+    const route = bootHost();
+    const half = 'x'.repeat(12_000);
+    const { status, body } = await postRaw(route.handler, [half, half, half]);
+
+    expect(status).toBe(500);
+    expect(body).toMatch(/too large/);
+  });
+
+  it('surfaces a stream error as a 500, not a hang', async () => {
+    const route = bootHost();
+    const { status, body } = await postRaw(route.handler, '{}', true, new Error('socket reset'));
+
+    expect(status).toBe(500);
+    expect(body).toMatch(/socket reset/);
   });
 
   it('refuses when the request exposes no readable stream', async () => {

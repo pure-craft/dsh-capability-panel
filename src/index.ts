@@ -422,18 +422,29 @@ function readRequestBody(req: IncomingLike): Promise<unknown> {
       return;
     }
     let body = '';
+    // Once settled (oversize, parse failure, stream error) later events must
+    // not keep accumulating into `body` or resolve over the rejection.
+    let settled = false;
+    const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      reject(error instanceof Error ? error : new Error(String(error)));
+    };
     req.on('data', (chunk) => {
+      if (settled) return;
       body += String(chunk);
-      if (body.length > 16_384) reject(new Error('request body too large'));
+      if (body.length > 16_384) fail(new Error('request body too large'));
     });
     req.on('end', () => {
+      if (settled) return;
+      settled = true;
       try {
         resolve(body === '' ? {} : JSON.parse(body));
       } catch {
         reject(new Error('invalid JSON body'));
       }
     });
-    req.on('error', reject);
+    req.on('error', fail);
   });
 }
 

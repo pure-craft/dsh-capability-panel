@@ -2,9 +2,10 @@ import { defineConfig } from 'tsdown';
 
 const packageId = 'dsh-agent-toolkit';
 
-// DSH 使用两套不同的加载器：宿主入口是普通的 Node ESM 模块，浏览器入口
-// 则必须是通过 `window.__ModuleLoader__` 注册的延迟 CJS 工厂。这里拆成两个
-// 独立配置，避免把普通的 browser/ESM bundle 当成 DSH 客户端模块。
+// DSH uses two different loaders: the host entry is a plain Node ESM module,
+// while the browser entry must be a deferred CJS factory registered through
+// `window.__ModuleLoader__`. Two separate configs keep an ordinary browser/ESM
+// bundle from ever being mistaken for a DSH client module.
 export default defineConfig([
   {
     name: packageId,
@@ -30,10 +31,12 @@ export default defineConfig([
     format: 'cjs',
     platform: 'browser',
     dts: false,
-    // react 与 ui-primitives 必须保持 external：__ModuleLoader__ 工厂的 require
-    // 会把它们解析到宿主模块图里的同一份（react 打进来就是第二个实例，hooks
-    // 直接失效；primitives 打进来的副本则丢掉宿主的主题与 i18n 上下文）。
-    // dsh-client-runtime/client 同理（createSnapshotStore 要与宿主 store 引擎同实例）。
+    // react and ui-primitives must stay external: the __ModuleLoader__
+    // factory's require resolves them to the host module graph's copies
+    // (a bundled react is a second instance and hooks break; a bundled
+    // primitives copy loses the host's theme and i18n context). Same for
+    // dsh-client-runtime/client (createSnapshotStore must share the host's
+    // store engine instance).
     external: [
       'react',
       'react-dom',
@@ -49,8 +52,9 @@ export default defineConfig([
       'process.env.NODE_ENV': JSON.stringify('production'),
     },
     sourcemap: true,
-    // 两个入口共用 lib 目录；这里不能清理，否则会删掉上面生成的 lib/index.js，
-    // 使插件缺少宿主侧入口。
+    // Both entries share the lib directory; cleaning here would delete the
+    // lib/index.js the first config just wrote, leaving the plugin without a
+    // host entry.
     clean: false,
     outputOptions: {
       entryFileNames: 'client.js',

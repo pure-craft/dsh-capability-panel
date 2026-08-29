@@ -5,8 +5,8 @@
  * itself is a Base UI Popover with enter/exit animation and proper focus
  * management, anchored `side=top align=end` to the trigger.
  *
- * Component strategy (docs/plugin-architecture.md): interactive behavior comes
- * from @base-ui/react — Switch for toggles, Collapsible for disclosures,
+ * Component strategy: interactive behavior comes from @base-ui/react —
+ * Switch for toggles, Collapsible for disclosures,
  * Tabs for the three capability sections, Popover for the shell, Input for
  * the always-visible filter. We write only token skins. Base UI is bundled per-plugin (Plan A):
  * it is a devDependency because tsdown auto-externalizes `dependencies`, and

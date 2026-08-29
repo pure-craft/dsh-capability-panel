@@ -39,7 +39,7 @@ Open any conversation and click the layers icon to the right of the composer (28
 - Three tabs across the top: **Skills N** / **MCP N** / **Tools N**
 - The switch sits at the right of each row and takes effect immediately, with no refresh
 - Click the row itself to expand its description
-- The filter box at the top matches name or description, with `X / Y matched` at its right
+- The filter box at the top matches name or description, with an `X / Y matched` count just below it
 - A disabled item renders dimmed, and generates a note in the model's system prompt ("the user has turned off the following capabilities; do not attempt to call them")
 
 `run_code` is the reserved Code Mode transport — the registry forbids masking it, so it carries no switch.
