@@ -460,3 +460,24 @@ describe('idempotence and remaining service failures', () => {
     expect(errorOf(body)).toMatch(/session agent is not available/);
   });
 });
+
+describe('a preset-level tool, absent from the global registry', () => {
+  it('is masked through state alone, without a registry restrict', async () => {
+    // Only global names can be restricted at the registry; a preset-layer tool
+    // is masked by the waterfall and the guard reading the live map instead.
+    const { route, rec } = bootHost();
+    const { status } = await post(route.handler, { kind: 'system-tool', name: 'preset_only', enabled: false });
+
+    expect(status).toBe(200);
+    expect(rec.restrictCalls).toHaveLength(0);
+  });
+
+  it('is idempotent, and re-enabling clears it', async () => {
+    const { route } = bootHost();
+    await post(route.handler, { kind: 'system-tool', name: 'preset_only', enabled: false });
+    await post(route.handler, { kind: 'system-tool', name: 'preset_only', enabled: false });
+    const { status } = await post(route.handler, { kind: 'system-tool', name: 'preset_only', enabled: true });
+
+    expect(status).toBe(200);
+  });
+});

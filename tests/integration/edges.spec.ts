@@ -332,3 +332,83 @@ describe('the stats endpoint reads a real log', () => {
     }
   });
 });
+
+describe('reading a log that is being written', () => {
+  it('flags the answer when two reads never agree', async () => {
+    // readSession and listEvents are separate calls; a write landing between
+    // them yields a mismatched pair. The reader retries once, and if the log
+    // is still moving it says so rather than presenting a torn view as fact.
+    let seq = 0;
+    const route = bootHost({
+      sessionQuery: {
+        readSession: () => {
+          seq += 1;
+          return Promise.resolve({ events: [{ seq }] });
+        },
+        listEvents: () => Promise.resolve([{ seq: 99, surface: 'visible' }]),
+      },
+    });
+    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    const payload = parsed as { degraded?: string[] };
+    expect(payload.degraded?.some((note) => note.includes('log moved while reading'))).toBe(true);
+  });
+
+  it('accepts the answer once two reads agree', async () => {
+    const route = bootHost({
+      sessionQuery: {
+        readSession: () => Promise.resolve({ events: [{ seq: 7 }] }),
+        listEvents: () => Promise.resolve([{ seq: 7, surface: 'visible' }]),
+      },
+    });
+    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    const payload = parsed as { degraded?: string[] };
+    expect(payload.degraded?.some((note) => note.includes('log moved while reading'))).not.toBe(true);
+  });
+
+  it('treats a non-object readSession answer as an unreadable log', async () => {
+    const route = bootHost({
+      sessionQuery: {
+        readSession: () => Promise.resolve(null),
+        listEvents: () => Promise.resolve([]),
+      },
+    });
+    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    expect(status).toBe(200);
+    expect((parsed as { degraded?: string[] }).degraded?.length).toBeGreaterThan(0);
+  });
+
+  it('stringifies a non-Error thrown by the log reader', async () => {
+    const route = bootHost({
+      sessionQuery: {
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+        readSession: () => Promise.reject('log vanished'),
+        listEvents: () => Promise.resolve([]),
+      },
+    });
+    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    expect((parsed as { degraded?: string[] }).degraded?.some((n) => n.includes('log vanished'))).toBe(true);
+  });
+});
+
+describe('tool descriptions', () => {
+  it('omits an empty description rather than shipping a blank field', async () => {
+    const route = bootHost({
+      tools: {
+        schemas: () => [
+          { name: 'bash', description: '' },
+          { name: 'read', description: 'read a file' },
+        ],
+        guard: () => () => {},
+      },
+    });
+    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+
+    const payload = parsed as { systemTools: { name: string; description?: string }[] };
+    expect(payload.systemTools.find((t) => t.name === 'bash')).not.toHaveProperty('description');
+    expect(payload.systemTools.find((t) => t.name === 'read')?.description).toBe('read a file');
+  });
+});

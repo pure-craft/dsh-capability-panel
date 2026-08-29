@@ -201,3 +201,49 @@ describe('denials are counted', () => {
     expect(() => { host.onResult({ agent: { id: 's1' }, name: 'bash' }, {}); }).not.toThrow();
   });
 });
+
+describe('the result listener ignores what it should', () => {
+  it('ignores a result with no agent attached', async () => {
+    const host = bootHost();
+    await disable(host.route.handler, 'system-tool', 'bash');
+
+    expect(() => { host.onResult({ name: 'bash' }, { isError: true, error: { message: 'x' } }); }).not.toThrow();
+    expect(() => { host.onResult({ agent: { id: 42 }, name: 'bash' }, { isError: true, error: {} }); }).not.toThrow();
+  });
+
+  it('ignores a session that never switched anything off', () => {
+    const host = bootHost();
+    expect(() => {
+      host.onResult({ agent: { id: 'untouched' }, name: 'bash' }, { isError: true, error: { message: 'x' } });
+    }).not.toThrow();
+  });
+
+  it('does not count an error unrelated to a mask', async () => {
+    const host = bootHost();
+    await disable(host.route.handler, 'system-tool', 'bash');
+    // A tool that failed on its own merits is not a blocked attempt.
+    host.onResult(
+      { agent: { id: 's1' }, name: 'read' },
+      { isError: true, error: { message: 'ENOENT: no such file' } },
+    );
+
+    let body = '';
+    const req = {
+      method: 'GET',
+      url: '/api/agent-toolkit?session=s1',
+      headers: { host: '127.0.0.1:3080' },
+      socket: { remoteAddress: '127.0.0.1' },
+      on: () => req,
+    };
+    await host.route.handler(req, { writeHead() {}, end(chunk?: string) { body = chunk ?? ''; } });
+
+    expect((JSON.parse(body) as { blocked: Record<string, number> }).blocked['read']).toBeUndefined();
+  });
+
+  it('handles a failed result that carries no error object', async () => {
+    const host = bootHost();
+    await disable(host.route.handler, 'system-tool', 'bash');
+
+    expect(() => { host.onResult({ agent: { id: 's1' }, name: 'bash' }, { isError: true }); }).not.toThrow();
+  });
+});
