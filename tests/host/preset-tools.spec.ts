@@ -51,6 +51,8 @@ function fixture(options: FixtureOptions = {}) {
         { name: 'run_code' },
         { name: 'bash', description: 'shell' },
         { name: 'bash', description: 'duplicate ignored' },
+        { name: 'mcp__search__web', description: 'lookup' },
+        { name: 'mcp__search__image' },
         { name: '' },
         { name: 42 },
       ],
@@ -87,9 +89,17 @@ describe('preset tool settings', () => {
         name: 'Alpha',
         description: 'primary',
         trust: 'system',
-        tools: [
-          { name: 'bash', description: 'shell', enabled: false },
-          { name: 'run_code', enabled: true, reserved: true },
+        mcp: [{
+          server: 'search',
+          enabled: true,
+          tools: [
+            { name: 'mcp__search__image', label: 'image', enabled: true },
+            { name: 'mcp__search__web', label: 'web', description: 'lookup', enabled: true },
+          ],
+        }],
+        systemTools: [
+          { name: 'bash', label: 'bash', description: 'shell', enabled: false },
+          { name: 'run_code', label: 'run_code', enabled: true, reserved: true },
         ],
       }],
     });
@@ -112,6 +122,43 @@ describe('preset tool settings', () => {
     const host = fixture();
     host.emitCreated();
     expect(host.restrict).toHaveBeenCalledWith({ deny: ['bash'] });
+  });
+
+  it('toggles a whole MCP server in one write', async () => {
+    const host = fixture();
+    // 200 MCP tools behind two servers is the case this exists for: one write,
+    // not one request per tool.
+    await host.controller.setServer('alpha', 'search', false);
+    expect(host.update).toHaveBeenLastCalledWith({
+      presets: { alpha: ['bash', 'mcp__search__image', 'mcp__search__web'] },
+    });
+    // Starting from an empty stored set exercises the other side of `?? []`.
+    const fresh = fixture();
+    fresh.values.presets = {} as { alpha: string[] };
+    await fresh.controller.setServer('alpha', 'search', false);
+    expect(fresh.update).toHaveBeenLastCalledWith({
+      presets: { alpha: ['mcp__search__image', 'mcp__search__web'] },
+    });
+    const payload = await host.controller.setServer('alpha', 'search', true);
+    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] } });
+    expect(payload.presets[0]?.mcp[0]).toMatchObject({ server: 'search', enabled: true });
+  });
+
+  it('reports a server the preset does not expose', async () => {
+    const host = fixture();
+    await expect(host.controller.setServer('alpha', 'ghost', false)).rejects.toMatchObject({
+      status: 404,
+      message: 'MCP server "ghost" is not available in preset "alpha"',
+    });
+  });
+
+  it('marks a server disabled only when every one of its tools is off', async () => {
+    const host = fixture();
+    await host.controller.set('alpha', 'mcp__search__web', false);
+    const partly = await host.controller.list();
+    expect(partly.presets[0]?.mcp[0]?.enabled).toBe(true);
+    const all = await host.controller.setServer('alpha', 'search', false);
+    expect(all.presets[0]?.mcp[0]?.enabled).toBe(false);
   });
 
   it('registers the namespace only once across repeated reads and writes', async () => {
@@ -164,9 +211,17 @@ describe('preset tool settings', () => {
         id: 'alpha',
         name: 'alpha',
         trust: 'system',
-        tools: [
-          { name: 'bash', description: 'shell', enabled: false },
-          { name: 'run_code', enabled: true, reserved: true },
+        mcp: [{
+          server: 'search',
+          enabled: true,
+          tools: [
+            { name: 'mcp__search__image', label: 'image', enabled: true },
+            { name: 'mcp__search__web', label: 'web', description: 'lookup', enabled: true },
+          ],
+        }],
+        systemTools: [
+          { name: 'bash', label: 'bash', description: 'shell', enabled: false },
+          { name: 'run_code', label: 'run_code', enabled: true, reserved: true },
         ],
       }],
     });
@@ -176,7 +231,7 @@ describe('preset tool settings', () => {
     const host = fixture({ broken: true, standingError: new Error('must not mount') });
     await expect(host.controller.list()).resolves.toEqual({
       writable: true,
-      presets: [{ id: 'alpha', name: 'Alpha', description: 'primary', trust: 'system', broken: 'bad yaml', tools: [] }],
+      presets: [{ id: 'alpha', name: 'Alpha', description: 'primary', trust: 'system', broken: 'bad yaml', mcp: [], systemTools: [] }],
     });
   });
 

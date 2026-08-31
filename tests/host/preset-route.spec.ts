@@ -22,15 +22,16 @@ function request(method: string, url: string, body?: unknown, contentType = 'app
 }
 
 async function call(method: string, body?: unknown, contentType?: string) {
-  const payload = { presets: [{ id: 'alpha', name: 'Alpha', trust: 'system' as const, tools: [] }], writable: true };
+  const payload = { presets: [{ id: 'alpha', name: 'Alpha', trust: 'system' as const, mcp: [], systemTools: [] }], writable: true };
   const list = vi.fn(() => Promise.resolve(payload));
   const set = vi.fn(() => Promise.resolve(payload));
+  const setServer = vi.fn(() => Promise.resolve(payload));
   const handler = createRouteHandler(
     { get: () => undefined } as never,
     { states: new Map(), state: () => undefined, set: () => Promise.resolve() },
     { file: '/tmp/stats', read: () => ({ blocked: {}, records: [], warnings: [] }) } as never,
     {},
-    { list, set },
+    { list, set, setServer },
   );
   let status = 0;
   let text = '';
@@ -41,7 +42,7 @@ async function call(method: string, body?: unknown, contentType?: string) {
   });
   pendingRequest.flush();
   await pending;
-  return { status, text, list, set };
+  return { status, text, list, set, setServer };
 }
 
 describe('preset route', () => {
@@ -49,7 +50,7 @@ describe('preset route', () => {
     const result = await call('GET');
     expect(result.status).toBe(200);
     expect(JSON.parse(result.text)).toEqual({
-      presets: [{ id: 'alpha', name: 'Alpha', trust: 'system', tools: [] }],
+      presets: [{ id: 'alpha', name: 'Alpha', trust: 'system', mcp: [], systemTools: [] }],
       writable: true,
     });
     expect(result.list).toHaveBeenCalledOnce();
@@ -63,6 +64,20 @@ describe('preset route', () => {
     expect(JSON.parse(result.text)).toMatchObject({ writable: true });
   });
 
+  it('routes an explicit mcp-server toggle to the batch write', async () => {
+    const body = { presetId: 'alpha', kind: 'mcp-server', name: 'search', enabled: false };
+    const result = await call('POST', body);
+    expect(result.status).toBe(200);
+    expect(result.setServer).toHaveBeenCalledWith('alpha', 'search', false);
+    expect(result.set).not.toHaveBeenCalled();
+  });
+
+  it('routes an explicit tool toggle like an omitted kind', async () => {
+    const result = await call('POST', { presetId: 'alpha', kind: 'tool', name: 'bash', enabled: true });
+    expect(result.status).toBe(200);
+    expect(result.set).toHaveBeenCalledWith('alpha', 'bash', true);
+  });
+
   it('returns 405 and 415 before reading bodies', async () => {
     await expect(call('DELETE')).resolves.toMatchObject({ status: 405, text: 'method not allowed' });
     await expect(call('POST', {}, 'text/plain')).resolves.toMatchObject({ status: 415, text: 'expected application/json' });
@@ -73,6 +88,7 @@ describe('preset route', () => {
     [{ name: 'bash', enabled: false }, 'presetId is required'],
     [{ presetId: 'alpha', enabled: false }, 'name is required'],
     [{ presetId: 'alpha', name: 'bash', enabled: 'no' }, 'enabled must be boolean'],
+    [{ presetId: 'alpha', kind: 'server', name: 'bash', enabled: false }, 'kind must be "tool" or "mcp-server"'],
   ])('validates POST body %#', async (body, message) => {
     const result = await call('POST', body);
     expect(result.status).toBe(400);

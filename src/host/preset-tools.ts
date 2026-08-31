@@ -5,12 +5,15 @@ import type {
   AgentPresetLike,
   AgentPresetsService,
   HostServices,
+  PresetMcpServer,
   PresetToolEntry,
+  PresetToolRow,
   PresetToolPayload,
   PresetToolSettings,
   SettingsScopeLike,
   ToolsService,
 } from './types.js';
+import { groupMcpTools } from '../load-state.js';
 
 export const PRESET_SETTINGS_NAMESPACE = settingsNamespace('agent-toolkit');
 export const RESERVED_TOOL = 'run_code';
@@ -61,6 +64,8 @@ async function presetAndTools(
 export interface PresetToolController {
   list(): Promise<PresetToolPayload>;
   set(presetId: string, name: string, enabled: boolean): Promise<PresetToolPayload>;
+  /** Toggle every tool of one MCP server in a single write. */
+  setServer(presetId: string, server: string, enabled: boolean): Promise<PresetToolPayload>;
 }
 
 export function createPresetToolController(ctx: HostServices): PresetToolController {
@@ -101,17 +106,34 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
         }
       }
       const disabled = new Set(configured[preset.id] ?? []);
+      const byName = new Map(entries.map((entry) => [entry.name, entry]));
+      const row = (name: string, label: string): PresetToolRow => {
+        const description = byName.get(name)?.description;
+        return {
+          name,
+          label,
+          ...(description === undefined ? {} : { description }),
+          enabled: !disabled.has(name),
+          ...(name === RESERVED_TOOL ? { reserved: true } : {}),
+        };
+      };
+      // Same split the session panel uses, from the same helper: MCP tools
+      // collapse under their server, everything else is a system tool.
+      const mcp: PresetMcpServer[] = groupMcpTools(entries.map((entry) => entry.name)).map((group) => {
+        const tools = group.tools.map((tool) => row(`mcp__${group.server}__${tool}`, tool));
+        return { server: group.server, tools, enabled: tools.some((tool) => tool.enabled) };
+      });
+      const systemTools = entries
+        .filter((entry) => !entry.name.startsWith('mcp__'))
+        .map((entry) => row(entry.name, entry.name));
       return {
         id: preset.id,
         name: preset.name ?? preset.id,
         trust: preset.trust,
         ...(preset.description === undefined ? {} : { description: preset.description }),
         ...(preset.broken === undefined ? {} : { broken: preset.broken }),
-        tools: entries.map((entry) => ({
-          ...entry,
-          enabled: !disabled.has(entry.name),
-          ...(entry.name === RESERVED_TOOL ? { reserved: true } : {}),
-        })),
+        mcp,
+        systemTools,
       };
     }));
     return { presets: entries, writable: ctx.get('settings')?.writable === true };
@@ -145,6 +167,24 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     }
   });
 
+  /** Persist one preset's disabled set, then re-read. */
+  const persist = async (
+    presetId: string,
+    settingsScope: SettingsScopeLike<PresetToolSettings>,
+    disabled: ReadonlySet<string>,
+  ): Promise<PresetToolPayload> => {
+    const current = settingsScope.get().presets;
+    const presets = Object.fromEntries(
+      Object.entries({ ...current, [presetId]: [...disabled].sort() }).filter(([, value]) => value.length > 0),
+    );
+    // `replace`, not `update`: the settings merge recurses into the stored
+    // section, so a merge patch can only ever add or grow keys. Re-enabling a
+    // preset's last disabled tool has to REMOVE its key, and only a wholesale
+    // replace of this namespace's user section can express that.
+    await settingsScope.replace({ presets });
+    return list();
+  };
+
   return {
     list,
     async set(presetId, name, enabled) {
@@ -154,19 +194,25 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
       const { agentPresets, tools, settings: settingsScope } = services();
       const { tools: available } = await presetAndTools(agentPresets, tools, presetId);
       if (!available.some((tool) => tool.name === name)) throw new HttpError(404, `tool "${name}" is not available in preset "${presetId}"`);
-      const current = settingsScope.get().presets;
-      const disabled = new Set(current[presetId] ?? []);
+      const disabled = new Set(settingsScope.get().presets[presetId] ?? []);
       if (enabled) disabled.delete(name);
       else disabled.add(name);
-      const presets = Object.fromEntries(
-        Object.entries({ ...current, [presetId]: [...disabled].sort() }).filter(([, value]) => value.length > 0),
-      );
-      // `replace`, not `update`: the settings merge recurses into the stored
-      // section, so a merge patch can only ever add or grow keys. Re-enabling a
-      // preset's last disabled tool has to REMOVE its key, and only a wholesale
-      // replace of this namespace's user section can express that.
-      await settingsScope.replace({ presets });
-      return list();
+      return persist(presetId, settingsScope, disabled);
+    },
+    async setServer(presetId, server, enabled) {
+      const { agentPresets, tools, settings: settingsScope } = services();
+      const { tools: available } = await presetAndTools(agentPresets, tools, presetId);
+      // One write for the whole server: with 200 MCP tools behind two servers,
+      // switching them one request at a time is the interaction this replaces.
+      const prefix = `mcp__${server}__`;
+      const names = available.map((tool) => tool.name).filter((name) => name.startsWith(prefix));
+      if (names.length === 0) throw new HttpError(404, `MCP server "${server}" is not available in preset "${presetId}"`);
+      const disabled = new Set(settingsScope.get().presets[presetId] ?? []);
+      for (const name of names) {
+        if (enabled) disabled.delete(name);
+        else disabled.add(name);
+      }
+      return persist(presetId, settingsScope, disabled);
     },
   };
 }

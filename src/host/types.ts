@@ -47,18 +47,36 @@ export interface SettingsService {
   register<T>(namespace: string, schema: unknown, options?: { applies?: 'live' | 'restart' }): SettingsScopeLike<T>;
 }
 
+/** One switchable tool, shaped like the session panel's `ToolEntry`. */
+export interface PresetToolRow {
+  readonly name: string;
+  readonly label: string;
+  readonly description?: string;
+  readonly enabled: boolean;
+  readonly reserved?: boolean;
+}
+
+/** MCP tools grouped by server, mirroring the session panel's `McpServerEntry`. */
+export interface PresetMcpServer {
+  readonly server: string;
+  readonly tools: readonly PresetToolRow[];
+  /** False only when every tool this server exposes is disabled. */
+  readonly enabled: boolean;
+}
+
 export interface PresetToolEntry {
   readonly id: string;
   readonly name: string;
   readonly trust: 'system' | 'user';
   readonly description?: string;
   readonly broken?: string;
-  readonly tools: readonly {
-    readonly name: string;
-    readonly description?: string;
-    readonly enabled: boolean;
-    readonly reserved?: boolean;
-  }[];
+  /**
+   * Split the same way the session panel splits its own tools, so one filter
+   * and one row renderer serve both scopes: a preset carrying 200 MCP tools
+   * collapses to a handful of server rows instead of one flat list.
+   */
+  readonly mcp: readonly PresetMcpServer[];
+  readonly systemTools: readonly PresetToolRow[];
 }
 
 export interface PresetToolPayload {

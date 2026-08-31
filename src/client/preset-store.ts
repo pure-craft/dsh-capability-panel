@@ -2,9 +2,16 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
 
 export interface PresetToolView {
   readonly name: string;
+  readonly label: string;
   readonly description?: string;
   readonly enabled: boolean;
   readonly reserved?: boolean;
+}
+
+export interface PresetMcpView {
+  readonly server: string;
+  readonly tools: readonly PresetToolView[];
+  readonly enabled: boolean;
 }
 
 export interface PresetToolPresetView {
@@ -14,7 +21,8 @@ export interface PresetToolPresetView {
   readonly trust: 'system' | 'user';
   /** Why this preset cannot compose a session; absent when it can. */
   readonly broken?: string;
-  readonly tools: readonly PresetToolView[];
+  readonly mcp: readonly PresetMcpView[];
+  readonly systemTools: readonly PresetToolView[];
 }
 
 export interface PresetToolPayload {
@@ -38,6 +46,25 @@ let requests = 0;
 export const subscribePresetTools = (listener: () => void): (() => void) => store.subscribe(listener);
 export const getPresetToolsSnapshot = (): PresetToolState => store.getSnapshot();
 
+function parseTools(raw: readonly unknown[]): PresetToolView[] | null {
+  const tools: PresetToolView[] = [];
+  for (const rawTool of raw) {
+    if (rawTool === null || typeof rawTool !== 'object') return null;
+    const tool = rawTool as { name?: unknown; label?: unknown; description?: unknown; enabled?: unknown; reserved?: unknown };
+    if (typeof tool.name !== 'string' || typeof tool.label !== 'string' || typeof tool.enabled !== 'boolean') return null;
+    if (tool.description !== undefined && typeof tool.description !== 'string') return null;
+    if (tool.reserved !== undefined && typeof tool.reserved !== 'boolean') return null;
+    tools.push({
+      name: tool.name,
+      label: tool.label,
+      ...(tool.description === undefined ? {} : { description: tool.description }),
+      enabled: tool.enabled,
+      ...(tool.reserved === undefined ? {} : { reserved: tool.reserved }),
+    });
+  }
+  return tools;
+}
+
 function parsePayload(value: unknown): PresetToolPayload | null {
   if (value === null || typeof value !== 'object') return null;
   const candidate = value as { presets?: unknown; writable?: unknown };
@@ -45,23 +72,21 @@ function parsePayload(value: unknown): PresetToolPayload | null {
   const presets: PresetToolPresetView[] = [];
   for (const raw of candidate.presets) {
     if (raw === null || typeof raw !== 'object') return null;
-    const preset = raw as { id?: unknown; name?: unknown; description?: unknown; broken?: unknown; trust?: unknown; tools?: unknown };
-    if (typeof preset.id !== 'string' || typeof preset.name !== 'string' || (preset.trust !== 'system' && preset.trust !== 'user') || !Array.isArray(preset.tools)) return null;
+    const preset = raw as { id?: unknown; name?: unknown; description?: unknown; broken?: unknown; trust?: unknown; mcp?: unknown; systemTools?: unknown };
+    if (typeof preset.id !== 'string' || typeof preset.name !== 'string' || (preset.trust !== 'system' && preset.trust !== 'user')) return null;
+    if (!Array.isArray(preset.mcp) || !Array.isArray(preset.systemTools)) return null;
     if (preset.description !== undefined && typeof preset.description !== 'string') return null;
     if (preset.broken !== undefined && typeof preset.broken !== 'string') return null;
-    const tools: PresetToolView[] = [];
-    for (const rawTool of preset.tools) {
-      if (rawTool === null || typeof rawTool !== 'object') return null;
-      const tool = rawTool as { name?: unknown; description?: unknown; enabled?: unknown; reserved?: unknown };
-      if (typeof tool.name !== 'string' || typeof tool.enabled !== 'boolean') return null;
-      if (tool.description !== undefined && typeof tool.description !== 'string') return null;
-      if (tool.reserved !== undefined && typeof tool.reserved !== 'boolean') return null;
-      tools.push({
-        name: tool.name,
-        ...(tool.description === undefined ? {} : { description: tool.description }),
-        enabled: tool.enabled,
-        ...(tool.reserved === undefined ? {} : { reserved: tool.reserved }),
-      });
+    const systemTools = parseTools(preset.systemTools);
+    if (systemTools === null) return null;
+    const mcp: PresetMcpView[] = [];
+    for (const rawServer of preset.mcp) {
+      if (rawServer === null || typeof rawServer !== 'object') return null;
+      const server = rawServer as { server?: unknown; tools?: unknown; enabled?: unknown };
+      if (typeof server.server !== 'string' || typeof server.enabled !== 'boolean' || !Array.isArray(server.tools)) return null;
+      const tools = parseTools(server.tools);
+      if (tools === null) return null;
+      mcp.push({ server: server.server, tools, enabled: server.enabled });
     }
     presets.push({
       id: preset.id,
@@ -69,7 +94,8 @@ function parsePayload(value: unknown): PresetToolPayload | null {
       ...(preset.description === undefined ? {} : { description: preset.description }),
       ...(preset.broken === undefined ? {} : { broken: preset.broken }),
       trust: preset.trust,
-      tools,
+      mcp,
+      systemTools,
     });
   }
   return { presets, writable: candidate.writable };
@@ -125,7 +151,8 @@ export function selectPreset(id: string): void {
   store.set({ ...current, selectedId: id });
 }
 
-export function setPresetTool(presetId: string, name: string, enabled: boolean): Promise<void> {
+/** Serialized write: every toggle is one POST whose response is the new truth. */
+function mutate(body: { presetId: string; kind: 'tool' | 'mcp-server'; name: string; enabled: boolean }): Promise<void> {
   const requestEpoch = begin();
   const run = async (): Promise<void> => {
     try {
@@ -133,7 +160,7 @@ export function setPresetTool(presetId: string, name: string, enabled: boolean):
         payload: await requestPayload({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ presetId, name, enabled }),
+          body: JSON.stringify(body),
         }),
         error: null,
       });
@@ -144,6 +171,15 @@ export function setPresetTool(presetId: string, name: string, enabled: boolean):
   const result = queue.then(run);
   queue = result;
   return result;
+}
+
+export function setPresetTool(presetId: string, name: string, enabled: boolean): Promise<void> {
+  return mutate({ presetId, kind: 'tool', name, enabled });
+}
+
+/** Toggle a whole MCP server in one write instead of one request per tool. */
+export function setPresetServer(presetId: string, server: string, enabled: boolean): Promise<void> {
+  return mutate({ presetId, kind: 'mcp-server', name: server, enabled });
 }
 
 export function resetPresetTools(): void {

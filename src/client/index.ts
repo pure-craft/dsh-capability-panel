@@ -199,7 +199,7 @@ export function apply(ctx: SlotContext): void {
 
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
-      { name: 'settings.section', id: 'agent-toolkit-preset-context', order: 25, label: () => t('preset.nav') },
+      { name: 'settings.section', id: 'agent-toolkit', order: 25, label: () => t('preset.nav') },
       () => h(PresetToolSection, { t, subscribeLocale, getLocaleSnapshot }),
     ),
   );

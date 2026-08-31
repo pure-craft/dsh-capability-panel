@@ -43,7 +43,7 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        'src/client/{store,preset-store,filter,disclosure,locale,styles}.ts': {
+        'src/client/{store,preset-filter,preset-store,filter,disclosure,locale,styles}.ts': {
           statements: 100,
           branches: 100,
           functions: 100,
