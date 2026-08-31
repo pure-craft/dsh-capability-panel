@@ -63,6 +63,24 @@ function bootHost(overrides: Record<string, unknown> = {}) {
   return route;
 }
 
+async function requestText(handler: Handler, method: string, url: string): Promise<{ status: number; body: string; headers: Record<string, string> }> {
+  let status = 0;
+  let body = '';
+  let headers: Record<string, string> = {};
+  const req = {
+    method,
+    url,
+    headers: { host: '127.0.0.1:3080' },
+    socket: { remoteAddress: '127.0.0.1' },
+    on: () => req,
+  };
+  await handler(req, {
+    writeHead(code: number, values: Record<string, string>) { status = code; headers = values; },
+    end(chunk?: string) { body = chunk ?? ''; },
+  });
+  return { status, body, headers };
+}
+
 async function getJson(handler: Handler, url: string): Promise<{ status: number; parsed: unknown }> {
   let status = 0;
   let body = '';
@@ -114,13 +132,31 @@ async function postRaw(
   return { status, body: out };
 }
 
+describe('HTTP method boundaries', () => {
+  it('allows only GET on the stats endpoint', async () => {
+    const route = bootHost();
+    const result = await requestText(route.handler, 'POST', '/api/agent-toolkit/stats');
+
+    expect(result.status).toBe(405);
+    expect(result.headers['allow']).toBe('GET');
+  });
+
+  it('allows only GET and POST on the catalog endpoint', async () => {
+    const route = bootHost();
+    const result = await requestText(route.handler, 'DELETE', '/api/agent-toolkit');
+
+    expect(result.status).toBe(405);
+    expect(result.headers['allow']).toBe('GET, POST');
+  });
+});
+
 describe('request body limits', () => {
   it('refuses a body past the size cap rather than buffering it', async () => {
     const route = bootHost();
     const oversize = JSON.stringify({ kind: 'skill', name: 'x'.repeat(20_000), enabled: false });
     const { status, body } = await postRaw(route.handler, oversize);
 
-    expect(status).toBe(500);
+    expect(status).toBe(413);
     expect(body).toMatch(/too large/);
   });
 
@@ -132,7 +168,7 @@ describe('request body limits', () => {
     const half = 'x'.repeat(12_000);
     const { status, body } = await postRaw(route.handler, [half, half, half]);
 
-    expect(status).toBe(500);
+    expect(status).toBe(413);
     expect(body).toMatch(/too large/);
   });
 
@@ -148,7 +184,7 @@ describe('request body limits', () => {
     const route = bootHost();
     const { status, body } = await postRaw(route.handler, '{}', false);
 
-    expect(status).toBe(500);
+    expect(status).toBe(400);
     expect(body).toMatch(/stream unavailable/);
   });
 
@@ -156,7 +192,7 @@ describe('request body limits', () => {
     const route = bootHost();
     const { status, body } = await postRaw(route.handler, '');
 
-    expect(status).toBe(500);
+    expect(status).toBe(400);
     expect(body).toMatch(/kind must be/);
   });
 });
@@ -361,7 +397,9 @@ describe('the stats endpoint reads a real log', () => {
       // A truncated tail is normal for an append-only log; the endpoint must
       // still answer instead of turning a diagnostic into an outage.
       expect(status).toBe(200);
-      expect((parsed as { records: unknown[] }).records).toEqual([]);
+      const payload = parsed as { records: unknown[]; warnings?: string[] };
+      expect(payload.records).toEqual([]);
+      expect(payload.warnings?.[0]).toMatch(/line 1 skipped/);
     } finally {
       if (previous === undefined) delete env['DSH_HOME'];
       else env['DSH_HOME'] = previous;
@@ -470,7 +508,6 @@ describe('boundary shape variants', () => {
     const route = bootHost({
       tools: {
         schemas: () => {
-          // oxlint-disable-next-line typescript/only-throw-error
           throw 'registry exploded';
         },
         guard: () => () => {},
@@ -528,7 +565,6 @@ describe('boundary shape variants', () => {
     const route = bootHost({
       agents: {
         get: () => {
-          // oxlint-disable-next-line typescript/only-throw-error
           throw 'agent registry gone';
         },
       },

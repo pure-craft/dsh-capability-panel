@@ -109,8 +109,8 @@ function fakeHost() {
       effectFactories.push(factory);
       effectLabels.push(label);
     },
-    get(name: string) {
-      return (this as unknown as Record<string, unknown>)[name];
+    get(name: string): unknown {
+      return (ctx as unknown as Record<string, unknown>)[name];
     },
   };
 

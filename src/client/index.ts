@@ -28,6 +28,7 @@ import { filterPayload } from './filter.js';
 import { MCP_TOOL_ROOT_CLASS, ROW_HEADER_CLASS, ROW_ROOT_CLASS, resolveDisclosure } from './disclosure.js';
 import { LOCALE_NS, registerLocale } from './locale.js';
 import type { LocaleService } from './locale.js';
+import { PANEL_CSS, TOK } from './styles.js';
 
 // React comes through the module loader's `require`, which resolves the HOST's
 // copy — the runtime calls `apply(ctx, config)`, never `apply(ctx, react)`.
@@ -83,34 +84,6 @@ type ReactLike = {
   useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void;
 };
 
-// Fallbacks are the host's true LIGHT-theme values, verified against the
-// installed theme bundle (static neutral-bluish/deepseek/red/green/amber
-// scales) rather than guessed: a wrong fallback is invisible while the theme
-// loads and then wrong for anyone whose theme fails to.
-const TOK = {
-  textPrimary: 'var(--dsw-alias-label-primary, #0f1115)',
-  textSecondary: 'var(--dsw-alias-label-secondary, #61666b)',
-  textTertiary: 'var(--dsw-alias-label-tertiary, #81858c)',
-  link: 'var(--dsw-alias-state-business-primary, #4176e6)',
-  border: 'var(--dsw-alias-border-l1, rgba(0,0,0,.04))',
-  // Switch track/thumb colors: business-primary when on, the STRONGER border
-  // token when off, bg-layer-1 thumb.
-  switchOn: 'var(--dsw-alias-state-business-primary, #4176e6)',
-  switchOff: 'var(--dsw-alias-border-l2, rgba(0,0,0,.1))',
-  switchThumb: 'var(--dsw-alias-bg-layer-1, #ffffff)',
-  switchEase: 'var(--ds-ease-in-out, cubic-bezier(.4, 0, .2, 1))',
-  // Menu surface, exactly the ContextMeter panel's three tokens.
-  menuBg: 'var(--dsw-specific-menu, #ffffff)',
-  menuBorder: 'var(--dsw-alias-border-inverted, rgba(0,0,0,.1))',
-  menuShadow: 'var(--dsw-shadow-lv3, 0 12px 32px rgba(0,0,0,.22))',
-  bgBase: 'var(--dsw-alias-bg-base, #ffffff)',
-  fontFamily:
-    'var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif)',
-  success: 'var(--dsw-alias-state-success-primary, #22c55e)',
-  warn: 'var(--dsw-alias-state-warn-primary, #f59e0b)',
-  error: 'var(--dsw-alias-state-error-primary, #ec1313)',
-} as const;
-
 /**
  * Order by how much the reader needs to act on it: what fell out of context
  * first, then what is in it, then the rest.
@@ -151,48 +124,7 @@ export function apply(ctx: SlotContext): void {
     if (typeof document === 'undefined') return () => {};
     const style = document.createElement('style');
     style.dataset.plugin = 'dsh-agent-toolkit';
-    style.textContent = [
-      '.ci-trigger:focus-visible,.ci-switch:focus-visible,.ci-iconbtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px;border-radius:999px}',
-      '.ci-disclosure-trigger:focus-visible,.ci-server-trigger:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px;border-radius:4px}',
-      '.ci-tab:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px;border-radius:6px}',
-      '.ci-trigger:hover,.ci-iconbtn:hover,.ci-server-trigger:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
-      '.ci-switch:hover:not(:disabled){filter:brightness(1.12)}',
-      '.ci-row-head{display:flex;align-items:center;gap:8px;padding:6px 8px;margin:0 -8px;border-radius:8px}',
-      '.ci-row-head:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
-      // Low-frequency actions stay out of the row until its own header is hovered or focused.
-      '.ci-row-head .ci-send{opacity:0;transition:opacity .12s}',
-      '.ci-row-head:hover .ci-send,.ci-row-head:focus-within .ci-send{opacity:1}',
-      // Inline `outline: none` on the input is only legal with a visible
-      // replacement: border on :focus plus this ring on :focus-visible.
-      '.ci-filter:focus{border-color:var(--dsw-alias-state-business-primary,#4176e6)}',
-      '.ci-filter:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:0}',
-      '.ci-filter::placeholder{color:var(--dsw-alias-label-tertiary,#81858c)}',
-      // Popover enter/exit: Base UI applies data-starting-style for the first
-      // frame and data-ending-style while animating out.
-      '.ci-panel{transform-origin:var(--transform-origin);transition:opacity .14s var(--ds-ease-in-out,ease),transform .14s var(--ds-ease-in-out,ease)}',
-      '.ci-panel[data-starting-style],.ci-panel[data-ending-style]{opacity:0;transform:scale(.96) translateY(4px)}',
-      // Collapsible height animation driven by the measured panel height var.
-      '.ci-collapse{height:var(--collapsible-panel-height);transition:height .14s var(--ds-ease-in-out,ease);overflow:hidden}',
-      '.ci-collapse[data-starting-style],.ci-collapse[data-ending-style]{height:0}',
-      // Every capability header uses the same full-width hover boundary. Nested
-      // MCP tools keep hierarchy through indentation, not a different hover skin.
-      '.ci-toolrow{content-visibility:auto;contain-intrinsic-size:auto 30px}',
-      '.ci-disclosure-trigger{min-width:0;display:flex;align-items:center;gap:6px;flex:1 1 auto;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}',
-      '.ci-disclosure-trigger:disabled,.ci-server-trigger:disabled{cursor:default}',
-      '.ci-disclosure-trigger:hover .ci-name{color:var(--dsw-alias-label-primary,#0f1115)}',
-      '.ci-description{padding:3px 0 0 24px;line-height:18px;color:var(--dsw-alias-label-tertiary,#81858c);word-break:break-word}',
-      // Disclosure chevron: right when collapsed, down when expanded.
-      '.ci-chevron{display:grid;place-items:center;width:18px;height:18px;flex:none;color:var(--dsw-alias-label-tertiary,#81858c);border-radius:4px}',
-      '.ci-chevron svg{transition:transform .12s var(--ds-ease-in-out,ease)}',
-      '.ci-server-trigger[aria-expanded="true"] .ci-chevron svg,.ci-disclosure-trigger[aria-expanded="true"] .ci-chevron svg{transform:rotate(90deg)}',
-      // Segmented tabs: track on bg-base with a hairline so it reads in dark
-      // mode too; active tab raised on the menu surface.
-      '.ci-tabs{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--dsw-alias-bg-base,#ffffff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.04))}',
-      '.ci-tab{flex:1;height:24px;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#61666b);font:inherit;font-size:12px;line-height:1;cursor:pointer;font-variant-numeric:tabular-nums;padding:0 4px}',
-      '.ci-tab:hover{color:var(--dsw-alias-label-primary,#0f1115)}',
-      '.ci-tab[data-active]{background:var(--dsw-specific-menu,#fff);color:var(--dsw-alias-label-primary,#0f1115);box-shadow:0 1px 2px rgba(0,0,0,.08)}',
-      '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',
-    ].join('\n');
+    style.textContent = PANEL_CSS;
     document.head.appendChild(style);
     return () => { style.remove(); };
   }, 'agent-toolkit: stylesheet');
@@ -289,9 +221,13 @@ export function apply(ctx: SlotContext): void {
         else if (!open && current) close();
       };
 
-      const filtering = query.trim() !== '';
+      // One canonical query drives matching, clear affordance, Escape, and the
+      // filtered layout. The old split (`trim()` here, raw query elsewhere)
+      // made a spaces-only value look simultaneously filtered and unfiltered.
+      const normalizedQuery = query.trim();
+      const filtering = normalizedQuery !== '';
       const payload = snap.payload;
-      const view = payload === null ? null : filterPayload(payload, query);
+      const view = payload === null ? null : filterPayload(payload, normalizedQuery);
       const skills = view === null ? [] : sortSkills(view.skills);
       const mcp = view?.mcp ?? [];
       const systemTools = view?.systemTools ?? [];
@@ -830,7 +766,7 @@ export function apply(ctx: SlotContext): void {
                       onKeyDown: (event: { key: string; stopPropagation: () => void }) => {
                         // With a query, Escape clears it and the panel stays
                         // open; empty, it bubbles up and closes the panel.
-                        if (event.key !== 'Escape' || query === '') return;
+                        if (event.key !== 'Escape' || !filtering) return;
                         event.stopPropagation();
                         setQuery('');
                       },
@@ -849,7 +785,7 @@ export function apply(ctx: SlotContext): void {
                       },
                     }),
                   ),
-                  query !== ''
+                  filtering
                     ? h(
                         'button',
                         {

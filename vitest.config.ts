@@ -11,6 +11,7 @@ export default defineConfig({
       exclude: [
         // Type-only declarations have no runtime to cover.
         'src/contract.ts',
+        'src/host/types.ts',
         // The rendering half needs a browser-grade harness: React, Base UI,
         // and the host's primitives all resolve through the page's module
         // loader. It is covered instead by the composition test driving its
@@ -35,7 +36,13 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        'src/client/{store,filter,disclosure,locale}.ts': {
+        'src/host/*.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'src/client/{store,filter,disclosure,locale,styles}.ts': {
           statements: 100,
           branches: 100,
           functions: 100,

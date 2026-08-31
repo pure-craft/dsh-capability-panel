@@ -14,7 +14,7 @@ type Waterfall = (assembly: unknown, context: unknown, next: () => Promise<unkno
 type Guard = (execution: unknown) => string | undefined;
 type ResultListener = (execution: unknown, result: unknown) => void;
 
-function bootHost(options: { schemas?: { name: string; description: string }[] } = {}) {
+function bootHost(options: { schemas?: { name: string; description: string }[]; startWithoutTools?: boolean } = {}) {
   const routes: { path: string; handler: Handler }[] = [];
   const effects: (() => (() => void) | void)[] = [];
   const listeners: Record<string, unknown> = {};
@@ -65,11 +65,13 @@ function bootHost(options: { schemas?: { name: string; description: string }[] }
     effect(factory: () => (() => void) | void) {
       effects.push(factory);
     },
-    get(name: string) {
-      return (this as unknown as Record<string, unknown>)[name];
+    get(name: string): unknown {
+      return (ctx as unknown as Record<string, unknown>)[name];
     },
   };
 
+  const toolService = ctx.tools;
+  if (options.startWithoutTools === true) delete (ctx as Partial<typeof ctx>).tools;
   apply(ctx as never);
   for (const factory of effects) factory();
 
@@ -80,7 +82,8 @@ function bootHost(options: { schemas?: { name: string; description: string }[] }
     waterfall: listeners['system-prompt/assemble'] as Waterfall,
     onResult: listeners['tools/result'] as ResultListener,
     getGuard: () => guard,
-    /** The fake context itself, so a test can vanish a service mid-session. */
+    toolService,
+    /** The fake context itself, so a test can vanish or restore a service mid-session. */
     ctx: ctx as Record<string, unknown>,
   };
 }
@@ -163,6 +166,15 @@ describe('the system-prompt waterfall hides a masked tool', () => {
 });
 
 describe('the guard denies a masked tool that is called anyway', () => {
+  it('registers the guard lazily when tools appear after startup', async () => {
+    const host = bootHost({ startWithoutTools: true });
+    expect(host.getGuard()).toBeUndefined();
+    host.ctx['tools'] = host.toolService;
+
+    await disable(host.route.handler, 'system-tool', 'bash');
+    expect(host.getGuard()?.({ agent: { id: 's1' }, name: 'bash' })).toContain('bash');
+  });
+
   it('denies with a message naming the tool and the way back', async () => {
     const host = bootHost();
     await disable(host.route.handler, 'system-tool', 'bash');

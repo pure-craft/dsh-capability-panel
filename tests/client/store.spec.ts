@@ -303,6 +303,64 @@ describe('setCapability', () => {
 
     expect(store.getSnapshot().error).toBeNull();
   });
+
+  it('does not let a later refresh invalidate a mutation response', async () => {
+    const store = await loadStore();
+    const mutation = deferred<Response>();
+    const refresh = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(mutation.promise).mockReturnValueOnce(refresh.promise));
+    const changed = payloadOf('changed');
+
+    const writing = store.setCapability('s', 'skill', 'find-skills', false);
+    await vi.waitFor(() => { expect(fetch).toHaveBeenCalledTimes(1); });
+    const reading = store.refresh('s');
+    mutation.resolve(okResponse(changed));
+    await writing;
+    refresh.resolve(okResponse(payloadOf('stale-read')));
+    await reading;
+
+    expect(store.getSnapshot().payload).toStrictEqual(changed);
+    expect(store.getSnapshot().loading).toBe(false);
+  });
+
+  it('serializes mutations in user intent order', async () => {
+    const store = await loadStore();
+    const first = deferred<Response>();
+    const second = deferred<Response>();
+    const fetchMock = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const disabling = store.setCapability('s', 'skill', 'find-skills', false);
+    const enabling = store.setCapability('s', 'skill', 'find-skills', true);
+    await vi.waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(1); });
+
+    expect(store.getSnapshot().loading).toBe(true);
+    first.resolve(okResponse(payloadOf('disabled')));
+    await disabling;
+    await vi.waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(2); });
+    second.resolve(okResponse(payloadOf('enabled')));
+    await enabling;
+
+    expect(store.getSnapshot().payload?.sessionId).toBe('enabled');
+  });
+
+  it('does not let a refresh overlapping a later mutation commit stale data', async () => {
+    const store = await loadStore();
+    const refresh = deferred<Response>();
+    const mutation = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(refresh.promise).mockReturnValueOnce(mutation.promise));
+    const changed = payloadOf('changed');
+
+    const reading = store.refresh('s');
+    const writing = store.setCapability('s', 'system-tool', 'bash', false);
+    refresh.resolve(okResponse(payloadOf('stale-read')));
+    await reading;
+    mutation.resolve(okResponse(changed));
+    await writing;
+
+    expect(store.getSnapshot().payload).toStrictEqual(changed);
+    expect(store.getSnapshot().loading).toBe(false);
+  });
 });
 
 describe('remaining guards', () => {

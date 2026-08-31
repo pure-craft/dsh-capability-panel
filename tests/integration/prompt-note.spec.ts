@@ -81,8 +81,8 @@ function bootHost({ withSystemPrompt = true }: { withSystemPrompt?: boolean } = 
     effect(factory: () => (() => void) | void) {
       effects.push(factory);
     },
-    get(name: string) {
-      return (this as unknown as Record<string, unknown>)[name];
+    get(name: string): unknown {
+      return (ctx as unknown as Record<string, unknown>)[name];
     },
   };
 

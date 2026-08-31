@@ -1,16 +1,3 @@
-/**
- * Shared panel state, owned outside React.
- *
- * Two slots need the same open/closed flag: the toolbar button toggles it, the
- * overlay reads it. They mount in different places, so neither can own the other's
- * state — and component state would be wrong anyway. A tool call settling reorders
- * the conversation flow and remounts components in it; anything held in `useState`
- * there is lost. So the flag and the fetched payload live here, and components
- * subscribe through `useSyncExternalStore`.
- *
- * The store primitive is the host's `createSnapshotStore` (immer-backed,
- * reference-stable snapshots) — not a hand-rolled listener set.
- */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client';
 import type { InspectorPayload } from '../contract.js';
 import { parseInspectorPayload } from '../wire.js';
@@ -24,7 +11,6 @@ export interface InspectorState {
 }
 
 const INITIAL_STATE: InspectorState = { open: false, loading: false, payload: null, error: null };
-
 const store = createSnapshotStore<InspectorState>(INITIAL_STATE);
 
 export const subscribe = (listener: () => void): (() => void) => store.subscribe(listener);
@@ -32,24 +18,48 @@ export const subscribe = (listener: () => void): (() => void) => store.subscribe
 export const getSnapshot = (): InspectorState => store.getSnapshot();
 
 export function toggle(): void {
-  store.set({ ...store.getSnapshot(), open: !store.getSnapshot().open });
+  const snapshot = store.getSnapshot();
+  store.set({ ...snapshot, open: !snapshot.open });
 }
 
 export function close(): void {
-  if (store.getSnapshot().open) store.set({ ...store.getSnapshot(), open: false });
+  const snapshot = store.getSnapshot();
+  if (snapshot.open) store.set({ ...snapshot, open: false });
 }
 
 const ROUTE = '/api/agent-toolkit';
 
-/** Guards against a slow answer overwriting a newer one. */
-let requestSeq = 0;
+/**
+ * Reads and writes have different ordering domains. A newer refresh supersedes
+ * an older refresh, but it cannot invalidate a user's mutation response.
+ * `mutationVersion` changes at both ends of a write, so a GET overlapping a
+ * mutation cannot commit a possibly pre-write snapshot. `epoch` invalidates
+ * every answer from a dead connection.
+ */
+let epoch = 0;
+let refreshSeq = 0;
+let mutationVersion = 0;
+let activeRequests = 0;
+let mutationQueue: Promise<void> = Promise.resolve();
+
+function beginRequest(): number {
+  activeRequests += 1;
+  const snapshot = store.getSnapshot();
+  store.set({ ...snapshot, loading: true, error: null });
+  return epoch;
+}
+
+function finishRequest(requestEpoch: number, patch?: Partial<InspectorState>): void {
+  if (requestEpoch !== epoch) return;
+  activeRequests -= 1;
+  if (patch === undefined && activeRequests > 0) return;
+  store.set({ ...store.getSnapshot(), ...patch, loading: activeRequests > 0 });
+}
 
 async function requestPayload(sessionId: string | null, init?: RequestInit): Promise<InspectorPayload> {
   const query = sessionId === null ? '' : `?session=${encodeURIComponent(sessionId)}`;
   const response = await fetch(`${ROUTE}${query}`, { credentials: 'same-origin', ...init });
   if (!response.ok) {
-    // The host answers failures with a JSON { error } carrying the real cause
-    // (e.g. "session agent is not available") — surface it, not just the code.
     let detail = '';
     try {
       const body: unknown = await response.json();
@@ -57,67 +67,72 @@ async function requestPayload(sessionId: string | null, init?: RequestInit): Pro
         detail = `：${(body as { error: string }).error}`;
       }
     } catch {
-      // Keep the status-only message.
+      // A non-JSON error still has a useful HTTP status.
     }
     throw new Error(`HTTP ${response.status}${detail}`);
   }
-  // No bare cast: client hot-reloads independently of the host, so a version
-  // skew is exactly when the shape diverges — and it must read as an error,
-  // never as an empty catalog.
   const payload = parseInspectorPayload(await response.json());
   if (payload === null) throw new Error('unexpected payload shape (host/client version skew?)');
   return payload;
 }
 
 export async function refresh(sessionId: string | null): Promise<void> {
-  const mine = ++requestSeq;
-  store.set({ ...store.getSnapshot(), loading: true, error: null });
+  const requestEpoch = beginRequest();
+  const mine = ++refreshSeq;
+  const mutationAtStart = mutationVersion;
+  let patch: Partial<InspectorState> | undefined;
   try {
     const payload = await requestPayload(sessionId);
-    if (mine !== requestSeq) return;
-    store.set({ ...store.getSnapshot(), loading: false, payload, error: null });
+    if (requestEpoch === epoch && mine === refreshSeq && mutationAtStart === mutationVersion) {
+      patch = { payload, error: null };
+    }
   } catch (error) {
-    if (mine !== requestSeq) return;
-    // Keep the last good payload visible: a stale list beats an empty panel that
-    // reads as "you have no skills".
-    store.set({
-      ...store.getSnapshot(),
-      loading: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    if (requestEpoch === epoch && mine === refreshSeq && mutationAtStart === mutationVersion) {
+      // Keep the last good payload visible: stale data plus an explicit error is
+      // safer than an empty panel that falsely reads as "no capabilities".
+      patch = { error: error instanceof Error ? error.message : String(error) };
+    }
+  } finally {
+    finishRequest(requestEpoch, patch);
   }
 }
 
-export async function setCapability(
+export function setCapability(
   sessionId: string,
   kind: 'skill' | 'mcp-server' | 'mcp-tool' | 'system-tool',
   name: string,
   enabled: boolean,
 ): Promise<void> {
-  const mine = ++requestSeq;
-  store.set({ ...store.getSnapshot(), loading: true, error: null });
-  try {
-    const payload = await requestPayload(sessionId, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ kind, name, enabled }),
-    });
-    if (mine !== requestSeq) return;
-    store.set({ ...store.getSnapshot(), loading: false, payload, error: null });
-  } catch (error) {
-    if (mine !== requestSeq) return;
-    store.set({ ...store.getSnapshot(), loading: false, error: error instanceof Error ? error.message : String(error) });
-  }
+  const requestEpoch = beginRequest();
+  mutationVersion += 1;
+  const run = async (): Promise<void> => {
+    let patch: Partial<InspectorState> | undefined;
+    try {
+      const payload = await requestPayload(sessionId, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind, name, enabled }),
+      });
+      if (requestEpoch === epoch) patch = { payload, error: null };
+    } catch (error) {
+      if (requestEpoch === epoch) patch = { error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      if (requestEpoch === epoch) mutationVersion += 1;
+      finishRequest(requestEpoch, patch);
+    }
+  };
+  // The queue tail is normalized below, so it is always fulfilled here.
+  const result = mutationQueue.then(run);
+  // run absorbs transport failures into the store, so the queue stays fulfilled.
+  mutationQueue = result;
+  return result;
 }
 
-/**
- * Back to the initial state, on `connection/reset`. The bump of `requestSeq`
- * comes first: an answer from the dead connection must not land afterwards and
- * resurrect a payload the reset just dropped. The panel closes rather than
- * auto-refetching — after a host restart the session it described may be gone,
- * and reopening is one click.
- */
 export function reset(): void {
-  requestSeq += 1;
+  epoch += 1;
+  refreshSeq += 1;
+  mutationVersion += 1;
+  activeRequests = 0;
+  mutationQueue = Promise.resolve();
   store.set(INITIAL_STATE);
 }

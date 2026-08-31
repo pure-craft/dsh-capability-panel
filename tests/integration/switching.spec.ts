@@ -23,6 +23,13 @@ function bootHost(overrides: Record<string, unknown> = {}) {
   const rec: Recording = { restrictCalls: [], restrictDisposed: 0, registeredSkills: [], skillDisposed: 0 };
 
   const scopedTools = {
+    schemas: () => [
+      { name: 'bash' },
+      { name: 'run_code' },
+      { name: 'mcp__doubao-search__web_search' },
+      { name: 'mcp__doubao-search__image_search' },
+      { name: 'preset_only' },
+    ],
     restrict(filter: { deny: readonly string[] }) {
       rec.restrictCalls.push(filter);
       return () => {
@@ -60,11 +67,12 @@ function bootHost(overrides: Record<string, unknown> = {}) {
       get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c' }),
     },
     tools: {
-      schemas: () => [
+      schemas: (scope?: unknown) => [
         { name: 'bash', description: 'run a shell command' },
         { name: 'run_code', description: 'code mode transport' },
         { name: 'mcp__doubao-search__web_search', description: 'search the web' },
         { name: 'mcp__doubao-search__image_search', description: 'search images' },
+        ...(scope === undefined ? [] : [{ name: 'preset_only', description: 'preset scoped tool' }]),
       ],
       guard: () => () => {},
     },
@@ -76,8 +84,8 @@ function bootHost(overrides: Record<string, unknown> = {}) {
     effect(factory: () => (() => void) | void) {
       effects.push(factory);
     },
-    get(name: string) {
-      return (this as unknown as Record<string, unknown>)[name];
+    get(name: string): unknown {
+      return ctx[name];
     },
   };
 
@@ -93,7 +101,7 @@ function bootHost(overrides: Record<string, unknown> = {}) {
 
   const route = routes[0];
   if (route === undefined) throw new Error('route was never registered');
-  return { route, rec };
+  return { route, rec, ctx };
 }
 
 /** POST a capability toggle the way the client does. */
@@ -185,7 +193,7 @@ describe('request validation, before anything is switched', () => {
     const { route } = bootHost();
     const { status, body } = await post(route.handler, { kind: 'skill', name: 'x', enabled: false }, { session: null });
 
-    expect(status).toBe(500);
+    expect(status).toBe(400);
     expect(errorOf(body)).toMatch(/session is required/);
   });
 
@@ -193,7 +201,7 @@ describe('request validation, before anything is switched', () => {
     const { route } = bootHost();
     for (const bad of ['"a string"', '42', 'null']) {
       const { status, body } = await post(route.handler, bad);
-      expect(status).toBe(500);
+      expect(status).toBe(400);
       expect(errorOf(body)).toMatch(/invalid request body/);
     }
   });
@@ -202,7 +210,7 @@ describe('request validation, before anything is switched', () => {
     const { route } = bootHost();
     const { status } = await post(route.handler, '{not json');
 
-    expect(status).toBe(500);
+    expect(status).toBe(400);
   });
 
   it('rejects an unknown kind or a non-boolean enabled flag', async () => {
@@ -213,7 +221,7 @@ describe('request validation, before anything is switched', () => {
       { kind: 'skill', name: 'x', enabled: 'no' },
     ]) {
       const { status, body } = await post(route.handler, bad);
-      expect(status).toBe(500);
+      expect(status).toBe(400);
       expect(errorOf(body)).toMatch(/kind must be/);
     }
   });
@@ -222,7 +230,7 @@ describe('request validation, before anything is switched', () => {
     const { route } = bootHost();
     for (const bad of [{ kind: 'skill', enabled: false }, { kind: 'skill', name: '', enabled: false }]) {
       const { status, body } = await post(route.handler, bad);
-      expect(status).toBe(500);
+      expect(status).toBe(400);
       expect(errorOf(body)).toMatch(/name is required/);
     }
   });
@@ -299,7 +307,7 @@ describe('switching a system tool', () => {
     const { route } = bootHost();
     const { status, body } = await post(route.handler, { kind: 'system-tool', name: 'run_code', enabled: false });
 
-    expect(status).toBe(500);
+    expect(status).toBe(409);
     expect(errorOf(body)).toMatch(/run_code/);
   });
 
@@ -356,7 +364,7 @@ describe('switching MCP', () => {
     const { route } = bootHost();
     const { status, body } = await post(route.handler, { kind: 'mcp-server', name: 'ghost', enabled: false });
 
-    expect(status).toBe(500);
+    expect(status).toBe(404);
     expect(errorOf(body)).toMatch(/exposes no tools/);
   });
 
@@ -374,18 +382,31 @@ describe('when the session has no usable agent', () => {
     const { route } = bootHost({ agents: { get: () => undefined } });
     const { status, body } = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
 
-    expect(status).toBe(500);
+    expect(status).toBe(404);
     expect(errorOf(body)).toMatch(/session agent is not available/);
   });
 
-  it('reports the same when the agent exposes no scoped registry', async () => {
+  it('reports missing scoped capability registries as unavailable', async () => {
     const { route } = bootHost({
       agents: { get: () => ({ id: 'a', ctx: { get: () => undefined }, session: { header: {} } }) },
     });
-    const { status, body } = await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: false });
+    const tool = await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: false });
+    expect(tool.status).toBe(503);
+    expect(errorOf(tool.body)).toMatch(/session tools service is not available/);
 
-    expect(status).toBe(500);
-    expect(errorOf(body)).toMatch(/session agent is not available/);
+    const skill = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
+    expect(skill.status).toBe(503);
+    expect(errorOf(skill.body)).toMatch(/session skills service is not available/);
+  });
+
+  it('reports a missing scoped skills registry separately', async () => {
+    const { route } = bootHost({
+      agents: { get: () => ({ id: 'a', ctx: { get: () => undefined }, session: { header: {} } }) },
+    });
+    const { status, body } = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
+
+    expect(status).toBe(503);
+    expect(errorOf(body)).toMatch(/session skills service is not available/);
   });
 });
 
@@ -420,11 +441,21 @@ describe('idempotence and remaining service failures', () => {
     expect(rec.restrictDisposed).toBe(0);
   });
 
+  it('rejects unknown MCP and system tools without creating ghost masks', async () => {
+    const { route, rec } = bootHost();
+    for (const kind of ['mcp-tool', 'system-tool'] as const) {
+      const { status, body } = await post(route.handler, { kind, name: kind === 'mcp-tool' ? 'mcp__ghost__missing' : 'ghost', enabled: false });
+      expect(status).toBe(404);
+      expect(errorOf(body)).toMatch(/not available in this session/);
+    }
+    expect(rec.restrictCalls).toHaveLength(0);
+  });
+
   it('refuses a skill toggle when the skills service is absent', async () => {
     const { route } = bootHost({ skills: undefined });
     const { status, body } = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
 
-    expect(status).toBe(500);
+    expect(status).toBe(503);
     expect(errorOf(body)).toMatch(/skills service unavailable/);
   });
 
@@ -439,7 +470,7 @@ describe('idempotence and remaining service failures', () => {
     });
     const { status, body } = await post(route.handler, { kind: 'skill', name: 'ghost', enabled: false });
 
-    expect(status).toBe(500);
+    expect(status).toBe(404);
     expect(errorOf(body)).toMatch(/not available in this session/);
   });
 
@@ -451,7 +482,7 @@ describe('idempotence and remaining service failures', () => {
       enabled: false,
     });
 
-    expect(status).toBe(500);
+    expect(status).toBe(404);
     expect(errorOf(body)).toMatch(/session agent is not available/);
   });
 
@@ -459,7 +490,7 @@ describe('idempotence and remaining service failures', () => {
     const { route } = bootHost({ agents: { get: () => undefined } });
     const { status, body } = await post(route.handler, { kind: 'mcp-server', name: 'doubao-search', enabled: false });
 
-    expect(status).toBe(500);
+    expect(status).toBe(404);
     expect(errorOf(body)).toMatch(/session agent is not available/);
   });
 });
@@ -482,6 +513,32 @@ describe('a preset-level tool, absent from the global registry', () => {
     const { status } = await post(route.handler, { kind: 'system-tool', name: 'preset_only', enabled: true });
 
     expect(status).toBe(200);
+  });
+});
+
+describe('releasing masks after dependencies disappear', () => {
+  it('releases skill, server, MCP-tool and system-tool masks from owned state', async () => {
+    const { route, rec, ctx } = bootHost();
+    await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
+    await post(route.handler, { kind: 'mcp-server', name: 'doubao-search', enabled: false });
+    await post(route.handler, { kind: 'mcp-tool', name: 'mcp__doubao-search__web_search', enabled: false });
+    await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: false });
+    const disposedBefore = rec.restrictDisposed;
+
+    delete ctx['agents'];
+    delete ctx['tools'];
+    for (const toggle of [
+      { kind: 'skill', name: 'find-skills' },
+      { kind: 'mcp-server', name: 'doubao-search' },
+      { kind: 'mcp-tool', name: 'mcp__doubao-search__web_search' },
+      { kind: 'system-tool', name: 'bash' },
+    ] as const) {
+      const result = await post(route.handler, { ...toggle, enabled: true });
+      expect(result.status).toBe(200);
+    }
+
+    expect(rec.skillDisposed).toBe(1);
+    expect(rec.restrictDisposed).toBeGreaterThan(disposedBefore);
   });
 });
 
@@ -526,24 +583,16 @@ describe('capability paths with partial hosts', () => {
     const { route } = bootHost({ tools: undefined });
     const { status, body } = await post(route.handler, { kind: 'mcp-server', name: 'doubao-search', enabled: false });
 
-    expect(status).toBe(500);
-    expect(errorOf(body)).toMatch(/exposes no tools/);
+    expect(status).toBe(503);
+    expect(errorOf(body)).toMatch(/tools service unavailable/);
   });
 
-  it('masks a system tool through state alone when the global tools service is absent', async () => {
+  it('refuses a system-tool mask when no catalog can prove the name exists', async () => {
     const { route, rec } = bootHost({ tools: undefined });
-    const { status } = await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: false });
+    const { status, body } = await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: false });
 
-    expect(status).toBe(200);
-    // No global registry to restrict through: the mask is recorded in session
-    // state, where the waterfall and the guard read it, and re-enabling must
-    // find that entry again (the catalog itself cannot list the tool while
-    // the tools service is gone).
+    expect(status).toBe(503);
+    expect(errorOf(body)).toMatch(/tools service unavailable/);
     expect(rec.restrictCalls).toHaveLength(0);
-    const catalog = await readCatalog(route.handler);
-    expect(catalog.systemTools).toEqual([]);
-
-    const back = await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: true });
-    expect(back.status).toBe(200);
   });
 });

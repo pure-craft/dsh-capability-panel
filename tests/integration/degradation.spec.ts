@@ -35,6 +35,7 @@ describe('a missing service costs one section, not the answer', () => {
 
     expect(payload.systemTools).toEqual([]);
     expect(payload.mcp).toEqual([]);
+    expect(payload.degraded).toContain('tools service unavailable');
     expect(payload.skills.length).toBeGreaterThan(0);
   });
 
@@ -46,16 +47,18 @@ describe('a missing service costs one section, not the answer', () => {
     expect(payload.degraded?.length).toBeGreaterThan(0);
   });
 
-  it('serves the catalog when no agent resolves for the session', async () => {
+  it('does not fall back to global skills when no agent resolves for the session', async () => {
     const payload = await payloadFrom(hostWithCatalog({ agents: { get: () => undefined } }));
 
-    expect(payload.skills.length).toBeGreaterThan(0);
+    expect(payload.skills).toEqual([]);
+    expect(payload.degraded?.some((note) => note.includes('session agent "s1" unavailable'))).toBe(true);
   });
 
-  it('serves the catalog when the agents service itself is absent', async () => {
+  it('does not fall back to global skills when the agents service is absent', async () => {
     const payload = await payloadFrom(hostWithCatalog({ agents: undefined }));
 
-    expect(payload.skills.length).toBeGreaterThan(0);
+    expect(payload.skills).toEqual([]);
+    expect(payload.degraded).toContain('agents service unavailable: session skill view cannot be determined');
   });
 });
 
