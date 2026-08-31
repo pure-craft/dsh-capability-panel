@@ -14,6 +14,58 @@ export interface AgentsService {
   get(sessionId: string): AgentLike | undefined;
 }
 
+export interface AgentPresetLike {
+  readonly id: string;
+  readonly trust: 'system' | 'user';
+  readonly name?: string;
+  readonly description?: string;
+  readonly broken?: string;
+}
+
+export interface AgentPresetsService {
+  list(): Promise<AgentPresetLike[]>;
+  standingKeyFor(id?: string): Promise<unknown>;
+  composedPreset(agentCtx: unknown): string | undefined;
+}
+
+export interface PresetToolSettings {
+  readonly presets: Readonly<Record<string, readonly string[]>>;
+}
+
+export interface SettingsScopeLike<T> {
+  get(): T;
+  /**
+   * Wholesale replacement of this namespace's user section. The merge behind
+   * `update` recurses, so it cannot remove a key; removal is why this is the
+   * write path used here.
+   */
+  replace(section: object): Promise<void>;
+}
+
+export interface SettingsService {
+  readonly writable: boolean;
+  register<T>(namespace: string, schema: unknown, options?: { applies?: 'live' | 'restart' }): SettingsScopeLike<T>;
+}
+
+export interface PresetToolEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly trust: 'system' | 'user';
+  readonly description?: string;
+  readonly broken?: string;
+  readonly tools: readonly {
+    readonly name: string;
+    readonly description?: string;
+    readonly enabled: boolean;
+    readonly reserved?: boolean;
+  }[];
+}
+
+export interface PresetToolPayload {
+  readonly presets: readonly PresetToolEntry[];
+  readonly writable: boolean;
+}
+
 export interface SkillsService {
   list(lookup: { cwd?: string; scope?: unknown }): Promise<readonly SkillSummary[]>;
   get(name: string, lookup: { cwd?: string; scope?: unknown }): Promise<SkillDefinitionLike | undefined>;
@@ -38,9 +90,15 @@ export interface HostServices {
     }): () => void;
   };
   get(name: 'agents'): AgentsService | undefined;
+  get(name: 'agentPresets'): AgentPresetsService | undefined;
+  get(name: 'settings'): SettingsService | undefined;
   get(name: 'skills'): SkillsService | undefined;
   get(name: 'tools'): ToolsService | undefined;
   get(name: 'sessionQuery'): SessionQueryService | undefined;
+  on(
+    event: 'agent/created',
+    listener: (payload: { agent: AgentLike & { readonly ctx: { get(name: 'tools'): ScopedToolsRegistry | undefined } } }) => void,
+  ): void;
   on(
     event: 'tools/result',
     listener: (

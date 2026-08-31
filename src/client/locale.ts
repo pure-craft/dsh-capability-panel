@@ -47,6 +47,16 @@ export const zh: Record<string, string> = {
   'disclosure.pinned': '{subject} 的{detail}（筛选时保持展开）',
   'detail.description': '描述',
   'detail.tools': '工具',
+  'preset.nav': 'Preset 工具微调',
+  'preset.title': 'Preset 工具微调',
+  'preset.intro': '设置每个 Agent preset 的默认工具集合。仅对之后新建或恢复的会话生效；当前会话里的临时开关保持独立。',
+  'preset.readonly': '当前设置存储不可写；你可以查看工具，但无法保存微调。',
+  'preset.choose': 'Agent preset',
+  'preset.tools': '工具（{count}）',
+  'preset.empty': '没有可用的 Agent preset。',
+  'preset.noTools': '这个 preset 没有可用工具。',
+  'preset.reserved': '{name} 是保留传输工具，不能关闭。',
+  'preset.broken': '这个 preset 无法组装会话：{reason}。修好它之后才能列出工具。',
 };
 
 export const en: Record<string, string> = {
@@ -83,6 +93,16 @@ export const en: Record<string, string> = {
   'disclosure.pinned': '{detail} for {subject} (kept open while filtering)',
   'detail.description': 'description',
   'detail.tools': 'tools',
+  'preset.nav': 'Preset tool tuning',
+  'preset.title': 'Preset tool tuning',
+  'preset.intro': 'Choose the default tool set for each agent preset. This applies only to sessions created or resumed afterward; temporary switches in the current session stay independent.',
+  'preset.readonly': 'Settings storage is read-only. You can inspect tools, but changes cannot be saved.',
+  'preset.choose': 'Agent preset',
+  'preset.tools': 'Tools ({count})',
+  'preset.empty': 'No agent presets are available.',
+  'preset.noTools': 'This preset exposes no tools.',
+  'preset.reserved': '{name} is a reserved transport and cannot be disabled.',
+  'preset.broken': 'This preset cannot compose a session: {reason}. Fix it before its tools can be listed.',
 };
 
 /**

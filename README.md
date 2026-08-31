@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-A per-session skill and tool panel for DeepSeek Harness: see what the model actually has in hand on this step, and switch it off for one session.
+A skill and tool control surface for DeepSeek Harness: inspect and temporarily tune one running session, or persist the default tool set of each agent preset.
 
 ---
 
@@ -19,6 +19,7 @@ This plugin turns both of those into a panel in the bottom-right of the conversa
 - **Three sections**: skills, MCP, and system tools, each with its own count
 - **Load state**: every skill reads `loaded` (still in context), `evicted` (compaction took it), or `unloaded`, with its cumulative load count — a skill reloaded after an eviction reads "loaded ×2"
 - **Per-session switches**: turning a skill or tool off hides it from the next prompt assembly onward, while the existing conversation history and already-loaded instructions stay untouched
+- **Preset tool defaults**: Settings → Preset tool tuning persists a tool allow/deny default for each agent preset; sessions created or resumed afterward inherit it, while running-session switches remain separate
 - **MCP grouped by server**: switch one tool off, or the whole server at once
 - **Blocked-attempt counts**: how many times the model still called a capability after it was turned off. A nonzero count means the model is acting from memory — the signal for whether the switch needs to tell the model more explicitly
 - **One-click command fill**: the button on a skill row drops `/skill-name` into the composer
@@ -43,7 +44,9 @@ Open any conversation and click the layers icon to the right of the composer (28
 - The filter box at the top matches name or description, with an `X / Y matched` count just below it
 - A disabled item renders dimmed, and generates a note in the model's system prompt ("the user has turned off the following capabilities; do not attempt to call them")
 
-`run_code` is the reserved Code Mode transport — the registry forbids masking it, so it carries no switch.
+`run_code` is the reserved Code Mode transport — the registry forbids masking it, so its switch is disabled.
+
+For persistent defaults, open **Settings → Preset tool tuning**, select a preset, and switch tools on or off. The stored defaults are read when a session agent is created (including a restored session); they do not rewrite the preset files and do not change agents that are already running.
 
 ## How it works
 
@@ -53,7 +56,7 @@ Open any conversation and click the layers icon to the right of the composer (28
 
 **A skill's switch is a same-name shadow.** It registers a same-name skill with `modelInvocable: false` in that agent's own scope layer. The layered registry lets the nearest scope win the name, so the model-facing catalog and the `skill` loader both stop offering it, while `/name` user invocation stays available. Re-enabling disposes the shadow and the original wins again.
 
-**State is process-local and never written to the log.** Switch state is deliberately not a durable event: reopening a restored session starts from the preset's normal capabilities, and the conversation history itself is never affected.
+**Session switch state is process-local and never written to the log.** It remains a temporary override and the conversation history itself is never affected. Preset tool defaults are a separate persistent settings layer: a restored session starts a new agent that inherits its preset default, without reviving the old session-local switches.
 
 **Stats stay out of the control flow.** Blocked-attempt counts are appended to a JSONL log and replayed at startup; any I/O failure is swallowed rather than allowed to break the switch itself.
 

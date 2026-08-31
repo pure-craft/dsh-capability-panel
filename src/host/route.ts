@@ -2,6 +2,7 @@ import { isLoopback } from '../loopback.js';
 import { buildPayload, EMPTY_STATE } from './catalog.js';
 import type { CapabilityController } from './capabilities.js';
 import { errorMessage, HttpError } from './errors.js';
+import type { PresetToolController } from './preset-tools.js';
 import type { StatsStore } from './stats-store.js';
 import type { CapabilityKind, HostServices, IncomingLike, ServerResponseLike } from './types.js';
 
@@ -53,6 +54,23 @@ function json(res: ServerResponseLike, status: number, body: unknown, cache = fa
   res.end(JSON.stringify(body));
 }
 
+function validatePresetToggle(body: unknown): { presetId: string; name: string; enabled: boolean } {
+  if (body === null || typeof body !== 'object') throw new ClientRequestError('invalid request body');
+  const record = body as { presetId?: unknown; name?: unknown; enabled?: unknown };
+  if (typeof record.presetId !== 'string' || record.presetId === '') throw new ClientRequestError('presetId is required');
+  if (typeof record.name !== 'string' || record.name === '') throw new ClientRequestError('name is required');
+  if (typeof record.enabled !== 'boolean') throw new ClientRequestError('enabled must be boolean');
+  return { presetId: record.presetId, name: record.name, enabled: record.enabled };
+}
+
+function validatePresetContentType(req: IncomingLike, res: ServerResponseLike): boolean {
+  const contentType = req.headers['content-type'];
+  if (typeof contentType === 'string' && contentType.startsWith('application/json')) return true;
+  res.writeHead(415, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end('expected application/json');
+  return false;
+}
+
 function validateToggle(sessionId: string | null, body: unknown): { sessionId: string; kind: CapabilityKind; name: string; enabled: boolean } {
   if (sessionId === null) throw new ClientRequestError('session is required');
   if (body === null || typeof body !== 'object') throw new ClientRequestError('invalid request body');
@@ -69,6 +87,7 @@ export function createRouteHandler(
   capabilities: CapabilityController,
   stats: StatsStore,
   blockedCounts: Record<string, number>,
+  presetTools: PresetToolController,
 ): (req: IncomingLike, res: ServerResponseLike) => Promise<void> {
   return async (req, res) => {
     if (!isLoopback(req)) {
@@ -78,6 +97,21 @@ export function createRouteHandler(
     }
     try {
       const url = new URL(req.url ?? '/', 'http://dsh.local');
+      if (url.pathname === `${ROUTE}/presets`) {
+        if (req.method !== 'GET' && req.method !== 'POST') {
+          res.writeHead(405, { allow: 'GET, POST', 'content-type': 'text/plain; charset=utf-8' });
+          res.end('method not allowed');
+          return;
+        }
+        if (req.method === 'POST') {
+          if (!validatePresetContentType(req, res)) return;
+          const toggle = validatePresetToggle(await readRequestBody(req));
+          json(res, 200, await presetTools.set(toggle.presetId, toggle.name, toggle.enabled));
+          return;
+        }
+        json(res, 200, await presetTools.list());
+        return;
+      }
       if (url.pathname === `${ROUTE}/stats`) {
         if (req.method !== 'GET') {
           res.writeHead(405, { allow: 'GET', 'content-type': 'text/plain; charset=utf-8' });

@@ -18,6 +18,7 @@ export default defineConfig({
         // real route, and by the pure logic it delegates to — store.ts,
         // filter.ts, and disclosure.ts each gate at 100% on their own.
         'src/client/index.ts',
+        'src/client/preset-section.ts',
       ],
       reporter: ['text', 'html'],
       // Thresholds are declared per glob rather than as one global bar with
@@ -42,7 +43,7 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        'src/client/{store,filter,disclosure,locale,styles}.ts': {
+        'src/client/{store,preset-store,filter,disclosure,locale,styles}.ts': {
           statements: 100,
           branches: 100,
           functions: 100,

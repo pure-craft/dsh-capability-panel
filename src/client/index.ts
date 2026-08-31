@@ -29,6 +29,8 @@ import { MCP_TOOL_ROOT_CLASS, ROW_HEADER_CLASS, ROW_ROOT_CLASS, resolveDisclosur
 import { LOCALE_NS, registerLocale } from './locale.js';
 import type { LocaleService } from './locale.js';
 import { PANEL_CSS, TOK } from './styles.js';
+import { PresetToolSection } from './preset-section.js';
+import { resetPresetTools } from './preset-store.js';
 
 // React comes through the module loader's `require`, which resolves the HOST's
 // copy — the runtime calls `apply(ctx, config)`, never `apply(ctx, react)`.
@@ -112,7 +114,10 @@ export function apply(ctx: SlotContext): void {
   // A host restart drops every fact the panel shows; ui-skill clears its
   // caches on the same event. The store's reset also invalidates in-flight
   // answers from the dead connection.
-  ctx.on('connection/reset', reset);
+  ctx.on('connection/reset', () => {
+    reset();
+    resetPresetTools();
+  });
 
   // Pseudo-class states can't be expressed inline: one small stylesheet for
   // hover, focus-visible, enter/exit animation, the tabs skin, collapsible
@@ -191,6 +196,13 @@ export function apply(ctx: SlotContext): void {
         strokeLinejoin: 'round',
       }),
     );
+
+  ctx.slots.inject('settings.section', () =>
+    ctx.slots.register(
+      { name: 'settings.section', id: 'agent-toolkit-presets', order: 25, label: () => t('preset.nav') },
+      () => h(PresetToolSection, { t, subscribeLocale, getLocaleSnapshot }),
+    ),
+  );
 
   ctx.slots.inject('conversation.input.right', () =>
     ctx.slots.register({ name: 'conversation.input.right', id: 'agent-toolkit', order: 1000 }, (props: DockProps) => {

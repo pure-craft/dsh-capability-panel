@@ -1,4 +1,5 @@
 import { createCapabilityController } from './host/capabilities.js';
+import { createPresetToolController } from './host/preset-tools.js';
 import { createRouteHandler, ROUTE } from './host/route.js';
 import { createStatsStore } from './host/stats-store.js';
 import type { HostServices } from './host/types.js';
@@ -14,7 +15,8 @@ export function apply(ctx: HostServices): void {
     stats.append(record);
   };
   const capabilities = createCapabilityController(ctx, appendStats, blockedCounts);
-  const handler = createRouteHandler(ctx, capabilities, stats, blockedCounts);
+  const presetTools = createPresetToolController(ctx);
+  const handler = createRouteHandler(ctx, capabilities, stats, blockedCounts, presetTools);
 
   ctx.effect(
     () => webServer.register({ kind: 'prefix', path: ROUTE, handler }),
@@ -22,5 +24,5 @@ export function apply(ctx: HostServices): void {
   );
 }
 
-// Only the route is a hard dependency. Optional catalog services degrade per request.
+// Only the route is a hard dependency. Optional services report 503 on preset requests.
 export const inject = ['webServer'];
