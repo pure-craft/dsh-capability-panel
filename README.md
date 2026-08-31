@@ -19,7 +19,7 @@ This plugin turns both of those into a panel in the bottom-right of the conversa
 - **Three sections**: skills, MCP, and system tools, each with its own count
 - **Load state**: every skill reads `loaded` (still in context), `evicted` (compaction took it), or `unloaded`, with its cumulative load count — a skill reloaded after an eviction reads "loaded ×2"
 - **Per-session switches**: turning a skill or tool off hides it from the next prompt assembly onward, while the existing conversation history and already-loaded instructions stay untouched
-- **Preset tool defaults**: Settings → Preset tool tuning persists a tool allow/deny default for each agent preset; sessions created or resumed afterward inherit it, while running-session switches remain separate
+- **Preset context**: Settings → Preset context persists a tool allow/deny default for each agent preset; sessions created or resumed afterward inherit it, while the composer's Session context stays per-session
 - **MCP grouped by server**: switch one tool off, or the whole server at once
 - **Blocked-attempt counts**: how many times the model still called a capability after it was turned off. A nonzero count means the model is acting from memory — the signal for whether the switch needs to tell the model more explicitly
 - **One-click command fill**: the button on a skill row drops `/skill-name` into the composer
@@ -46,7 +46,7 @@ Open any conversation and click the layers icon to the right of the composer (28
 
 `run_code` is the reserved Code Mode transport — the registry forbids masking it, so its switch is disabled.
 
-For persistent defaults, open **Settings → Preset tool tuning**, select a preset, and switch tools on or off. The stored defaults are read when a session agent is created (including a restored session); they do not rewrite the preset files and do not change agents that are already running.
+The same switches exist at two scopes: **Session context** in the composer changes the conversation in front of you, and **Settings → Preset context** changes what every later session starts from. For persistent defaults, open Settings → Preset context, select a preset, and switch tools on or off. The stored defaults are read when a session agent is created (including a restored session); they do not rewrite the preset files and do not change agents that are already running.
 
 ## How it works
 
@@ -56,7 +56,7 @@ For persistent defaults, open **Settings → Preset tool tuning**, select a pres
 
 **A skill's switch is a same-name shadow.** It registers a same-name skill with `modelInvocable: false` in that agent's own scope layer. The layered registry lets the nearest scope win the name, so the model-facing catalog and the `skill` loader both stop offering it, while `/name` user invocation stays available. Re-enabling disposes the shadow and the original wins again.
 
-**Session switch state is process-local and never written to the log.** It remains a temporary override and the conversation history itself is never affected. Preset tool defaults are a separate persistent settings layer: a restored session starts a new agent that inherits its preset default, without reviving the old session-local switches.
+**Session switch state is process-local and never written to the log.** It remains a temporary override and the conversation history itself is never affected. Preset context is a separate persistent settings layer: a restored session starts a new agent that inherits its preset default, without reviving the old session-local switches.
 
 **Stats stay out of the control flow.** Blocked-attempt counts are appended to a JSONL log and replayed at startup; any I/O failure is swallowed rather than allowed to break the switch itself.
 
