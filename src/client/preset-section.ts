@@ -9,10 +9,11 @@ import {
   loadPresetTools,
   selectPreset,
   setPresetServer,
+  setPresetSkill,
   setPresetTool,
   subscribePresetTools,
 } from './preset-store.js';
-import type { PresetToolView } from './preset-store.js';
+import type { PresetSkillView, PresetToolView } from './preset-store.js';
 import type { Translate } from './locale.js';
 import { TOK } from './styles.js';
 
@@ -56,32 +57,76 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
   const writable = state.payload?.writable === true;
   const locked = state.loading || !writable;
 
-  const toggle = (tool: PresetToolView, presetId: string): React.ReactElement =>
+  /** One switch, shared by tool rows, server rows and skill rows. */
+  const switchFor = (
+    on: boolean,
+    frozen: boolean,
+    label: string,
+    onChange: (checked: boolean) => void,
+  ): React.ReactElement =>
     React.createElement(
       Switch.Root,
       {
-        checked: tool.enabled,
-        disabled: locked || tool.reserved === true,
-        onCheckedChange: (checked: boolean) => { void setPresetTool(presetId, tool.name, checked); },
+        checked: on,
+        disabled: locked || frozen,
+        onCheckedChange: onChange,
         className: 'ci-switch',
         style: {
           position: 'relative', width: '32px', height: '18px', padding: 0, border: 'none',
-          borderRadius: '999px', background: tool.enabled ? TOK.switchOn : TOK.switchOff,
-          cursor: locked || tool.reserved === true ? 'not-allowed' : 'pointer',
+          borderRadius: '999px', background: on ? TOK.switchOn : TOK.switchOff,
+          cursor: locked || frozen ? 'not-allowed' : 'pointer',
           opacity: state.loading ? 0.65 : 1, flex: '0 0 auto',
         },
-        'aria-label': tool.reserved === true
-          ? t('preset.reserved', { name: tool.label })
-          : t(tool.enabled ? 'action.disable' : 'action.enable', { name: tool.label }),
+        'aria-label': label,
       },
       React.createElement(Switch.Thumb, {
         className: 'ci-thumb',
         style: {
           display: 'block', width: '14px', height: '14px', margin: '2px', borderRadius: '50%',
-          background: TOK.switchThumb, transform: tool.enabled ? 'translateX(14px)' : 'translateX(0)',
+          background: TOK.switchThumb, transform: on ? 'translateX(14px)' : 'translateX(0)',
           transition: `transform .14s ${TOK.switchEase}`, boxShadow: '0 1px 2px rgba(0,0,0,.2)',
         },
       }),
+    );
+
+  const toggle = (tool: PresetToolView, presetId: string): React.ReactElement =>
+    switchFor(
+      tool.enabled,
+      tool.reserved === true,
+      tool.reserved === true
+        ? t('preset.reserved', { name: tool.label })
+        : t(tool.enabled ? 'action.disable' : 'action.enable', { name: tool.label }),
+      (checked) => { void setPresetTool(presetId, tool.name, checked); },
+    );
+
+  const skillRow = (skill: PresetSkillView, presetId: string): React.ReactElement =>
+    React.createElement(
+      'li',
+      { key: `skill:${skill.name}`, className: 'ci-preset-tool-row' },
+      React.createElement(
+        'div',
+        { className: 'ci-preset-tool-copy' },
+        React.createElement(
+          'span',
+          { className: 'ci-preset-tool-name' },
+          skill.name,
+          // A project skill is real but conditional: it exists because THIS
+          // workspace supplies it, and a session opened elsewhere will not see
+          // it. Marking beats hiding, which would just look like a short list.
+          skill.project === true
+            ? React.createElement('span', { className: 'ci-preset-badge' }, t('preset.projectSkill'))
+            : null,
+        ),
+        skill.description === undefined
+          ? null
+          : React.createElement('span', { className: 'ci-preset-tool-description' }, skill.description),
+      ),
+      switchFor(
+        skill.enabled,
+        false,
+        t(skill.enabled ? 'action.disable' : 'action.enable', { name: skill.name }),
+        (checked) => { void setPresetSkill(presetId, skill.name, checked); },
+      ),
     );
 
   const toolRow = (tool: PresetToolView, presetId: string, nested: boolean): React.ReactElement =>
@@ -111,7 +156,23 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     if (view.total === 0) {
       return React.createElement('p', null, filtering ? t('empty.match') : t('preset.noTools'));
     }
-    return React.createElement(
+    // Two labelled groups rather than one run of rows: a skill and a tool are
+    // different kinds of capability, and the earlier flat list was the exact
+    // complaint about this panel.
+    const groups: React.ReactElement[] = [];
+    if (view.skills.length > 0) {
+      groups.push(React.createElement(
+        'section',
+        { key: 'skills', className: 'ci-preset-part' },
+        React.createElement('h3', { className: 'ci-preset-part-title' }, t('preset.skillsHeading')),
+        React.createElement(
+          'ul',
+          { className: 'ci-preset-tool-list' },
+          ...view.skills.map((skill) => skillRow(skill, selected.id)),
+        ),
+      ));
+    }
+    const toolRows = React.createElement(
       'ul',
       { className: 'ci-preset-tool-list' },
       ...view.mcp.map((server) => {
@@ -149,29 +210,11 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
               ),
               // One write for the whole server: the reason a 200-tool preset is
               // tractable at all.
-              React.createElement(
-                Switch.Root,
-                {
-                  checked: server.enabled,
-                  disabled: locked,
-                  onCheckedChange: (checked: boolean) => { void setPresetServer(selected.id, server.server, checked); },
-                  className: 'ci-switch',
-                  style: {
-                    position: 'relative', width: '32px', height: '18px', padding: 0, border: 'none',
-                    borderRadius: '999px', background: server.enabled ? TOK.switchOn : TOK.switchOff,
-                    cursor: locked ? 'not-allowed' : 'pointer',
-                    opacity: state.loading ? 0.65 : 1, flex: '0 0 auto',
-                  },
-                  'aria-label': t(server.enabled ? 'action.disable' : 'action.enable', { name: server.server }),
-                },
-                React.createElement(Switch.Thumb, {
-                  className: 'ci-thumb',
-                  style: {
-                    display: 'block', width: '14px', height: '14px', margin: '2px', borderRadius: '50%',
-                    background: TOK.switchThumb, transform: server.enabled ? 'translateX(14px)' : 'translateX(0)',
-                    transition: `transform .14s ${TOK.switchEase}`, boxShadow: '0 1px 2px rgba(0,0,0,.2)',
-                  },
-                }),
+              switchFor(
+                server.enabled,
+                false,
+                t(server.enabled ? 'action.disable' : 'action.enable', { name: server.server }),
+                (checked) => { void setPresetServer(selected.id, server.server, checked); },
               ),
             ),
             React.createElement(
@@ -188,6 +231,15 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
       }),
       ...view.systemTools.map((tool) => toolRow(tool, selected.id, false)),
     );
+    if (view.mcp.length > 0 || view.systemTools.length > 0) {
+      groups.push(React.createElement(
+        'section',
+        { key: 'tools', className: 'ci-preset-part' },
+        React.createElement('h3', { className: 'ci-preset-part-title' }, t('preset.toolsHeading')),
+        toolRows,
+      ));
+    }
+    return React.createElement(React.Fragment, null, ...groups);
   };
 
   return React.createElement(
@@ -246,7 +298,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
             : React.createElement(
                 'p',
                 { 'aria-live': 'polite', className: 'ci-settings-description' },
-                t('filter.count', { shown: view.total, total: selected === undefined ? 0 : selected.mcp.length + selected.systemTools.length }),
+                t('filter.count', { shown: view.total, total: selected === undefined ? 0 : selected.skills.length + selected.mcp.length + selected.systemTools.length }),
               ),
           body(),
         ),

@@ -12,20 +12,36 @@ interface FixtureOptions {
   scopedTools?: boolean;
   presetMetadata?: boolean;
   restrictThrows?: boolean;
+  skills?: boolean;
+  disabledSkills?: string[];
+  skillGet?: unknown;
+  scopedSkills?: boolean;
+  projectSkill?: boolean;
+  skillsListThrows?: boolean;
+  skillGetThrows?: boolean;
+  skillGetUndefined?: boolean;
+  agentCwd?: boolean;
 }
 
 function fixture(options: FixtureOptions = {}) {
-  const values = { presets: { alpha: ['bash'] } };
-  const update = vi.fn((section: { presets?: Record<string, string[]> }) => {
-    values.presets = (section.presets ?? {}) as { alpha: string[] };
+  const values: { presets: Record<string, string[]>; presetSkills?: Record<string, string[]> } = {
+    presets: { alpha: ['bash'] },
+    ...(options.disabledSkills === undefined ? {} : { presetSkills: { alpha: options.disabledSkills } }),
+  };
+  const update = vi.fn((section: { presets?: Record<string, string[]>; presetSkills?: Record<string, string[]> }) => {
+    values.presets = section.presets ?? {};
+    values.presetSkills = section.presetSkills ?? {};
     return Promise.resolve();
   });
+  const registerSkill = vi.fn(() => vi.fn());
   const restrict = vi.fn(() => {
     if (options.restrictThrows === true) throw new Error('unknown global tool');
     return vi.fn();
   });
   const registrations: unknown[][] = [];
-  let created: ((payload: { agent: { ctx: { get(name: string): unknown } } }) => void) | undefined;
+  // Both the tool mask and the skill mask listen on `agent/created`; keeping
+  // only the last would silently drop one of them.
+  const createdListeners: ((payload: { agent: unknown }) => unknown)[] = [];
   const services: Record<string, unknown> = {};
   if (options.settings !== false) {
     services.settings = {
@@ -58,15 +74,52 @@ function fixture(options: FixtureOptions = {}) {
       ],
     };
   }
+  if (options.skills !== false) {
+    services.skills = {
+      list: (lookup: { cwd?: string }) => options.skillsListThrows === true
+        ? Promise.reject(new Error('no reader'))
+        : Promise.resolve(
+        lookup.cwd !== undefined && options.projectSkill === true
+          ? [{ name: 'writing', description: 'house style' }, { name: 'local-only' }]
+          : [{ name: 'writing', description: 'house style' }],
+      ),
+      get: () => options.skillGetThrows === true
+        ? Promise.reject(new Error('unreadable'))
+        : Promise.resolve(
+          options.skillGetUndefined === true
+            ? undefined
+            : options.skillGet === undefined
+              ? { name: 'writing', description: 'house style', content: 'body' }
+              : options.skillGet,
+        ),
+    };
+  }
   const ctx = {
     get: (name: string) => services[name],
-    on(event: string, listener: typeof created) {
-      if (event === 'agent/created') created = listener;
+    on(event: string, listener: (payload: { agent: unknown }) => unknown) {
+      if (event === 'agent/created') createdListeners.push(listener);
     },
   };
-  return { controller: createPresetToolController(ctx as never), values, update, restrict, registrations, emitCreated() {
-    created?.({ agent: { ctx: { get: (name) => name === 'tools' && options.scopedTools !== false ? { restrict } : undefined } } });
-  } };
+  const scopedGet = (name: string): unknown => {
+    if (name === 'tools') return options.scopedTools === false ? undefined : { restrict };
+    if (name === 'skills') return options.scopedSkills === false ? undefined : { register: registerSkill };
+    return undefined;
+  };
+  return {
+    controller: createPresetToolController(ctx as never),
+    values,
+    update,
+    restrict,
+    registerSkill,
+    registrations,
+    emitCreated() {
+      const agent = {
+        ctx: { get: scopedGet },
+        ...(options.agentCwd === false ? {} : { session: { header: { cwd: '/w' } } }),
+      };
+      return Promise.all(createdListeners.map((listener) => listener({ agent })));
+    },
+  };
 }
 
 function expectHttp(error: unknown, status: number, message: string): void {
@@ -89,6 +142,7 @@ describe('preset tool settings', () => {
         name: 'Alpha',
         description: 'primary',
         trust: 'system',
+        skills: [{ name: 'writing', description: 'house style', enabled: true }],
         mcp: [{
           server: 'search',
           enabled: true,
@@ -108,19 +162,19 @@ describe('preset tool settings', () => {
   it('persists disable and enable changes without touching running agents', async () => {
     const host = fixture();
     await host.controller.set('alpha', 'run_code', true);
-    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] } });
+    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {} });
     await host.controller.set('alpha', 'bash', true);
     // Re-enabling the last disabled tool must REMOVE the preset key, which a
     // merge patch cannot express: the section is written wholesale.
-    expect(host.update).toHaveBeenLastCalledWith({ presets: {} });
+    expect(host.update).toHaveBeenLastCalledWith({ presets: {}, presetSkills: {} });
     expect(host.values.presets).toEqual({});
     await host.controller.set('alpha', 'bash', false);
     expect(host.values.presets).toEqual({ alpha: ['bash'] });
   });
 
-  it('restricts only newly created or restored agents using their composed preset', () => {
+  it('restricts only newly created or restored agents using their composed preset', async () => {
     const host = fixture();
-    host.emitCreated();
+    await host.emitCreated();
     expect(host.restrict).toHaveBeenCalledWith({ deny: ['bash'] });
   });
 
@@ -131,16 +185,18 @@ describe('preset tool settings', () => {
     await host.controller.setServer('alpha', 'search', false);
     expect(host.update).toHaveBeenLastCalledWith({
       presets: { alpha: ['bash', 'mcp__search__image', 'mcp__search__web'] },
+      presetSkills: {},
     });
     // Starting from an empty stored set exercises the other side of `?? []`.
     const fresh = fixture();
-    fresh.values.presets = {} as { alpha: string[] };
+    fresh.values.presets = {};
     await fresh.controller.setServer('alpha', 'search', false);
     expect(fresh.update).toHaveBeenLastCalledWith({
       presets: { alpha: ['mcp__search__image', 'mcp__search__web'] },
+      presetSkills: {},
     });
     const payload = await host.controller.setServer('alpha', 'search', true);
-    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] } });
+    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {} });
     expect(payload.presets[0]?.mcp[0]).toMatchObject({ server: 'search', enabled: true });
   });
 
@@ -165,28 +221,30 @@ describe('preset tool settings', () => {
     const host = fixture();
     await host.controller.list();
     await host.controller.set('alpha', 'bash', true);
-    host.emitCreated();
+    await host.emitCreated();
     expect(host.registrations).toHaveLength(1);
   });
 
-  it('drops stored names the agent cannot see and survives a refused mask', () => {
+  it('drops stored names the agent cannot see and survives a refused mask', async () => {
     const stale = fixture();
     stale.values.presets = { alpha: ['bash', 'removed-by-a-plugin-uninstall'] };
-    stale.emitCreated();
+    await stale.emitCreated();
     expect(stale.restrict).toHaveBeenCalledWith({ deny: ['bash'] });
 
     const vanished = fixture();
     vanished.values.presets = { alpha: ['removed-by-a-plugin-uninstall'] };
-    vanished.emitCreated();
+    await vanished.emitCreated();
     expect(vanished.restrict).not.toHaveBeenCalled();
 
+    // A refused mask must not veto the agent; the tool listener is synchronous,
+    // so this stays a synchronous expectation.
     const refused = fixture({ restrictThrows: true });
-    expect(() => { refused.emitCreated(); }).not.toThrow();
+    await expect(refused.emitCreated()).resolves.toBeDefined();
   });
 
-  it('does not restrict when settings, preset identity, disabled names, or scoped tools are absent', () => {
+  it('does not restrict when settings, preset identity, disabled names, or scoped tools are absent', async () => {
     const absent = fixture({ settings: false });
-    absent.emitCreated();
+    await absent.emitCreated();
     expect(absent.restrict).not.toHaveBeenCalled();
 
     for (const candidate of [
@@ -194,13 +252,13 @@ describe('preset tool settings', () => {
       fixture({ presetIdentity: '' }),
       fixture({ scopedTools: false }),
     ]) {
-      candidate.emitCreated();
+      await candidate.emitCreated();
       expect(candidate.restrict).not.toHaveBeenCalled();
     }
 
     const host = fixture();
-    host.values.presets = {} as never;
-    host.emitCreated();
+    host.values.presets = {};
+    await host.emitCreated();
     expect(host.restrict).not.toHaveBeenCalled();
   });
 
@@ -211,6 +269,7 @@ describe('preset tool settings', () => {
         id: 'alpha',
         name: 'alpha',
         trust: 'system',
+        skills: [{ name: 'writing', description: 'house style', enabled: true }],
         mcp: [{
           server: 'search',
           enabled: true,
@@ -231,7 +290,7 @@ describe('preset tool settings', () => {
     const host = fixture({ broken: true, standingError: new Error('must not mount') });
     await expect(host.controller.list()).resolves.toEqual({
       writable: true,
-      presets: [{ id: 'alpha', name: 'Alpha', description: 'primary', trust: 'system', broken: 'bad yaml', mcp: [], systemTools: [] }],
+      presets: [{ id: 'alpha', name: 'Alpha', description: 'primary', trust: 'system', broken: 'bad yaml', skills: [], mcp: [], systemTools: [] }],
     });
   });
 
@@ -255,5 +314,114 @@ describe('preset tool settings', () => {
         expectHttp(error, status, message);
       }
     }
+  });
+  it('lists project skills marked, and reflects the stored disabled set', async () => {
+    const host = fixture({ projectSkill: true, disabledSkills: ['writing'] });
+    const payload = await host.controller.list();
+    // The cwd-only entry is marked, not hidden: it is real for this workspace
+    // and absent elsewhere, and a short list could not say that.
+    expect(payload.presets[0]?.skills).toEqual([
+      { name: 'local-only', enabled: true, project: true },
+      { name: 'writing', description: 'house style', enabled: false },
+    ]);
+  });
+
+  it('persists a skill toggle in its own map, leaving tool names untouched', async () => {
+    const host = fixture();
+    await host.controller.setSkill('alpha', 'writing', false);
+    expect(host.update).toHaveBeenLastCalledWith({
+      presets: { alpha: ['bash'] },
+      presetSkills: { alpha: ['writing'] },
+    });
+    await host.controller.setSkill('alpha', 'writing', true);
+    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {} });
+  });
+
+  it('refuses a skill toggle the preset cannot see, and one it cannot mount', async () => {
+    await expect(fixture().controller.setSkill('alpha', 'ghost', false))
+      .rejects.toSatisfy((error) => { expectHttp(error, 404, 'skill "ghost" is not available in preset "alpha"'); return true; });
+    await expect(fixture({ broken: true }).controller.setSkill('alpha', 'writing', false))
+      .rejects.toSatisfy((error) => { expectHttp(error, 409, 'preset "alpha" is broken: bad yaml'); return true; });
+    await expect(fixture().controller.setSkill('ghost', 'writing', false))
+      .rejects.toSatisfy((error) => { expectHttp(error, 404, 'preset "ghost" is not available'); return true; });
+    await expect(fixture({ skills: false }).controller.setSkill('alpha', 'writing', false))
+      .rejects.toSatisfy((error) => { expectHttp(error, 503, 'skills service unavailable'); return true; });
+    await expect(fixture({ standingError: true }).controller.setSkill('alpha', 'writing', false))
+      .rejects.toSatisfy((error) => { expectHttp(error, 503, 'preset "alpha" skills are unavailable: offline'); return true; });
+  });
+
+  it('reports a preset whose skills cannot be read instead of listing it as empty', async () => {
+    const failing = fixture({ skillsListThrows: true });
+    await expect(failing.controller.list())
+      .rejects.toSatisfy((error) => { expectHttp(error, 503, 'preset "alpha" skills are unavailable: no reader'); return true; });
+  });
+
+  it('omits skills entirely when the service is absent', async () => {
+    const payload = await fixture({ skills: false }).controller.list();
+    expect(payload.presets[0]?.skills).toEqual([]);
+  });
+
+  it('masks stored skills on agent creation without vetoing the session', async () => {
+    const host = fixture({ disabledSkills: ['writing'] });
+    await host.emitCreated();
+    expect(host.registerSkill).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'writing',
+      content: 'body',
+      invocation: { modelInvocable: false, userInvocable: true },
+    }));
+  });
+
+  it('carries a resourceBase through the mask when the original has one', async () => {
+    const host = fixture({
+      disabledSkills: ['writing'],
+      skillGet: { name: 'writing', description: 'd', content: 'body', resourceBase: { kind: 'directory', path: '/p' } },
+    });
+    await host.emitCreated();
+    expect(host.registerSkill).toHaveBeenCalledWith(expect.objectContaining({
+      resourceBase: { kind: 'directory', path: '/p' },
+    }));
+  });
+
+  it('skips a skill it cannot read rather than failing agent creation', async () => {
+    // Each of these would be a broken mask; none may cost the user a session.
+    for (const skillGet of [null, { name: 1 }, { name: 'w', description: 'd' }, { name: 'w', description: 2, content: 'c' }]) {
+      const host = fixture({ disabledSkills: ['writing'], skillGet });
+      await expect(host.emitCreated()).resolves.toBeDefined();
+      expect(host.registerSkill).not.toHaveBeenCalled();
+    }
+    // `get` resolving undefined is the ordinary "no longer there" case.
+    const gone = fixture({ disabledSkills: ['writing'], skillGetUndefined: true });
+    await expect(gone.emitCreated()).resolves.toBeDefined();
+    expect(gone.registerSkill).not.toHaveBeenCalled();
+    const throwing = fixture({ disabledSkills: ['writing'], skillGetThrows: true });
+    await expect(throwing.emitCreated()).resolves.toBeDefined();
+    expect(throwing.registerSkill).not.toHaveBeenCalled();
+  });
+
+  it('does no skill work when there is nothing stored or nowhere to register', async () => {
+    const none = fixture();
+    await none.emitCreated();
+    expect(none.registerSkill).not.toHaveBeenCalled();
+    const unscoped = fixture({ disabledSkills: ['writing'], scopedSkills: false });
+    await unscoped.emitCreated();
+    expect(unscoped.registerSkill).not.toHaveBeenCalled();
+    const serviceless = fixture({ disabledSkills: ['writing'], skills: false });
+    await serviceless.emitCreated();
+    expect(serviceless.registerSkill).not.toHaveBeenCalled();
+    const anonymous = fixture({ disabledSkills: ['writing'], presetIdentity: '' });
+    await anonymous.emitCreated();
+    expect(anonymous.registerSkill).not.toHaveBeenCalled();
+    const presetless = fixture({ disabledSkills: ['writing'], agentPresets: false });
+    await presetless.emitCreated();
+    expect(presetless.registerSkill).not.toHaveBeenCalled();
+    const settingless = fixture({ disabledSkills: ['writing'], settings: false });
+    await settingless.emitCreated();
+    expect(settingless.registerSkill).not.toHaveBeenCalled();
+  });
+
+  it('masks a skill for an agent that reports no cwd', async () => {
+    const host = fixture({ disabledSkills: ['writing'], agentCwd: false });
+    await host.emitCreated();
+    expect(host.registerSkill).toHaveBeenCalled();
   });
 });

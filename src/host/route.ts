@@ -58,12 +58,14 @@ function json(res: ServerResponseLike, status: number, body: unknown, cache = fa
  * `kind` mirrors the session route's toggle shape: one tool, or a whole MCP
  * server in a single write.
  */
-function validatePresetToggle(body: unknown): { presetId: string; kind: 'tool' | 'mcp-server'; name: string; enabled: boolean } {
+function validatePresetToggle(body: unknown): { presetId: string; kind: 'tool' | 'mcp-server' | 'skill'; name: string; enabled: boolean } {
   if (body === null || typeof body !== 'object') throw new ClientRequestError('invalid request body');
   const record = body as { presetId?: unknown; kind?: unknown; name?: unknown; enabled?: unknown };
   if (typeof record.presetId !== 'string' || record.presetId === '') throw new ClientRequestError('presetId is required');
   const kind = record.kind ?? 'tool';
-  if (kind !== 'tool' && kind !== 'mcp-server') throw new ClientRequestError('kind must be "tool" or "mcp-server"');
+  if (kind !== 'tool' && kind !== 'mcp-server' && kind !== 'skill') {
+    throw new ClientRequestError('kind must be "tool", "mcp-server" or "skill"');
+  }
   if (typeof record.name !== 'string' || record.name === '') throw new ClientRequestError('name is required');
   if (typeof record.enabled !== 'boolean') throw new ClientRequestError('enabled must be boolean');
   return { presetId: record.presetId, kind, name: record.name, enabled: record.enabled };
@@ -112,7 +114,9 @@ export function createRouteHandler(
         if (req.method === 'POST') {
           if (!validatePresetContentType(req, res)) return;
           const toggle = validatePresetToggle(await readRequestBody(req));
-          json(res, 200, toggle.kind === 'mcp-server'
+          json(res, 200, toggle.kind === 'skill'
+            ? await presetTools.setSkill(toggle.presetId, toggle.name, toggle.enabled)
+            : toggle.kind === 'mcp-server'
             ? await presetTools.setServer(toggle.presetId, toggle.name, toggle.enabled)
             : await presetTools.set(toggle.presetId, toggle.name, toggle.enabled));
           return;

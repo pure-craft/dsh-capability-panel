@@ -8,6 +8,14 @@ export interface PresetToolView {
   readonly reserved?: boolean;
 }
 
+export interface PresetSkillView {
+  readonly name: string;
+  readonly description?: string;
+  readonly enabled: boolean;
+  /** Discovered under the harness workspace's project root; conditional. */
+  readonly project?: boolean;
+}
+
 export interface PresetMcpView {
   readonly server: string;
   readonly tools: readonly PresetToolView[];
@@ -21,6 +29,7 @@ export interface PresetToolPresetView {
   readonly trust: 'system' | 'user';
   /** Why this preset cannot compose a session; absent when it can. */
   readonly broken?: string;
+  readonly skills: readonly PresetSkillView[];
   readonly mcp: readonly PresetMcpView[];
   readonly systemTools: readonly PresetToolView[];
 }
@@ -65,6 +74,24 @@ function parseTools(raw: readonly unknown[]): PresetToolView[] | null {
   return tools;
 }
 
+function parseSkills(raw: readonly unknown[]): PresetSkillView[] | null {
+  const skills: PresetSkillView[] = [];
+  for (const rawSkill of raw) {
+    if (rawSkill === null || typeof rawSkill !== 'object') return null;
+    const skill = rawSkill as { name?: unknown; description?: unknown; enabled?: unknown; project?: unknown };
+    if (typeof skill.name !== 'string' || typeof skill.enabled !== 'boolean') return null;
+    if (skill.description !== undefined && typeof skill.description !== 'string') return null;
+    if (skill.project !== undefined && typeof skill.project !== 'boolean') return null;
+    skills.push({
+      name: skill.name,
+      ...(skill.description === undefined ? {} : { description: skill.description }),
+      enabled: skill.enabled,
+      ...(skill.project === undefined ? {} : { project: skill.project }),
+    });
+  }
+  return skills;
+}
+
 function parsePayload(value: unknown): PresetToolPayload | null {
   if (value === null || typeof value !== 'object') return null;
   const candidate = value as { presets?: unknown; writable?: unknown };
@@ -72,13 +99,15 @@ function parsePayload(value: unknown): PresetToolPayload | null {
   const presets: PresetToolPresetView[] = [];
   for (const raw of candidate.presets) {
     if (raw === null || typeof raw !== 'object') return null;
-    const preset = raw as { id?: unknown; name?: unknown; description?: unknown; broken?: unknown; trust?: unknown; mcp?: unknown; systemTools?: unknown };
+    const preset = raw as { id?: unknown; name?: unknown; description?: unknown; broken?: unknown; trust?: unknown; skills?: unknown; mcp?: unknown; systemTools?: unknown };
     if (typeof preset.id !== 'string' || typeof preset.name !== 'string' || (preset.trust !== 'system' && preset.trust !== 'user')) return null;
-    if (!Array.isArray(preset.mcp) || !Array.isArray(preset.systemTools)) return null;
+    if (!Array.isArray(preset.mcp) || !Array.isArray(preset.systemTools) || !Array.isArray(preset.skills)) return null;
     if (preset.description !== undefined && typeof preset.description !== 'string') return null;
     if (preset.broken !== undefined && typeof preset.broken !== 'string') return null;
     const systemTools = parseTools(preset.systemTools);
     if (systemTools === null) return null;
+    const skills = parseSkills(preset.skills);
+    if (skills === null) return null;
     const mcp: PresetMcpView[] = [];
     for (const rawServer of preset.mcp) {
       if (rawServer === null || typeof rawServer !== 'object') return null;
@@ -94,6 +123,7 @@ function parsePayload(value: unknown): PresetToolPayload | null {
       ...(preset.description === undefined ? {} : { description: preset.description }),
       ...(preset.broken === undefined ? {} : { broken: preset.broken }),
       trust: preset.trust,
+      skills,
       mcp,
       systemTools,
     });
@@ -152,7 +182,7 @@ export function selectPreset(id: string): void {
 }
 
 /** Serialized write: every toggle is one POST whose response is the new truth. */
-function mutate(body: { presetId: string; kind: 'tool' | 'mcp-server'; name: string; enabled: boolean }): Promise<void> {
+function mutate(body: { presetId: string; kind: 'tool' | 'mcp-server' | 'skill'; name: string; enabled: boolean }): Promise<void> {
   const requestEpoch = begin();
   const run = async (): Promise<void> => {
     try {
@@ -175,6 +205,11 @@ function mutate(body: { presetId: string; kind: 'tool' | 'mcp-server'; name: str
 
 export function setPresetTool(presetId: string, name: string, enabled: boolean): Promise<void> {
   return mutate({ presetId, kind: 'tool', name, enabled });
+}
+
+/** Toggle one skill's default for a preset. */
+export function setPresetSkill(presetId: string, name: string, enabled: boolean): Promise<void> {
+  return mutate({ presetId, kind: 'skill', name, enabled });
 }
 
 /** Toggle a whole MCP server in one write instead of one request per tool. */

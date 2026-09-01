@@ -11,6 +11,10 @@ const preset: PresetToolPresetView = {
   id: 'alpha',
   name: 'Alpha',
   trust: 'system',
+  skills: [
+    { name: 'lark-mail', description: 'send and read mail', enabled: true },
+    { name: 'web-design-guidelines', enabled: true, project: true },
+  ],
   mcp: [
     {
       server: 'search',
@@ -36,10 +40,22 @@ describe('preset filter', () => {
   it('returns everything for an empty or blank query', () => {
     for (const query of ['', '   ']) {
       const view = filterPreset(preset, query);
+      expect(view.skills).toHaveLength(2);
       expect(view.mcp).toHaveLength(2);
       expect(view.systemTools).toHaveLength(2);
-      expect(view.total).toBe(4);
+      expect(view.total).toBe(6);
     }
+  });
+
+  it('matches a skill on its name or description', () => {
+    expect(filterPreset(preset, 'lark-mail').skills.map((skill) => skill.name)).toEqual(['lark-mail']);
+    expect(filterPreset(preset, 'send and read').skills.map((skill) => skill.name)).toEqual(['lark-mail']);
+  });
+
+  it('carries the project marker through the filter', () => {
+    const view = filterPreset(preset, 'web-design');
+    expect(view.skills).toHaveLength(1);
+    expect(view.skills[0]?.project).toBe(true);
   });
 
   it('keeps every tool of a server whose own name matches', () => {

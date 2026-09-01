@@ -30,6 +30,12 @@ export interface AgentPresetsService {
 
 export interface PresetToolSettings {
   readonly presets: Readonly<Record<string, readonly string[]>>;
+  /**
+   * Disabled skills, keyed by preset id. Kept in its own map rather than mixed
+   * into `presets`: skill names and tool names are separate namespaces, and a
+   * single list could not say which registry a stored name belonged to.
+   */
+  readonly presetSkills: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface SettingsScopeLike<T> {
@@ -64,12 +70,33 @@ export interface PresetMcpServer {
   readonly enabled: boolean;
 }
 
+/**
+ * One switchable skill. Unlike a tool, a skill can enter the catalog from a
+ * project root, so its visibility depends on where a session opens.
+ */
+export interface PresetSkillRow {
+  readonly name: string;
+  readonly description?: string;
+  readonly enabled: boolean;
+  /**
+   * True when this skill was discovered under the reading workspace's project
+   * root. Such a row is real but conditional — a session opened elsewhere will
+   * not see it — so the UI marks it instead of hiding it.
+   */
+  readonly project?: boolean;
+}
+
 export interface PresetToolEntry {
   readonly id: string;
   readonly name: string;
   readonly trust: 'system' | 'user';
   readonly description?: string;
   readonly broken?: string;
+  /**
+   * Skills this preset can see from the reading process's workspace. Ordered
+   * before the tool groups because a skill is the coarser capability.
+   */
+  readonly skills: readonly PresetSkillRow[];
   /**
    * Split the same way the session panel splits its own tools, so one filter
    * and one row renderer serve both scopes: a preset carrying 200 MCP tools
@@ -115,7 +142,12 @@ export interface HostServices {
   get(name: 'sessionQuery'): SessionQueryService | undefined;
   on(
     event: 'agent/created',
-    listener: (payload: { agent: AgentLike & { readonly ctx: { get(name: 'tools'): ScopedToolsRegistry | undefined } } }) => void,
+    /**
+     * A returned promise is allowed on purpose. Cordis vetoes agent publication
+     * on a SYNCHRONOUS listener failure but only reports a rejected promise, so
+     * asynchronous work here cannot cost the user their session.
+     */
+    listener: (payload: { agent: AgentLike & { readonly ctx: { get(name: 'tools'): ScopedToolsRegistry | undefined } } }) => void | Promise<void>,
   ): void;
   on(
     event: 'tools/result',

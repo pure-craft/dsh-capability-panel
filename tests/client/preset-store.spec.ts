@@ -23,6 +23,10 @@ const payload = (id = 'standard') => ({
     name: id === 'standard' ? 'Standard' : id,
     description: 'Full agent',
     trust: 'system',
+    skills: [
+      { name: 'writing', description: 'house style', enabled: true },
+      { name: 'local-only', enabled: true, project: true },
+    ],
     mcp: [{
       server: 'search',
       enabled: true,
@@ -54,10 +58,10 @@ describe('preset tool store', () => {
     expect(store.getPresetToolsSnapshot().payload?.presets[0]?.systemTools[1]).toMatchObject({ name: 'run_code', reserved: true });
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({
       writable: false,
-      presets: [{ id: 'plain', name: 'Plain', trust: 'user', broken: 'bad yaml', mcp: [], systemTools: [] }],
+      presets: [{ id: 'plain', name: 'Plain', trust: 'user', broken: 'bad yaml', skills: [], mcp: [], systemTools: [] }],
     }))));
     await store.loadPresetTools();
-    expect(store.getPresetToolsSnapshot().payload?.presets[0]).toEqual({ id: 'plain', name: 'Plain', trust: 'user', broken: 'bad yaml', mcp: [], systemTools: [] });
+    expect(store.getPresetToolsSnapshot().payload?.presets[0]).toEqual({ id: 'plain', name: 'Plain', trust: 'user', broken: 'bad yaml', skills: [], mcp: [], systemTools: [] });
     const listener = vi.fn();
     const dispose = store.subscribePresetTools(listener);
     store.selectPreset('plain');
@@ -116,6 +120,45 @@ describe('preset tool store', () => {
     });
   });
 
+  it('sends the skill toggle as its own kind', async () => {
+    const store = await loadStore();
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      void init;
+      return Promise.resolve(response(payload()));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await store.setPresetSkill('standard', 'writing', false);
+
+    const body = fetchMock.mock.calls[0]?.[1]?.body;
+    expect(JSON.parse(typeof body === 'string' ? body : '{}')).toEqual({
+      presetId: 'standard', kind: 'skill', name: 'writing', enabled: false,
+    });
+  });
+
+  it('rejects a malformed skill list rather than showing a partial one', async () => {
+    const store = await loadStore();
+    for (const skills of [[null], [{ name: 1, enabled: true }], [{ name: 'w', enabled: 'no' }],
+      [{ name: 'w', enabled: true, description: 1 }], [{ name: 'w', enabled: true, project: 'yes' }], 'nope']) {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({
+        writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', skills, mcp: [], systemTools: [] }],
+      }))));
+      await store.loadPresetTools();
+      expect(store.getPresetToolsSnapshot().error).toBe('unexpected preset payload shape (host/client version skew?)');
+    }
+    // Valid skills must not let a malformed server through behind them.
+    for (const mcp of [[null], [{ server: 1, enabled: true, tools: [] }],
+      [{ server: 's', enabled: 'yes', tools: [] }], [{ server: 's', enabled: true, tools: 'no' }],
+      [{ server: 's', enabled: true, tools: [null] }]]) {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({
+        writable: true,
+        presets: [{ id: 'x', name: 'x', trust: 'system', skills: [{ name: 'w', enabled: true }], mcp, systemTools: [] }],
+      }))));
+      await store.loadPresetTools();
+      expect(store.getPresetToolsSnapshot().error).toBe('unexpected preset payload shape (host/client version skew?)');
+    }
+  });
+
   it('keeps the last payload and surfaces JSON and non-JSON failures', async () => {
     const store = await loadStore();
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response(payload()))));
@@ -138,21 +181,21 @@ describe('preset tool store', () => {
   it('rejects malformed host payloads rather than showing an empty list', async () => {
     const store = await loadStore();
     for (const body of [null, {}, { writable: 'yes', presets: [] }, { writable: true, presets: [null] }, {
-      writable: true, presets: [{ id: 1, name: 'x', trust: 'system', mcp: [], systemTools: [] }],
+      writable: true, presets: [{ id: 1, name: 'x', trust: 'system', skills: [], mcp: [], systemTools: [] }],
     }, {
-      writable: true, presets: [{ id: 'x', name: 'x', trust: 'other', mcp: [], systemTools: [] }],
+      writable: true, presets: [{ id: 'x', name: 'x', trust: 'other', skills: [], mcp: [], systemTools: [] }],
     }, {
-      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', description: 1, mcp: [], systemTools: [] }],
+      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', description: 1, skills: [], mcp: [], systemTools: [] }],
     }, {
-      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', broken: 1, mcp: [], systemTools: [] }],
+      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', broken: 1, skills: [], mcp: [], systemTools: [] }],
     }, {
-      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', mcp: [], systemTools: [null] }],
+      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', skills: [], mcp: [], systemTools: [null] }],
     }, {
-      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', mcp: [], systemTools: [{ name: 1, label: 'a', enabled: true }] }],
+      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', skills: [], mcp: [], systemTools: [{ name: 1, label: 'a', enabled: true }] }],
     }, {
-      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', mcp: [], systemTools: [{ name: 'a', label: 'a', enabled: true, description: 1 }] }],
+      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', skills: [], mcp: [], systemTools: [{ name: 'a', label: 'a', enabled: true, description: 1 }] }],
     }, {
-      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', mcp: [], systemTools: [{ name: 'a', label: 'a', enabled: true, reserved: 'yes' }] }],
+      writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', skills: [], mcp: [], systemTools: [{ name: 'a', label: 'a', enabled: true, reserved: 'yes' }] }],
     }, {
       writable: true, presets: [{ id: 'x', name: 'x', trust: 'system', mcp: 'nope', systemTools: [] }],
     }, {

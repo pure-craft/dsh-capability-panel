@@ -8,11 +8,13 @@
  * - MCP server: a hit on the server name keeps ALL of its tools (the match is
  *   the server's identity); otherwise only matching tools survive, and a
  *   server left with none drops out;
- * - system tool: label, full wire name, or description.
+ * - system tool: label, full wire name, or description;
+ * - skill: name or description.
  */
-import type { PresetMcpView, PresetToolPresetView, PresetToolView } from './preset-store.js';
+import type { PresetMcpView, PresetSkillView, PresetToolPresetView, PresetToolView } from './preset-store.js';
 
 export interface FilteredPreset {
+  readonly skills: readonly PresetSkillView[];
   readonly mcp: readonly PresetMcpView[];
   readonly systemTools: readonly PresetToolView[];
   /** Visible top-level rows (server + system tool), for the summary line. */
@@ -26,11 +28,13 @@ export function filterPreset(preset: PresetToolPresetView, rawQuery: string): Fi
   const query = rawQuery.trim().toLowerCase();
   if (query === '') {
     return {
+      skills: preset.skills,
       mcp: preset.mcp,
       systemTools: preset.systemTools,
-      total: preset.mcp.length + preset.systemTools.length,
+      total: preset.skills.length + preset.mcp.length + preset.systemTools.length,
     };
   }
+  const skills = preset.skills.filter((skill) => hit(query, [skill.name, skill.description]));
   const mcp = preset.mcp.flatMap((server) => {
     if (hit(query, [server.server])) return [server];
     const tools = server.tools.filter((tool) => hit(query, [tool.label, tool.name, tool.description]));
@@ -39,5 +43,5 @@ export function filterPreset(preset: PresetToolPresetView, rawQuery: string): Fi
   const systemTools = preset.systemTools.filter((tool) =>
     hit(query, [tool.label, tool.name, tool.description]),
   );
-  return { mcp, systemTools, total: mcp.length + systemTools.length };
+  return { skills, mcp, systemTools, total: skills.length + mcp.length + systemTools.length };
 }
