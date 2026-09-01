@@ -21,12 +21,16 @@ interface FixtureOptions {
   skillGetThrows?: boolean;
   skillGetUndefined?: boolean;
   agentCwd?: boolean;
+  settingsRegisterThrows?: boolean;
+  storedGetThrows?: boolean;
 }
 
 function fixture(options: FixtureOptions = {}) {
-  const values: { presets: Record<string, string[]>; presetSkills?: Record<string, string[]> } = {
+  // Both keys carry a schema default, so the settings service always resolves
+  // both. Omitting one here would model a section no provider can produce.
+  const values: { presets: Record<string, string[]>; presetSkills: Record<string, string[]> } = {
     presets: { alpha: ['bash'] },
-    ...(options.disabledSkills === undefined ? {} : { presetSkills: { alpha: options.disabledSkills } }),
+    presetSkills: options.disabledSkills === undefined ? {} : { alpha: options.disabledSkills },
   };
   const update = vi.fn((section: { presets?: Record<string, string[]>; presetSkills?: Record<string, string[]> }) => {
     values.presets = section.presets ?? {};
@@ -43,12 +47,25 @@ function fixture(options: FixtureOptions = {}) {
   // only the last would silently drop one of them.
   const createdListeners: ((payload: { agent: unknown }) => unknown)[] = [];
   const services: Record<string, unknown> = {};
-  if (options.settings !== false) {
+  if (options.settingsRegisterThrows === true) {
+    services['settings'] = {
+      writable: true,
+      register: () => {
+        throw new Error('settings namespace "agent-toolkit" is already registered');
+      },
+    };
+  } else if (options.settings !== false) {
     services.settings = {
       writable: true,
       register(...args: unknown[]) {
         registrations.push(args);
-        return { get: () => values, replace: update };
+        return {
+          get: () => {
+            if (options.storedGetThrows === true) throw new Error('stored section is corrupt');
+            return values;
+          },
+          replace: update,
+        };
       },
     };
   }
@@ -94,10 +111,19 @@ function fixture(options: FixtureOptions = {}) {
         ),
     };
   }
+  // The controller registers its mask teardown as a fiber effect, so the
+  // disposers are kept here: a test can run them to assert that unloading the
+  // plugin actually removes what it registered against live agents.
+  const teardowns: (() => void)[] = [];
   const ctx = {
     get: (name: string) => services[name],
     on(event: string, listener: (payload: { agent: unknown }) => unknown) {
       if (event === 'agent/created') createdListeners.push(listener);
+    },
+    effect(callback: () => (() => void) | void) {
+      const dispose = callback();
+      if (typeof dispose === 'function') teardowns.push(dispose);
+      return () => {};
     },
   };
   const scopedGet = (name: string): unknown => {
@@ -112,6 +138,10 @@ function fixture(options: FixtureOptions = {}) {
     restrict,
     registerSkill,
     registrations,
+    createdListeners,
+    disposeFiber() {
+      for (const dispose of teardowns) dispose();
+    },
     emitCreated() {
       const agent = {
         ctx: { get: scopedGet },
@@ -423,5 +453,82 @@ describe('preset tool settings', () => {
     const host = fixture({ disabledSkills: ['writing'], agentCwd: false });
     await host.emitCreated();
     expect(host.registerSkill).toHaveBeenCalled();
+  });
+
+  // Cordis vetoes agent publication when an `agent/created` listener throws
+  // SYNCHRONOUSLY, and only reports a rejected promise. Everything this plugin
+  // does at agent creation is a convenience; none of it is worth costing the
+  // user their session. The listener's synchronous prelude reads settings, so
+  // a settings namespace that refuses to register -- a duplicate mount, or a
+  // hand-edited section the schema rejects -- must not escape as a throw.
+  it('never throws synchronously out of agent/created, even when settings refuse to register', () => {
+    const host = fixture({ settingsRegisterThrows: true, disabledSkills: ['writing'] });
+    const agent = { ctx: { get: () => ({ restrict: vi.fn(), register: vi.fn(() => vi.fn()) }) }, session: { header: { cwd: '/w' } } };
+    for (const listener of host.createdListeners) {
+      expect(() => listener({ agent })).not.toThrow();
+    }
+    expect(host.createdListeners).toHaveLength(2);
+  });
+
+  it('reports a failing settings read through the returned promise rather than the call', async () => {
+    const host = fixture({ storedGetThrows: true, disabledSkills: ['writing'] });
+    await expect(host.emitCreated()).resolves.toBeDefined();
+    expect(host.restrict).not.toHaveBeenCalled();
+    expect(host.registerSkill).not.toHaveBeenCalled();
+  });
+
+  // A mask registered against a live agent is an effect of this fiber too:
+  // disposing the plugin has to remove it, or a hot reload stacks duplicate
+  // shadows of the same skill until the session misbehaves.
+  it('disposes every mask it registered when its fiber goes away', async () => {
+    const toolDispose = vi.fn();
+    const skillDispose = vi.fn();
+    const host = fixture({ disabledSkills: ['writing'] });
+    host.restrict.mockReturnValue(toolDispose);
+    host.registerSkill.mockReturnValue(skillDispose);
+    await host.emitCreated();
+    expect(host.restrict).toHaveBeenCalled();
+    expect(host.registerSkill).toHaveBeenCalled();
+    expect(toolDispose).not.toHaveBeenCalled();
+    expect(skillDispose).not.toHaveBeenCalled();
+    host.disposeFiber();
+    expect(toolDispose).toHaveBeenCalledTimes(1);
+    expect(skillDispose).toHaveBeenCalledTimes(1);
+  });
+
+  // Read-modify-write over one namespace: two toggles that interleave must not
+  // each persist a section computed from the same pre-read snapshot.
+  it('does not lose a toggle when two writes overlap', async () => {
+    const host = fixture();
+    // One write per registry, started together: each reads the stored section
+    // before either has written it, so an unserialized pair would persist two
+    // sections computed from the same snapshot and the later would drop the
+    // other's registry wholesale.
+    await Promise.all([
+      host.controller.setSkill('alpha', 'writing', false),
+      host.controller.set('alpha', 'mcp__search__web', false),
+    ]);
+    expect(host.values.presets['alpha']).toEqual(['bash', 'mcp__search__web']);
+    expect(host.values.presetSkills?.['alpha']).toEqual(['writing']);
+  });
+
+  // A rejected write must not wedge the queue: the next toggle still has to run.
+  it('keeps serializing writes after one of them fails', async () => {
+    const host = fixture();
+    host.update.mockRejectedValueOnce(new Error('settings file is read-only'));
+    await expect(host.controller.setSkill('alpha', 'writing', false)).rejects.toThrow('read-only');
+    await host.controller.set('alpha', 'mcp__search__web', false);
+    expect(host.values.presets['alpha']).toEqual(['bash', 'mcp__search__web']);
+  });
+
+  // The enforcement listener drops the reserved transport from the deny list
+  // unconditionally, so a stale entry naming it must not render a switch that
+  // claims it is off -- that switch is locked, so the user could never clear it.
+  it('reports the reserved transport as enabled even when a stale entry disables it', async () => {
+    const host = fixture();
+    host.values.presets = { alpha: ['run_code'] };
+    const payload = await host.controller.list();
+    const row = payload.presets[0]?.systemTools.find((tool) => tool.name === 'run_code');
+    expect(row).toMatchObject({ reserved: true, enabled: true });
   });
 });

@@ -126,6 +126,11 @@ export interface SessionQueryService {
   listEvents(sessionId: string): Promise<unknown>;
 }
 
+/** The `agent/created` payload, named so a listener wrapper can restate it. */
+export interface AgentCreatedPayload {
+  readonly agent: AgentLike & { readonly ctx: { get(name: 'tools'): ScopedToolsRegistry | undefined } };
+}
+
 export interface HostServices {
   readonly webServer?: {
     register(spec: {
@@ -145,9 +150,10 @@ export interface HostServices {
     /**
      * A returned promise is allowed on purpose. Cordis vetoes agent publication
      * on a SYNCHRONOUS listener failure but only reports a rejected promise, so
-     * asynchronous work here cannot cost the user their session.
+     * asynchronous work here cannot cost the user their session. The synchronous
+     * part of a listener still has to contain its own failures.
      */
-    listener: (payload: { agent: AgentLike & { readonly ctx: { get(name: 'tools'): ScopedToolsRegistry | undefined } } }) => void | Promise<void>,
+    listener: (payload: AgentCreatedPayload) => void | Promise<void>,
   ): void;
   on(
     event: 'tools/result',

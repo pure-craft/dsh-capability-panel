@@ -2,6 +2,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import z from '@deepseek-ai/schemastery';
 import { errorMessage, HttpError } from './errors.js';
 import type {
+  AgentCreatedPayload,
   AgentLike,
   AgentPresetLike,
   AgentPresetsService,
@@ -9,8 +10,8 @@ import type {
   PresetMcpServer,
   PresetSkillRow,
   PresetToolEntry,
-  PresetToolRow,
   PresetToolPayload,
+  PresetToolRow,
   PresetToolSettings,
   ScopedSkillsRegistry,
   SettingsScopeLike,
@@ -154,7 +155,7 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
           throw new HttpError(503, `preset "${preset.id}" tools are unavailable: ${errorMessage(error)}`);
         }
         if (skills !== undefined) {
-          const disabledSkills = new Set(stored.presetSkills?.[preset.id] ?? []);
+          const disabledSkills = new Set(stored.presetSkills[preset.id] ?? []);
           try {
             skillRows = await presetSkillRows(skills, scope, disabledSkills, cwd);
           } catch (error) {
@@ -170,7 +171,13 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
           name,
           label,
           ...(description === undefined ? {} : { description }),
-          enabled: !disabled.has(name),
+          // The reserved transport is reported as on because it IS on: the
+          // enforcement listener drops it from the deny list unconditionally.
+          // A stale entry naming it (hand-edited, or written before it became
+          // reserved) must not render a switch that says "off" over a tool the
+          // model can still call -- especially since that switch is locked and
+          // the user could never clear the claim.
+          enabled: name === RESERVED_TOOL || !disabled.has(name),
           ...(name === RESERVED_TOOL ? { reserved: true } : {}),
         };
       };
@@ -197,13 +204,46 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     return { presets: entries, writable: ctx.get('settings')?.writable === true };
   };
 
+  // A mask registered against an agent is an effect of THIS fiber, not only of
+  // the agent's: disposing the plugin (a hot reload, an unload) has to take its
+  // masks with it, or a reload accumulates duplicate shadows of the same skill.
+  // The agent's own teardown still disposes its scope; calling a disposer twice
+  // is harmless, dropping it entirely is not.
+  const masks = new Set<() => void>();
+  ctx.effect(() => () => {
+    for (const dispose of masks) dispose();
+    masks.clear();
+  }, 'agent-toolkit: preset masks');
+
+  /**
+   * Subscribe to `agent/created` so that NOTHING this plugin does can veto the
+   * agent. Cordis treats a synchronous listener failure as a veto and only
+   * reports a rejected promise, so both halves have to be contained: the
+   * synchronous prelude (reading settings, resolving services) is wrapped here,
+   * and the asynchronous body reports through the returned promise. Applying a
+   * stored preference is never worth costing the user their session.
+   */
+  const onAgentCreated = (
+    listener: (payload: AgentCreatedPayload) => void | Promise<void>,
+  ): void => {
+    ctx.on('agent/created', (payload) => {
+      try {
+        return listener(payload);
+      } catch {
+        // A settings section that cannot be read or registered leaves the agent
+        // exactly as its preset composed it; the panel surfaces the fault.
+        return undefined;
+      }
+    });
+  };
+
   // Applying a stored default must never be able to break session startup.
   // `tools.restrict()` throws on any name its scope does not know, and a stored
   // name can outlive the tool it disabled (a plugin removed, a preset edited),
   // so the deny list is intersected with what this agent actually sees and the
   // call is contained: a default that can no longer apply is dropped, not
   // escalated into a failed agent.
-  ctx.on('agent/created', ({ agent }) => {
+  onAgentCreated(({ agent }) => {
     const stored = settingsScope();
     if (stored === undefined) return;
     const agentPresets = ctx.get('agentPresets');
@@ -219,7 +259,7 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     const deny = toolSummaries(tools, agent).map((tool) => tool.name).filter((name) => disabled.has(name));
     if (deny.length === 0) return;
     try {
-      scopedTools.restrict({ deny });
+      masks.add(scopedTools.restrict({ deny }));
     } catch {
       // The registry refused this mask; the agent keeps its preset default.
     }
@@ -235,7 +275,7 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
   // fail to start; a returned promise's rejection is only reported. Every step
   // is additionally contained, so a skill that can no longer be read is simply
   // left visible rather than costing the user their session.
-  ctx.on('agent/created', ({ agent }) => {
+  onAgentCreated(({ agent }) => {
     const stored = settingsScope();
     if (stored === undefined) return;
     const agentPresets = ctx.get('agentPresets');
@@ -243,7 +283,7 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     if (agentPresets === undefined || skills === undefined) return;
     const presetId = agentPresets.composedPreset(agent.ctx);
     if (presetId === undefined) return;
-    const disabled = stored.get().presetSkills?.[presetId] ?? [];
+    const disabled = stored.get().presetSkills[presetId] ?? [];
     if (disabled.length === 0) return;
     const scopedSkills = (agent as AgentLike).ctx?.get('skills') as ScopedSkillsRegistry | undefined;
     if (scopedSkills === undefined) return;
@@ -258,7 +298,7 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
           if (original === undefined) continue;
           if (typeof original.name !== 'string' || typeof original.description !== 'string') continue;
           if (typeof original.content !== 'string') continue;
-          scopedSkills.register({
+          masks.add(scopedSkills.register({
             name: original.name,
             description: original.description,
             content: original.content,
@@ -266,7 +306,7 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
             provider: 'agent-toolkit',
             ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
             invocation: { modelInvocable: false, userInvocable: true },
-          });
+          }));
         } catch {
           // Unreadable or already shadowed; leave this skill as the preset had it.
         }
@@ -274,19 +314,40 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     })();
   });
 
+  // Every write is read-modify-write over the whole namespace, and the settings
+  // scope exposes no revision to write against (`replace` closes over the
+  // namespace and drops the optimistic-concurrency argument the service itself
+  // accepts). Two writes that interleave would therefore each persist a section
+  // computed from the same pre-read snapshot, and the later one would silently
+  // undo the earlier -- across registries too, since both maps are written
+  // together. Serializing the read and the write as one critical section is
+  // what keeps a second browser tab, or a fast double-click, from losing a
+  // toggle the user actually made.
+  let writeQueue: Promise<unknown> = Promise.resolve();
+  const serialize = <T>(work: () => Promise<T>): Promise<T> => {
+    const next = writeQueue.then(work, work);
+    writeQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
+
   /** Persist one preset's disabled set for one registry, then re-read. */
-  const persist = async (
+  const persist = (
     presetId: string,
     settingsScope: SettingsScopeLike<PresetToolSettings>,
     disabled: ReadonlySet<string>,
     registry: 'presets' | 'presetSkills' = 'presets',
-  ): Promise<PresetToolPayload> => {
+  ): Promise<PresetToolPayload> => serialize(async () => {
     const stored = settingsScope.get();
-    // A settings file written before skills existed has no `presetSkills` key,
-    // and a caller may hand back a section that predates it, so neither map is
-    // assumed present.
-    const prune = (map: Readonly<Record<string, readonly string[]>> | undefined): Record<string, readonly string[]> =>
-      Object.fromEntries(Object.entries(map ?? {}).filter(([, value]) => value.length > 0));
+    // Both maps are always present: each carries a schema default, so a section
+    // written before skills existed still resolves with an empty `presetSkills`
+    // rather than a missing one. The compatibility layer is the schema, not a
+    // guard here -- an optional read would only imply a shape the settings
+    // service cannot hand back.
+    const prune = (map: Readonly<Record<string, readonly string[]>>): Record<string, readonly string[]> =>
+      Object.fromEntries(Object.entries(map).filter(([, value]) => value.length > 0));
     const next = prune({ ...stored[registry], [presetId]: [...disabled].sort() });
     const presets = registry === 'presets' ? next : prune(stored.presets);
     const presetSkills = registry === 'presetSkills' ? next : prune(stored.presetSkills);
@@ -296,7 +357,7 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     // replace of this namespace's user section can express that.
     await settingsScope.replace({ presets, presetSkills });
     return list();
-  };
+  });
 
   return {
     list,
@@ -344,7 +405,7 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
       if (!visible.some((skill) => skill.name === name)) {
         throw new HttpError(404, `skill "${name}" is not available in preset "${presetId}"`);
       }
-      const disabled = new Set(settingsScope.get().presetSkills?.[presetId] ?? []);
+      const disabled = new Set(settingsScope.get().presetSkills[presetId] ?? []);
       if (enabled) disabled.delete(name);
       else disabled.add(name);
       return persist(presetId, settingsScope, disabled, 'presetSkills');

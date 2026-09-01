@@ -4,7 +4,7 @@
  * host's fail-loud fallback), and a zh/en key-set drift would make one
  * language fall back to English mid-panel. Both are caught here.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { en, LOCALE_NS, registerLocale, zh } from '../../src/client/locale.js';
 import type { LocaleService } from '../../src/client/locale.js';
@@ -14,24 +14,40 @@ describe('dictionaries', () => {
     expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort());
   });
 
-  it('covers every key the component looks up', () => {
-    // Static keys: t('key', ...) calls in the client entry.
-    const source = readFileSync(new URL('../../src/client/index.ts', import.meta.url), 'utf8');
-    const used = new Set(
-      [...source.matchAll(/\bt\('([a-z0-9.]+)'/g)]
-        .map((match) => match[1])
-        .filter((key): key is string => key !== undefined),
-    );
+  it('covers every key any client module looks up', () => {
+    // Every client module, discovered rather than listed: the settings panel
+    // was added after this guard and went unchecked, so a key it alone used
+    // could be deleted with the suite still green. The key pattern allows
+    // camelCase for the same reason -- `preset.projectSkill` did not match the
+    // lowercase-only pattern this originally used.
+    const dir = new URL('../../src/client/', import.meta.url);
+    const used = new Set<string>();
+    for (const file of readdirSync(dir).filter((name) => name.endsWith('.ts'))) {
+      const source = readFileSync(new URL(file, dir), 'utf8');
+      for (const match of source.matchAll(/\bt\('([A-Za-z0-9.]+)'/g)) {
+        if (match[1] !== undefined) used.add(match[1]);
+      }
+    }
     expect(used.size).toBeGreaterThan(20);
     for (const key of used) {
       expect(zh, `zh is missing ${key}`).toHaveProperty(key);
       expect(en, `en is missing ${key}`).toHaveProperty(key);
     }
-    // Dynamic keys: skill states interpolate as `state.${state}`, and the
-    // disclosure helper selects detail.* through a typed union variable.
-    for (const key of ['state.loaded', 'state.evicted', 'state.unloaded', 'detail.description', 'detail.tools']) {
-      expect(zh).toHaveProperty(key);
-      expect(en).toHaveProperty(key);
+    // Keys chosen at runtime, which no static scan can see: skill states
+    // interpolate as `state.${state}`, the disclosure helper selects detail.*
+    // through a typed union, and both panels pick the switch label from a
+    // ternary on the current value.
+    for (const key of [
+      'state.loaded',
+      'state.evicted',
+      'state.unloaded',
+      'detail.description',
+      'detail.tools',
+      'action.enable',
+      'action.disable',
+    ]) {
+      expect(zh, `zh is missing ${key}`).toHaveProperty(key);
+      expect(en, `en is missing ${key}`).toHaveProperty(key);
     }
   });
 
