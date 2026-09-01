@@ -29,6 +29,19 @@ export interface PresetToolSectionProps {
  * usable, and because two scopes of one feature should not feel like two
  * unrelated features.
  */
+/** Same chevron the composer panel uses; CSS rotates it when expanded. */
+const chevronIcon = React.createElement(
+  'svg',
+  { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
+  React.createElement('path', {
+    d: 'M6 3.5 10.5 8 6 12.5',
+    stroke: 'currentColor',
+    strokeWidth: 1.4,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+  }),
+);
+
 export function PresetToolSection(props: PresetToolSectionProps): React.ReactElement {
   const { t } = props;
   const state = React.useSyncExternalStore(subscribePresetTools, getPresetToolsSnapshot);
@@ -119,19 +132,19 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
               React.createElement(
                 Collapsible.Trigger,
                 {
-                  className: 'ci-disclosure-trigger ci-preset-tool-copy',
+                  className: 'ci-disclosure-trigger ci-preset-server-trigger',
                   disabled: disclosure.disabled,
-                  style: {
-                    display: 'flex', alignItems: 'baseline', gap: '6px', background: 'none',
-                    border: 'none', padding: 0, textAlign: 'left',
-                    cursor: disclosure.disabled ? 'default' : 'pointer',
-                  },
                 },
-                React.createElement('span', { className: 'ci-preset-tool-name' }, server.server),
+                React.createElement('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
                 React.createElement(
                   'span',
-                  { className: 'ci-preset-tool-description' },
-                  t('server.tools', { count: server.tools.length }),
+                  { className: 'ci-preset-tool-copy' },
+                  React.createElement('span', { className: 'ci-preset-tool-name' }, server.server),
+                  React.createElement(
+                    'span',
+                    { className: 'ci-preset-tool-description' },
+                    t('server.tools', { count: server.tools.length }),
+                  ),
                 ),
               ),
               // One write for the whole server: the reason a 200-tool preset is
@@ -163,7 +176,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
             ),
             React.createElement(
               Collapsible.Panel,
-              null,
+              { className: 'ci-collapse' },
               React.createElement(
                 'ul',
                 { className: 'ci-preset-tool-list' },
