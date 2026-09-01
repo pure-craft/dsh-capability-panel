@@ -56,7 +56,7 @@ export const PANEL_CSS = [
   '.ci-preset-part{margin:18px 0 0}',
   '.ci-preset-part:first-of-type{margin-top:10px}',
   '.ci-preset-part-title{margin:0;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary,#81858c)}',
-  '.ci-preset-badge{margin-left:6px;padding:1px 6px;border-radius:999px;font-size:11px;font-weight:500;vertical-align:middle;background-color:var(--dsw-alias-bg-fill-2,rgba(0,0,0,.05));color:var(--dsw-alias-label-tertiary,#81858c)}',
+  '.ci-preset-badge{display:inline-block;margin-left:6px;padding:1px 6px;line-height:1.5;border-radius:999px;font-size:11px;font-weight:500;vertical-align:middle;background-color:var(--dsw-alias-bg-fill-2,rgba(0,0,0,.05));color:var(--dsw-alias-label-tertiary,#81858c)}',
   '.ci-preset-group{padding:0}',
   '.ci-preset-server-trigger{display:flex;align-items:center;gap:8px;flex:1;min-width:0;background:none;border:none;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer}',
   '.ci-preset-server-trigger:disabled{cursor:default}',

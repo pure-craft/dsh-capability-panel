@@ -156,89 +156,98 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     if (view.total === 0) {
       return React.createElement('p', null, filtering ? t('empty.match') : t('preset.noTools'));
     }
-    // Two labelled groups rather than one run of rows: a skill and a tool are
-    // different kinds of capability, and the earlier flat list was the exact
-    // complaint about this panel.
+    // The same three groups the composer panel uses, with the same labels and
+    // the same shown/total counts. They are three because they are three
+    // different things: skills and MCP servers both come from outside the
+    // preset (the user's skills roots and the host composition), while system
+    // tools are what the preset itself carries.
+    const totals = {
+      skills: selected.skills.length,
+      mcp: selected.mcp.length,
+      systemTools: selected.systemTools.length,
+    };
     const groups: React.ReactElement[] = [];
-    if (view.skills.length > 0) {
+    const group = (
+      key: string,
+      label: string,
+      rows: readonly React.ReactElement[],
+    ): void => {
+      if (rows.length === 0) return;
       groups.push(React.createElement(
         'section',
-        { key: 'skills', className: 'ci-preset-part' },
-        React.createElement('h3', { className: 'ci-preset-part-title' }, t('preset.skillsHeading')),
-        React.createElement(
-          'ul',
-          { className: 'ci-preset-tool-list' },
-          ...view.skills.map((skill) => skillRow(skill, selected.id)),
-        ),
+        { key, className: 'ci-preset-part' },
+        React.createElement('h3', { className: 'ci-preset-part-title' }, label),
+        React.createElement('ul', { className: 'ci-preset-tool-list' }, ...rows),
       ));
-    }
-    const toolRows = React.createElement(
-      'ul',
-      { className: 'ci-preset-tool-list' },
-      ...view.mcp.map((server) => {
-        const key = `mcp:${server.server}`;
-        const disclosure = resolveDisclosure(expanded[key] === true, filtering);
-        return React.createElement(
-          'li',
-          { key, className: 'ci-preset-group' },
+    };
+
+    group(
+      'skills',
+      t('group.skills', { shown: view.skills.length, total: totals.skills }),
+      view.skills.map((skill) => skillRow(skill, selected.id)),
+    );
+
+    const serverRows = view.mcp.map((server) => {
+      const key = `mcp:${server.server}`;
+      const disclosure = resolveDisclosure(expanded[key] === true, filtering);
+      return React.createElement(
+        'li',
+        { key, className: 'ci-preset-group' },
+        React.createElement(
+          Collapsible.Root,
+          {
+            open: disclosure.open,
+            onOpenChange: (open: boolean) => { setExpanded((prev) => ({ ...prev, [key]: open })); },
+          },
           React.createElement(
-            Collapsible.Root,
-            {
-              open: disclosure.open,
-              onOpenChange: (open: boolean) => { setExpanded((prev) => ({ ...prev, [key]: open })); },
-            },
+            'div',
+            { className: 'ci-row-head ci-preset-tool-row' },
             React.createElement(
-              'div',
-              { className: 'ci-row-head ci-preset-tool-row' },
+              Collapsible.Trigger,
+              {
+                className: 'ci-disclosure-trigger ci-preset-server-trigger',
+                disabled: disclosure.disabled,
+              },
+              React.createElement('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
               React.createElement(
-                Collapsible.Trigger,
-                {
-                  className: 'ci-disclosure-trigger ci-preset-server-trigger',
-                  disabled: disclosure.disabled,
-                },
-                React.createElement('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
+                'span',
+                { className: 'ci-preset-tool-copy' },
+                React.createElement('span', { className: 'ci-preset-tool-name' }, server.server),
                 React.createElement(
                   'span',
-                  { className: 'ci-preset-tool-copy' },
-                  React.createElement('span', { className: 'ci-preset-tool-name' }, server.server),
-                  React.createElement(
-                    'span',
-                    { className: 'ci-preset-tool-description' },
-                    t('server.tools', { count: server.tools.length }),
-                  ),
+                  { className: 'ci-preset-tool-description' },
+                  t('server.tools', { count: server.tools.length }),
                 ),
               ),
-              // One write for the whole server: the reason a 200-tool preset is
-              // tractable at all.
-              switchFor(
-                server.enabled,
-                false,
-                t(server.enabled ? 'action.disable' : 'action.enable', { name: server.server }),
-                (checked) => { void setPresetServer(selected.id, server.server, checked); },
-              ),
             ),
-            React.createElement(
-              Collapsible.Panel,
-              { className: 'ci-collapse' },
-              React.createElement(
-                'ul',
-                { className: 'ci-preset-tool-list' },
-                ...server.tools.map((tool) => toolRow(tool, selected.id, true)),
-              ),
+            // One write for the whole server: the reason a 200-tool preset is
+            // tractable at all.
+            switchFor(
+              server.enabled,
+              false,
+              t(server.enabled ? 'action.disable' : 'action.enable', { name: server.server }),
+              (checked) => { void setPresetServer(selected.id, server.server, checked); },
             ),
           ),
-        );
-      }),
-      ...view.systemTools.map((tool) => toolRow(tool, selected.id, false)),
+          React.createElement(
+            Collapsible.Panel,
+            { className: 'ci-collapse' },
+            React.createElement(
+              'ul',
+              { className: 'ci-preset-tool-list' },
+              ...server.tools.map((tool) => toolRow(tool, selected.id, true)),
+            ),
+          ),
+        ),
+      );
+    });
+
+    group('mcp', t('group.mcp', { shown: view.mcp.length, total: totals.mcp }), serverRows);
+    group(
+      'system',
+      t('group.system', { shown: view.systemTools.length, total: totals.systemTools }),
+      view.systemTools.map((tool) => toolRow(tool, selected.id, false)),
     );
-    if (view.mcp.length > 0 || view.systemTools.length > 0) {
-      groups.push(React.createElement(
-        'section',
-        { key: 'tools', className: 'ci-preset-part' },
-        React.createElement('h3', { className: 'ci-preset-part-title' }, t('preset.toolsHeading')),
-        toolRows,
-      ));
-    }
     return React.createElement(React.Fragment, null, ...groups);
   };
 
