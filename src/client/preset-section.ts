@@ -1,8 +1,10 @@
 import * as React from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Input } from '@base-ui/react/input';
-import { Switch } from '@base-ui/react/switch';
+import { Tabs } from '@base-ui/react/tabs';
 import { resolveDisclosure } from './disclosure.js';
+import { chevronIcon, disclosureRow } from './disclosure-row.js';
+import { capabilitySwitch } from './switch.js';
 import { filterPreset } from './preset-filter.js';
 import {
   getPresetToolsSnapshot,
@@ -30,19 +32,6 @@ export interface PresetToolSectionProps {
  * usable, and because two scopes of one feature should not feel like two
  * unrelated features.
  */
-/** Same chevron the composer panel uses; CSS rotates it when expanded. */
-const chevronIcon = React.createElement(
-  'svg',
-  { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
-  React.createElement('path', {
-    d: 'M6 3.5 10.5 8 6 12.5',
-    stroke: 'currentColor',
-    strokeWidth: 1.4,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-  }),
-);
-
 export function PresetToolSection(props: PresetToolSectionProps): React.ReactElement {
   const { t } = props;
   const state = React.useSyncExternalStore(subscribePresetTools, getPresetToolsSnapshot);
@@ -50,6 +39,10 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
   React.useEffect(() => { void loadPresetTools(); }, []);
   const [query, setQuery] = React.useState('');
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  // Which categories to show. The composer panel switches between them with
+  // exclusive tabs because it is a 360px popover; this panel is wide enough to
+  // show all three at once, so "all" is the default and the tabs narrow it.
+  const [kind, setKind] = React.useState<'all' | 'skills' | 'mcp' | 'system'>('all');
 
   const selected = state.payload?.presets.find((preset) => preset.id === state.selectedId);
   const filtering = query.trim() !== '';
@@ -64,30 +57,13 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     label: string,
     onChange: (checked: boolean) => void,
   ): React.ReactElement =>
-    React.createElement(
-      Switch.Root,
-      {
-        checked: on,
-        disabled: locked || frozen,
-        onCheckedChange: onChange,
-        className: 'ci-switch',
-        style: {
-          position: 'relative', width: '32px', height: '18px', padding: 0, border: 'none',
-          borderRadius: '999px', background: on ? TOK.switchOn : TOK.switchOff,
-          cursor: locked || frozen ? 'not-allowed' : 'pointer',
-          opacity: state.loading ? 0.65 : 1, flex: '0 0 auto',
-        },
-        'aria-label': label,
-      },
-      React.createElement(Switch.Thumb, {
-        className: 'ci-thumb',
-        style: {
-          display: 'block', width: '14px', height: '14px', margin: '2px', borderRadius: '50%',
-          background: TOK.switchThumb, transform: on ? 'translateX(14px)' : 'translateX(0)',
-          transition: `transform .14s ${TOK.switchEase}`, boxShadow: '0 1px 2px rgba(0,0,0,.2)',
-        },
-      }),
-    );
+    capabilitySwitch({
+      checked: on,
+      disabled: locked || frozen,
+      busy: state.loading,
+      label,
+      onCheckedChange: onChange,
+    });
 
   const toggle = (tool: PresetToolView, presetId: string): React.ReactElement =>
     switchFor(
@@ -99,14 +75,29 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
       (checked) => { void setPresetTool(presetId, tool.name, checked); },
     );
 
-  const skillRow = (skill: PresetSkillView, presetId: string): React.ReactElement =>
-    React.createElement(
+  /** Expand/collapse label, worded like the composer panel's. */
+  const detailAria = (subject: string, rowKey: string): string => {
+    const state = resolveDisclosure(expanded[rowKey] === true, filtering);
+    const detail = t('detail.description');
+    if (state.disabled) return t('disclosure.pinned', { subject, detail });
+    return t(state.open ? 'disclosure.collapse' : 'disclosure.expand', { subject, detail });
+  };
+
+  const skillRow = (skill: PresetSkillView, presetId: string): React.ReactElement => {
+    const rowKey = `skill:${skill.name}`;
+    return React.createElement(
       'li',
-      { key: `skill:${skill.name}`, className: 'ci-preset-tool-row' },
-      React.createElement(
-        'div',
-        { className: 'ci-preset-tool-copy' },
-        React.createElement(
+      { key: rowKey, className: 'ci-preset-item' },
+      disclosureRow({
+        rowKey,
+        expanded: expanded[rowKey] === true,
+        filtering,
+        onOpenChange: (open) => { setExpanded((prev) => ({ ...prev, [rowKey]: open })); },
+        triggerLabel: detailAria(skill.name, rowKey),
+        className: 'ci-preset-disclosure',
+        headerClassName: 'ci-row-head ci-preset-tool-row',
+        spacerClassName: 'ci-preset-spacer',
+        heading: React.createElement(
           'span',
           { className: 'ci-preset-tool-name' },
           skill.name,
@@ -117,32 +108,43 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
             ? React.createElement('span', { className: 'ci-preset-badge' }, t('preset.projectSkill'))
             : null,
         ),
-        skill.description === undefined
-          ? null
-          : React.createElement('span', { className: 'ci-preset-tool-description' }, skill.description),
-      ),
-      switchFor(
-        skill.enabled,
-        false,
-        t(skill.enabled ? 'action.disable' : 'action.enable', { name: skill.name }),
-        (checked) => { void setPresetSkill(presetId, skill.name, checked); },
-      ),
+        actions: [
+          switchFor(
+            skill.enabled,
+            false,
+            t(skill.enabled ? 'action.disable' : 'action.enable', { name: skill.name }),
+            (checked) => { void setPresetSkill(presetId, skill.name, checked); },
+          ),
+        ],
+        ...(skill.description === undefined
+          ? {}
+          : { detail: React.createElement('div', { className: 'ci-preset-detail' }, skill.description) }),
+      }),
     );
+  };
 
-  const toolRow = (tool: PresetToolView, presetId: string, nested: boolean): React.ReactElement =>
-    React.createElement(
+  const toolRow = (tool: PresetToolView, presetId: string, nested: boolean): React.ReactElement => {
+    const rowKey = `tool:${tool.name}`;
+    return React.createElement(
       'li',
-      { key: tool.name, className: nested ? 'ci-toolrow ci-preset-tool-row' : 'ci-preset-tool-row' },
-      React.createElement(
-        'div',
-        { className: 'ci-preset-tool-copy' },
-        React.createElement('span', { className: 'ci-preset-tool-name' }, tool.label),
-        tool.description === undefined
-          ? null
-          : React.createElement('span', { className: 'ci-preset-tool-description' }, tool.description),
-      ),
-      toggle(tool, presetId),
+      { key: tool.name, className: nested ? 'ci-toolrow ci-preset-item' : 'ci-preset-item' },
+      disclosureRow({
+        rowKey,
+        expanded: expanded[rowKey] === true,
+        filtering,
+        onOpenChange: (open) => { setExpanded((prev) => ({ ...prev, [rowKey]: open })); },
+        triggerLabel: detailAria(tool.label, rowKey),
+        className: 'ci-preset-disclosure',
+        headerClassName: 'ci-row-head ci-preset-tool-row',
+        spacerClassName: 'ci-preset-spacer',
+        heading: React.createElement('span', { className: 'ci-preset-tool-name' }, tool.label),
+        actions: [toggle(tool, presetId)],
+        ...(tool.description === undefined
+          ? {}
+          : { detail: React.createElement('div', { className: 'ci-preset-detail' }, tool.description) }),
+      }),
     );
+  };
 
   const body = (): React.ReactElement | null => {
     if (selected === undefined || view === null) return React.createElement('p', null, t('preset.empty'));
@@ -168,10 +170,11 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     };
     const groups: React.ReactElement[] = [];
     const group = (
-      key: string,
+      key: 'skills' | 'mcp' | 'system',
       label: string,
       rows: readonly React.ReactElement[],
     ): void => {
+      if (kind !== 'all' && kind !== key) return;
       if (rows.length === 0) return;
       groups.push(React.createElement(
         'section',
@@ -248,6 +251,11 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
       t('group.system', { shown: view.systemTools.length, total: totals.systemTools }),
       view.systemTools.map((tool) => toolRow(tool, selected.id, false)),
     );
+    // Narrowing to a category that this preset has nothing in is a normal
+    // outcome, not an error: say so rather than render an empty panel.
+    if (groups.length === 0) {
+      return React.createElement('p', null, filtering ? t('empty.match') : t('preset.noTools'));
+    }
     return React.createElement(React.Fragment, null, ...groups);
   };
 
@@ -299,6 +307,31 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
               onKeyDown: (event: { key: string }) => { if (event.key === 'Escape' && filtering) setQuery(''); },
             }),
           ),
+          // Same three categories, same words, as the composer panel's tabs --
+          // plus "all", because this panel is wide enough to show every group
+          // at once and that is the useful default here.
+          selected === undefined
+            ? null
+            : React.createElement(
+                Tabs.Root,
+                {
+                  value: kind,
+                  onValueChange: (value: string) => { setKind(value as 'all' | 'skills' | 'mcp' | 'system'); },
+                  className: 'ci-preset-kinds',
+                },
+                React.createElement(
+                  Tabs.List,
+                  { 'aria-label': t('preset.kindAria'), className: 'ci-tabs' },
+                  React.createElement(Tabs.Tab, { value: 'all', className: 'ci-tab' }, t('tab.all')),
+                  React.createElement(Tabs.Tab, { value: 'skills', className: 'ci-tab' }, `${t('tab.skills')} ${selected.skills.length}`),
+                  React.createElement(Tabs.Tab, { value: 'mcp', className: 'ci-tab' }, `${t('tab.mcp')} ${selected.mcp.length}`),
+                  React.createElement(
+                    Tabs.Tab,
+                    { value: 'system', className: 'ci-tab', 'aria-label': t('tab.system.aria', { count: selected.systemTools.length }) },
+                    `${t('tab.system')} ${selected.systemTools.length}`,
+                  ),
+                ),
+              ),
           selected?.description === undefined
             ? null
             : React.createElement('p', { className: 'ci-settings-description' }, selected.description),

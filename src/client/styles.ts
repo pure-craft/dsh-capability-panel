@@ -71,5 +71,18 @@ export const PANEL_CSS = [
   '.ci-preset-tool-copy{display:grid;min-width:0;flex:1}',
   '.ci-preset-tool-name{color:var(--dsw-alias-label-primary,#0f1115);font-weight:600;overflow-wrap:anywhere}',
   '.ci-preset-tool-description{color:var(--dsw-alias-label-tertiary,#81858c);line-height:18px;overflow-wrap:anywhere}',
+  // A row is now a disclosure: the border lives on the row wrapper so that an
+  // expanded description sits inside the same visual row rather than below it.
+  '.ci-preset-item{list-style:none;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.04))}',
+  '.ci-preset-item:last-child{border-bottom:none}',
+  '.ci-preset-item .ci-preset-tool-row{border-bottom:none}',
+  '.ci-preset-disclosure{display:block}',
+  // Matches the chevron column so a row without a description still lines up
+  // with the rows that have one.
+  '.ci-preset-spacer{width:18px;flex:none}',
+  '.ci-preset-detail{padding:0 0 10px 24px;color:var(--dsw-alias-label-tertiary,#81858c);line-height:18px;overflow-wrap:anywhere}',
+  '.ci-preset-kinds{margin:0 0 4px}',
+  '.ci-preset-kinds .ci-tabs{display:inline-flex}',
+  '.ci-preset-kinds .ci-tab{flex:0 0 auto;padding:0 12px}',
   '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',
 ].join('\n');

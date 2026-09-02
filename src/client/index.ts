@@ -29,6 +29,7 @@ import { MCP_TOOL_ROOT_CLASS, ROW_HEADER_CLASS, ROW_ROOT_CLASS, resolveDisclosur
 import { LOCALE_NS, registerLocale } from './locale.js';
 import type { LocaleService } from './locale.js';
 import { PANEL_CSS, TOK } from './styles.js';
+import { capabilitySwitch } from './switch.js';
 import { PresetToolSection } from './preset-section.js';
 import { resetPresetTools } from './preset-store.js';
 
@@ -42,7 +43,6 @@ import * as React from 'react';
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
 // Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
 // the host instance, exactly like our own (verified against shipped bundles).
-import { Switch } from '@base-ui/react/switch';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Input } from '@base-ui/react/input';
 import { Popover } from '@base-ui/react/popover';
@@ -310,44 +310,15 @@ export function apply(ctx: SlotContext): void {
       // Base UI Switch renders the button with role/aria-checked wired; we
       // keep the track sizing and token colors.
       const switchControl = (kind: 'skill' | 'mcp-server' | 'mcp-tool' | 'system-tool', name: string, enabled: boolean) =>
-        h(
-          Switch.Root,
-          {
-            className: 'ci-switch',
-            checked: enabled,
-            disabled: sessionId === null || snap.loading,
-            'aria-label': t(enabled ? 'action.disable' : 'action.enable', { name }),
-            onCheckedChange: (checked: boolean) => {
-              if (sessionId !== null) void setCapability(sessionId, kind, name, checked);
-            },
-            style: {
-              position: 'relative',
-              width: '32px',
-              height: '18px',
-              padding: 0,
-              border: 'none',
-              borderRadius: '999px',
-              background: enabled ? TOK.switchOn : TOK.switchOff,
-              cursor: sessionId === null || snap.loading ? 'not-allowed' : 'pointer',
-              opacity: snap.loading ? 0.65 : 1,
-              flex: '0 0 auto',
-            },
+        capabilitySwitch({
+          checked: enabled,
+          disabled: sessionId === null,
+          busy: snap.loading,
+          label: t(enabled ? 'action.disable' : 'action.enable', { name }),
+          onCheckedChange: (checked) => {
+            if (sessionId !== null) void setCapability(sessionId, kind, name, checked);
           },
-          h(Switch.Thumb, {
-            className: 'ci-thumb',
-            style: {
-              display: 'block',
-              width: '14px',
-              height: '14px',
-              margin: '2px',
-              borderRadius: '999px',
-              background: TOK.switchThumb,
-              boxShadow: '0 1px 2px rgba(0,0,0,.22)',
-              transform: enabled ? 'translateX(14px)' : 'translateX(0)',
-              transition: `transform .12s ${TOK.switchEase}`,
-            },
-          }),
-        );
+        });
 
       /** Chevron that rotates from pointing right to pointing down. */
       const chevronIcon = h(
