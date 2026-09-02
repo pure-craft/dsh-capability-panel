@@ -251,6 +251,55 @@ describe('switching a skill', () => {
     expect(rec.registeredSkills[0]?.invocation?.userInvocable).toBe(true);
   });
 
+  // A skill masked by the PRESET panel also carries modelInvocable: false, but
+  // it is not in the session panel's own disabled set. If the read path treats
+  // "not mine" as "not there", the row vanishes from the session panel and the
+  // user cannot see, let alone re-enable, a skill their preset switched off.
+  it('still lists a skill the preset layer masked', async () => {
+    const { route } = bootHost({
+      skills: {
+        list: () =>
+          Promise.resolve([
+            { name: 'find-skills', description: 'discover skills' },
+            {
+              name: 'preset-masked',
+              description: 'switched off by the preset',
+              invocation: { modelInvocable: false, userInvocable: true },
+            },
+          ]),
+        get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c' }),
+      },
+    });
+    const catalog = await readCatalog(route.handler);
+
+    const row = catalog.skills.find((skill) => skill.name === 'preset-masked');
+    expect(row, 'a preset-masked skill must remain visible in the session panel').toBeDefined();
+    expect(row?.enabled).toBe(false);
+  });
+
+  // The tool list is the union of the global catalog and the agent's own
+  // scope, so a tool the preset denied still appears -- correctly, since the
+  // session panel can switch it back on. What it must not do is claim the tool
+  // is currently reachable by the model.
+  it('marks a tool the preset denied as off, not as available', async () => {
+    const { route } = bootHost({
+      tools: {
+        schemas: (scope?: unknown) => [
+          { name: 'bash', description: 'run a shell command' },
+          { name: 'run_code', description: 'code mode transport' },
+          // Present globally, withheld from this agent by the preset.
+          ...(scope === undefined ? [{ name: 'preset_denied', description: 'denied by preset' }] : []),
+        ],
+        guard: () => () => {},
+      },
+    });
+    const catalog = await readCatalog(route.handler);
+
+    const row = catalog.systemTools.find((tool) => tool.name === 'preset_denied');
+    expect(row, 'a preset-denied tool stays listed so the session can re-enable it').toBeDefined();
+    expect(row?.enabled, 'but it must not be reported as reachable').toBe(false);
+  });
+
   it('reports the skill as disabled in the catalog', async () => {
     const { route } = bootHost();
     await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });

@@ -13,9 +13,9 @@ async function payloadFrom(route: { handler: (req: unknown, res: unknown) => Pro
   const { status, body } = await get(route.handler, '/api/agent-toolkit?session=s1');
   expect(status).toBe(200);
   return JSON.parse(body) as {
-    skills: { name: string }[];
+    skills: { name: string; description?: string; enabled: boolean }[];
     mcp: { server: string }[];
-    systemTools: { name: string }[];
+    systemTools: { name: string; enabled: boolean }[];
     degraded?: string[];
   };
 }
@@ -135,12 +135,20 @@ describe('catalog entries that must be skipped', () => {
     expect(payload.skills.map((s) => s.name)).toEqual(['real-skill']);
   });
 
-  it('hides a skill the preset marked non-model-invocable', async () => {
+  // This case used to assert the opposite -- that such a skill is hidden --
+  // on the grounds that a shadow this plugin did not create was the preset's
+  // own choice and not the panel's to reverse. That reasoning stopped holding
+  // once the settings panel started writing those shadows itself: a preset
+  // default is now something the USER set here, and hiding it meant a skill
+  // they switched off in one panel silently disappeared from the other, with
+  // no way back. A preset default is the starting point for a new session,
+  // and a session may override it.
+  it('shows a skill the preset masked as off rather than hiding it', async () => {
     const route = hostWithCatalog({
       skills: {
         list: () =>
           Promise.resolve([
-            { name: 'hidden', invocation: { modelInvocable: false } },
+            { name: 'masked', invocation: { modelInvocable: false } },
             { name: 'visible' },
           ]),
         get: () => Promise.resolve({ name: 'x', description: 'd', content: 'c' }),
@@ -148,9 +156,35 @@ describe('catalog entries that must be skipped', () => {
     });
     const payload = await payloadFrom(route);
 
-    // A shadow this plugin did not create is the preset's own choice, so the
-    // panel must not offer it as something to switch back on.
-    expect(payload.skills.map((s) => s.name)).toEqual(['visible']);
+    expect(payload.skills.map((s) => s.name)).toEqual(['masked', 'visible']);
+    expect(payload.skills.find((s) => s.name === 'masked')?.enabled).toBe(false);
+    expect(payload.skills.find((s) => s.name === 'visible')?.enabled).toBe(true);
+  });
+
+  // The mask is registered as a same-name entry alongside the original, so the
+  // panel must collapse the pair into one row rather than list the skill twice.
+  // Registry order is not guaranteed, so neither arrangement may change the
+  // result: one row, off, keeping whichever description exists.
+  it.each([
+    ['original first', [
+      { name: 'writing', description: 'the real one' },
+      { name: 'writing', invocation: { modelInvocable: false, userInvocable: true } },
+    ]],
+    ['mask first', [
+      { name: 'writing', invocation: { modelInvocable: false, userInvocable: true } },
+      { name: 'writing', description: 'the real one' },
+    ]],
+  ])('collapses an original and its mask into a single row (%s)', async (_label, list) => {
+    const route = hostWithCatalog({
+      skills: {
+        list: () => Promise.resolve(list),
+        get: () => Promise.resolve({ name: 'x', description: 'd', content: 'c' }),
+      },
+    });
+    const payload = await payloadFrom(route);
+
+    expect(payload.skills).toHaveLength(1);
+    expect(payload.skills[0]?.enabled).toBe(false);
   });
 
   it('keeps a non-string description out of the payload', async () => {

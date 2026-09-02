@@ -14,8 +14,7 @@ export async function readAvailable(
   services: HostServices,
   sessionId: string,
   degraded: string[],
-  disabledSkills: ReadonlySet<string>,
-): Promise<{ name: string; description?: string }[]> {
+): Promise<{ name: string; description?: string; masked?: boolean }[]> {
   const skills = services.get('skills');
   if (skills === undefined) {
     degraded.push('skills service unavailable');
@@ -34,12 +33,31 @@ export async function readAvailable(
     }
     const cwd = agent.session?.header?.cwd;
     const list = await skills.list({ ...(cwd === undefined ? {} : { cwd }), scope: agent });
-    const out: { name: string; description?: string }[] = [];
+    // A masked skill is listed twice: the original entry and the same-name
+    // shadow that withdrew model invocation. Both this panel's own switches and
+    // the preset panel's produce such a shadow, so a shadow is recorded as
+    // "off" rather than skipped -- skipping it made a preset-disabled skill
+    // vanish from this panel entirely, leaving the user unable to see it, and
+    // unable to switch it back on. Keeping the first entry per name preserves
+    // the richer original description.
+    const out: { name: string; description?: string; masked?: boolean }[] = [];
+    const seen = new Map<string, { name: string; description?: string; masked?: boolean }>();
     for (const item of list) {
       if (typeof item.name !== 'string' || item.name === '') continue;
-      if (item.invocation?.modelInvocable === false && !disabledSkills.has(item.name)) continue;
+      const masked = item.invocation?.modelInvocable === false;
+      const existing = seen.get(item.name);
+      if (existing !== undefined) {
+        if (masked) existing.masked = true;
+        continue;
+      }
       const description = typeof item.description === 'string' ? item.description : undefined;
-      out.push({ name: item.name, ...(description === undefined ? {} : { description }) });
+      const row = {
+        name: item.name,
+        ...(description === undefined ? {} : { description }),
+        ...(masked ? { masked: true } : {}),
+      };
+      seen.set(item.name, row);
+      out.push(row);
     }
     return out;
   } catch (error) {
@@ -166,6 +184,18 @@ export function readSystemTools(
     return [];
   }
   try {
+    // What the agent can actually call right now. A tool the preset denied is
+    // absent here while still present globally, and the panel has to tell
+    // those apart: the row stays listed, because the session may switch it
+    // back on, but reporting it as enabled would claim the model can reach
+    // something it cannot.
+    let reachable: Set<string> | undefined;
+    if (agent !== undefined) {
+      reachable = new Set<string>();
+      for (const schema of tools.schemas(agent)) {
+        if (typeof schema.name === 'string') reachable.add(schema.name);
+      }
+    }
     const byName = new Map<string, ToolEntry>();
     const collect = (scope: AgentLike | undefined): void => {
       for (const schema of tools.schemas(scope)) {
@@ -175,7 +205,8 @@ export function readSystemTools(
           name: schema.name,
           label: schema.name,
           ...(description === undefined ? {} : { description }),
-          enabled: !disabledTools.has(schema.name),
+          enabled:
+            !disabledTools.has(schema.name) && (reachable === undefined || reachable.has(schema.name)),
           ...(schema.name === 'run_code' ? { reserved: true } : {}),
         });
       }
@@ -212,7 +243,7 @@ export async function buildPayload(
   }
   const agent = services.get('agents')?.get(sessionId);
   const [available, logFacts] = await Promise.all([
-    readAvailable(services, sessionId, degraded, disabledSkills),
+    readAvailable(services, sessionId, degraded),
     readLogFacts(services, sessionId, degraded),
   ]);
   const skills: SkillEntry[] = decideStates(available, logFacts.loads, logFacts.shadowed, disabledSkills);

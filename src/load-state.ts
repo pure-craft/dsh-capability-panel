@@ -163,7 +163,7 @@ export function shadowedLoadSeqs(
  * singles alone and was wrong.
  */
 export function decideStates(
-  available: readonly { name: string; description?: string }[],
+  available: readonly { name: string; description?: string; masked?: boolean }[],
   loads: readonly SkillLoadRecord[],
   shadowedSeqs: ReadonlySet<number>,
   disabledSkills: ReadonlySet<string> = new Set(),
@@ -175,7 +175,7 @@ export function decideStates(
     else bucket.push(record);
   }
 
-  return available.map(({ name, description }) => {
+  return available.map(({ name, description, masked }) => {
     const records = byName.get(name) ?? [];
     let state: SkillLoadState = 'unloaded';
     if (records.length > 0) {
@@ -187,7 +187,9 @@ export function decideStates(
       name,
       ...(description === undefined ? {} : { description }),
       state,
-      enabled: !disabledSkills.has(name),
+      // Off if THIS panel switched it off, or if something else already
+      // withdrew model invocation -- a preset default, most often.
+      enabled: !disabledSkills.has(name) && masked !== true,
       loadCount: records.length,
     };
   });
