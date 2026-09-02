@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import packageJson from '../../package.json' with { type: 'json' };
 import cordisPatch from '../../cordis.patch.yml?raw';
 import { apply } from '../../src/index.js';
+import { parsePresetToolPayload } from '../../src/preset-wire.js';
 import { parseInspectorPayload } from '../../src/wire.js';
 
 describe('bundle declaration', () => {
@@ -165,6 +166,35 @@ describe('the route answers a payload the client half accepts', () => {
     expect(parsed?.skills.map((skill) => skill.name)).toEqual(['find-skills', 'lark-im']);
     expect(parsed?.mcp.map((server) => server.server)).toEqual(['doubao-search']);
     expect(parsed?.systemTools.map((tool) => tool.name)).toContain('bash');
+  });
+
+  // The preset payload had no shared contract: the client carried its own
+  // type copies and its own hand-written parser, either free to drift from
+  // what the host emits. Now both halves share preset-contract/preset-wire,
+  // and this test drives the real route output through the real parser.
+  it('serves preset defaults the client parser validates', async () => {
+    const route = hostWithCatalog({
+      agentPresets: {
+        list: () => Promise.resolve([{ id: 'cordis', name: 'Cordis', trust: 'system', description: 'primary' }]),
+        standingKeyFor: () => Promise.resolve({ preset: 'cordis' }),
+        composedPreset: () => 'cordis',
+      },
+      settings: {
+        writable: true,
+        register: () => ({ get: () => ({ presets: { cordis: ['read'] }, presetSkills: { cordis: ['lark-im'] } }), replace: () => Promise.resolve() }),
+      },
+    });
+    const { status, body } = await get(route.handler, '/api/agent-toolkit/presets');
+    expect(status).toBe(200);
+
+    const parsed = parsePresetToolPayload(JSON.parse(body));
+    expect(parsed).not.toBeNull();
+    const preset = parsed?.presets[0];
+    expect(preset?.id).toBe('cordis');
+    // Stored defaults must show up as off in the served rows.
+    expect(preset?.systemTools.find((tool) => tool.name === 'read')?.enabled).toBe(false);
+    expect(preset?.skills.find((skill) => skill.name === 'lark-im')?.enabled).toBe(false);
+    expect(parsed?.writable).toBe(true);
   });
 
   it('groups MCP tools under their server, not as flat system tools', async () => {

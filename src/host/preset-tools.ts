@@ -2,8 +2,6 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import z from '@deepseek-ai/schemastery';
 import { errorMessage, HttpError } from './errors.js';
 import type {
-  AgentCreatedPayload,
-  AgentLike,
   AgentPresetLike,
   AgentPresetsService,
   HostServices,
@@ -13,7 +11,6 @@ import type {
   PresetToolPayload,
   PresetToolRow,
   PresetToolSettings,
-  ScopedSkillsRegistry,
   SettingsScopeLike,
   SkillsService,
   ToolsService,
@@ -21,7 +18,8 @@ import type {
 import { groupMcpTools } from '../load-state.js';
 
 export const PRESET_SETTINGS_NAMESPACE = settingsNamespace('agent-toolkit');
-export const RESERVED_TOOL = 'run_code';
+import { RESERVED_TOOL } from './reserved.js';
+export { RESERVED_TOOL };
 
 const PresetToolSettingsSchema = z.object({
   presets: z.dict(z.array(z.string())).default({}),
@@ -108,6 +106,12 @@ export interface PresetToolController {
   /** Toggle every tool of one MCP server in a single write. */
   setServer(presetId: string, server: string, enabled: boolean): Promise<PresetToolPayload>;
   setSkill(presetId: string, name: string, enabled: boolean): Promise<PresetToolPayload>;
+  /**
+   * The stored defaults for one preset, for the enforcement listener. Returns
+   * undefined when settings cannot be read: enforcement treats that as "no
+   * defaults" rather than fail a session over a preference it cannot read.
+   */
+  defaultsFor(presetId: string): { tools: readonly string[]; skills: readonly string[] } | undefined;
 }
 
 export function createPresetToolController(ctx: HostServices): PresetToolController {
@@ -204,116 +208,6 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     return { presets: entries, writable: ctx.get('settings')?.writable === true };
   };
 
-  // A mask registered against an agent is an effect of THIS fiber, not only of
-  // the agent's: disposing the plugin (a hot reload, an unload) has to take its
-  // masks with it, or a reload accumulates duplicate shadows of the same skill.
-  // The agent's own teardown still disposes its scope; calling a disposer twice
-  // is harmless, dropping it entirely is not.
-  const masks = new Set<() => void>();
-  ctx.effect(() => () => {
-    for (const dispose of masks) dispose();
-    masks.clear();
-  }, 'agent-toolkit: preset masks');
-
-  /**
-   * Subscribe to `agent/created` so that NOTHING this plugin does can veto the
-   * agent. Cordis treats a synchronous listener failure as a veto and only
-   * reports a rejected promise, so both halves have to be contained: the
-   * synchronous prelude (reading settings, resolving services) is wrapped here,
-   * and the asynchronous body reports through the returned promise. Applying a
-   * stored preference is never worth costing the user their session.
-   */
-  const onAgentCreated = (
-    listener: (payload: AgentCreatedPayload) => void | Promise<void>,
-  ): void => {
-    ctx.on('agent/created', (payload) => {
-      try {
-        return listener(payload);
-      } catch {
-        // A settings section that cannot be read or registered leaves the agent
-        // exactly as its preset composed it; the panel surfaces the fault.
-        return undefined;
-      }
-    });
-  };
-
-  // Applying a stored default must never be able to break session startup.
-  // `tools.restrict()` throws on any name its scope does not know, and a stored
-  // name can outlive the tool it disabled (a plugin removed, a preset edited),
-  // so the deny list is intersected with what this agent actually sees and the
-  // call is contained: a default that can no longer apply is dropped, not
-  // escalated into a failed agent.
-  onAgentCreated(({ agent }) => {
-    const stored = settingsScope();
-    if (stored === undefined) return;
-    const agentPresets = ctx.get('agentPresets');
-    const tools = ctx.get('tools');
-    if (agentPresets === undefined || tools === undefined) return;
-    const presetId = agentPresets.composedPreset(agent.ctx);
-    if (presetId === undefined) return;
-    const disabled = new Set(stored.get().presets[presetId] ?? []);
-    disabled.delete(RESERVED_TOOL);
-    if (disabled.size === 0) return;
-    const scopedTools = agent.ctx.get('tools');
-    if (scopedTools === undefined) return;
-    const deny = toolSummaries(tools, agent).map((tool) => tool.name).filter((name) => disabled.has(name));
-    if (deny.length === 0) return;
-    try {
-      masks.add(scopedTools.restrict({ deny }));
-    } catch {
-      // The registry refused this mask; the agent keeps its preset default.
-    }
-  });
-
-  // Skills need their own listener because they are masked differently: a tool
-  // is denied by name, while a skill is hidden by registering a same-name entry
-  // with `modelInvocable: false` into the agent's nearer layer — which means
-  // first reading the original, including its body.
-  //
-  // That read is async, and this listener is deliberately async too. A
-  // SYNCHRONOUS throw here would veto agent publication and the session would
-  // fail to start; a returned promise's rejection is only reported. Every step
-  // is additionally contained, so a skill that can no longer be read is simply
-  // left visible rather than costing the user their session.
-  onAgentCreated(({ agent }) => {
-    const stored = settingsScope();
-    if (stored === undefined) return;
-    const agentPresets = ctx.get('agentPresets');
-    const skills = ctx.get('skills');
-    if (agentPresets === undefined || skills === undefined) return;
-    const presetId = agentPresets.composedPreset(agent.ctx);
-    if (presetId === undefined) return;
-    const disabled = stored.get().presetSkills[presetId] ?? [];
-    if (disabled.length === 0) return;
-    const scopedSkills = (agent as AgentLike).ctx?.get('skills') as ScopedSkillsRegistry | undefined;
-    if (scopedSkills === undefined) return;
-    // The agent's own cwd, not the panel's: a project skill is masked only for
-    // sessions whose workspace actually supplies it.
-    const cwd = (agent as AgentLike).session?.header?.cwd;
-    const lookup = { ...(cwd === undefined ? {} : { cwd }), scope: agent };
-    return (async () => {
-      for (const name of disabled) {
-        try {
-          const original = await skills.get(name, lookup);
-          if (original === undefined) continue;
-          if (typeof original.name !== 'string' || typeof original.description !== 'string') continue;
-          if (typeof original.content !== 'string') continue;
-          masks.add(scopedSkills.register({
-            name: original.name,
-            description: original.description,
-            content: original.content,
-            source: 'custom',
-            provider: 'agent-toolkit',
-            ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
-            invocation: { modelInvocable: false, userInvocable: true },
-          }));
-        } catch {
-          // Unreadable or already shadowed; leave this skill as the preset had it.
-        }
-      }
-    })();
-  });
-
   // Every write is read-modify-write over the whole namespace, and the settings
   // scope exposes no revision to write against (`replace` closes over the
   // namespace and drops the optimistic-concurrency argument the service itself
@@ -360,6 +254,18 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
   });
 
   return {
+    defaultsFor(presetId) {
+      let stored: PresetToolSettings;
+      try {
+        const settings = settingsScope();
+        if (settings === undefined) return undefined;
+        stored = settings.get();
+      } catch {
+        return undefined;
+      }
+      const tools = (stored.presets[presetId] ?? []).filter((name) => name !== RESERVED_TOOL);
+      return { tools, skills: stored.presetSkills[presetId] ?? [] };
+    },
     list,
     async set(presetId, name, enabled) {
       if (name === RESERVED_TOOL && !enabled) {

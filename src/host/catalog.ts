@@ -2,6 +2,7 @@ import type { InspectorPayload, McpServerEntry, McpToolEntry, SkillEntry, ToolEn
 import { collectLoadRecords, decideStates, groupMcpTools, indexToolResultSeqs, shadowedLoadSeqs } from '../load-state.js';
 import type { EventSurfaceRecord, RawEvent } from '../load-state.js';
 import type { AgentLike, HostServices, SessionCapabilityState } from './types.js';
+import { RESERVED_TOOL } from './reserved.js';
 
 export const EMPTY_STATE: SessionCapabilityState = {
   skills: new Map(),
@@ -207,7 +208,7 @@ export function readSystemTools(
           ...(description === undefined ? {} : { description }),
           enabled:
             !disabledTools.has(schema.name) && (reachable === undefined || reachable.has(schema.name)),
-          ...(schema.name === 'run_code' ? { reserved: true } : {}),
+          ...(schema.name === RESERVED_TOOL ? { reserved: true } : {}),
         });
       }
     };

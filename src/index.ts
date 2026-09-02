@@ -1,4 +1,5 @@
 import { createCapabilityController } from './host/capabilities.js';
+import { registerPresetEnforcement } from './host/preset-enforcement.js';
 import { createPresetToolController } from './host/preset-tools.js';
 import { createRouteHandler, ROUTE } from './host/route.js';
 import { createStatsStore } from './host/stats-store.js';
@@ -16,6 +17,7 @@ export function apply(ctx: HostServices): void {
   };
   const capabilities = createCapabilityController(ctx, appendStats, blockedCounts);
   const presetTools = createPresetToolController(ctx);
+  registerPresetEnforcement(ctx, capabilities, presetTools);
   const handler = createRouteHandler(ctx, capabilities, stats, blockedCounts, presetTools);
 
   ctx.effect(

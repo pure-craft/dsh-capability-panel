@@ -1,6 +1,7 @@
 import { classifyBlockedCall, GUARD_DENIAL_PREFIX } from '../stats.js';
 import type { StatsRecord } from '../stats.js';
 import { HttpError } from './errors.js';
+import { RESERVED_TOOL } from './reserved.js';
 import type {
   AgentLike,
   CapabilityKind,
@@ -11,10 +12,25 @@ import type {
   SessionCapabilityState,
 } from './types.js';
 
+export interface PresetDefaults {
+  /** Disabled tool names: `mcp__`-prefixed land on the MCP map, the rest are system tools. */
+  readonly tools: readonly string[];
+  readonly skills: readonly string[];
+}
+
 export interface CapabilityController {
   readonly states: ReadonlyMap<string, SessionCapabilityState>;
   state(sessionId: string): SessionCapabilityState | undefined;
   set(sessionId: string, kind: CapabilityKind, name: string, enabled: boolean): Promise<void>;
+  /**
+   * Apply a preset's stored defaults to a freshly created session. Seeded
+   * masks live in the SAME session state the panel's own switches use, which
+   * is what lets a session switch a preset default back on: the enable path
+   * disposes the entry whichever layer put it there. Seeding never throws --
+   * a default that can no longer apply is dropped, not escalated -- and never
+   * overwrites a mask already in place.
+   */
+  seed(sessionId: string, defaults: PresetDefaults): Promise<void>;
 }
 
 function renderDisabledNote(state: SessionCapabilityState): string {
@@ -181,7 +197,7 @@ export function createCapabilityController(
       map.delete(name);
       return;
     }
-    if (system && name === 'run_code') {
+    if (system && name === RESERVED_TOOL) {
       throw new HttpError(409, 'run_code is the reserved Code Mode transport and cannot be restricted');
     }
     const { agent, tools } = getAgentTools(sessionId);
@@ -219,9 +235,96 @@ export function createCapabilityController(
     states.clear();
   }, 'agent-toolkit: capability masks');
 
+  const seed = async (sessionId: string, defaults: PresetDefaults): Promise<void> => {
+    const agent = ctx.get('agents')?.get(sessionId);
+    if (agent === undefined) return;
+    // The state is created on the first mask that actually lands: a session
+    // whose stored defaults all name things it cannot see keeps no state at
+    // all, rather than an empty entry that reads as "nothing is off".
+    let state = states.get(sessionId);
+    const ensureState = (): SessionCapabilityState => {
+      if (state === undefined) state = stateFor(sessionId);
+      return state;
+    };
+    let maskedAny = false;
+
+    const scopedTools = agent.ctx?.get('tools') as ScopedToolsRegistry | undefined;
+    const toolsService = ctx.get('tools');
+    if (scopedTools !== undefined && toolsService !== undefined) {
+      const globalNames = new Set<string>();
+      const scopedNames = new Set<string>();
+      for (const schema of toolsService.schemas()) {
+        if (typeof schema.name === 'string') globalNames.add(schema.name);
+      }
+      for (const schema of toolsService.schemas(agent)) {
+        if (typeof schema.name === 'string') scopedNames.add(schema.name);
+      }
+      for (const name of defaults.tools) {
+        if (!globalNames.has(name)) continue;
+        if (name.startsWith('mcp__')) {
+          if (state?.mcpTools.has(name) === true) continue;
+          ensureState().mcpTools.set(name, scopedTools.restrict({ deny: [name] }));
+          maskedAny = true;
+          continue;
+        }
+        // The reserved transport stays reachable no matter what was stored.
+        if (name === RESERVED_TOOL || state?.systemTools.has(name) === true) continue;
+        // A default for a tool this agent cannot see is simply not applied.
+        if (!scopedNames.has(name)) continue;
+        ensureState().systemTools.set(name, scopedTools.restrict({ deny: [name] }));
+        ensureGuard();
+        maskedAny = true;
+      }
+    }
+
+    const scopedSkills = agent.ctx?.get('skills') as ScopedSkillsRegistry | undefined;
+    const skillsService = ctx.get('skills');
+    if (scopedSkills !== undefined && skillsService !== undefined) {
+      const cwd = agent.session?.header?.cwd;
+      const lookup = { ...(cwd === undefined ? {} : { cwd }), scope: agent };
+      // Read every original concurrently: each get is an I/O read, and the
+      // session is already live while its masks go in, so serial reads would
+      // widen a window that serves nobody.
+      const disposers = await Promise.all(defaults.skills.map(async (name) => {
+        if (state?.skills.has(name) === true) return undefined;
+        try {
+          const original = await skillsService.get(name, lookup);
+          if (original === undefined) return undefined;
+          if (typeof original.name !== 'string' || typeof original.description !== 'string') return undefined;
+          if (typeof original.content !== 'string') return undefined;
+          return scopedSkills.register({
+            name: original.name,
+            description: original.description,
+            content: original.content,
+            source: 'custom',
+            provider: 'agent-toolkit',
+            ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
+            invocation: { modelInvocable: false, userInvocable: true },
+          });
+        } catch {
+          // Unreadable or already shadowed; the skill stays as composed.
+          return undefined;
+        }
+      }));
+      for (let i = 0; i < disposers.length; i += 1) {
+        const dispose = disposers[i];
+        const name = defaults.skills[i];
+        if (dispose !== undefined && name !== undefined && state?.skills.has(name) !== true) {
+          ensureState().skills.set(name, dispose);
+          maskedAny = true;
+        }
+      }
+    }
+
+    // The model should KNOW these are off rather than discover it call by
+    // call; the note covers seeded defaults exactly like panel switches.
+    if (maskedAny) ensurePromptNote(agent, ensureState());
+  };
+
   return {
     states,
     state: (sessionId) => states.get(sessionId),
+    seed,
     async set(sessionId, kind, name, enabled) {
       if (kind === 'skill') await setSkill(sessionId, name, enabled);
       else if (kind === 'mcp-server') setServer(sessionId, name, enabled);

@@ -31,7 +31,7 @@ export default defineConfig({
         // line or branch is either a missing test or dead code the gate is
         // correctly flagging for deletion — both are actionable, neither is
         // waived.
-        'src/{loopback,wire,stats,load-state}.ts': {
+        'src/{loopback,wire,preset-wire,stats,load-state}.ts': {
           statements: 100,
           branches: 100,
           functions: 100,
