@@ -46,10 +46,16 @@ export function readRequestBody(req: IncomingLike): Promise<unknown> {
   });
 }
 
-function json(res: ServerResponseLike, status: number, body: unknown, cache = false): void {
+/**
+ * Every response here reflects live process state, so `no-store` is the
+ * default and opting out is explicit. The flag reads as what it does: the
+ * previous spelling was `cache = true` on the ERROR branch, which left a
+ * transient 503 as the only cacheable response the route produced.
+ */
+function json(res: ServerResponseLike, status: number, body: unknown, allowCaching = false): void {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
-    ...(cache ? {} : { 'cache-control': 'no-store' }),
+    ...(allowCaching ? {} : { 'cache-control': 'no-store' }),
   });
   res.end(JSON.stringify(body));
 }
@@ -134,6 +140,17 @@ export function createRouteHandler(
         json(res, 200, { logFile: stats.file, blocked: blockedCounts, records: snapshot.records, ...(snapshot.warnings.length > 0 ? { warnings: snapshot.warnings } : {}) }, true);
         return;
       }
+      // The catalogue answers the prefix itself, not everything beneath it.
+      // Falling through meant /api/agent-toolkit/bogus returned the catalogue
+      // with a 200, which hides a caller's typo and would silently change
+      // meaning the day a real sub-path is added under that name. A request
+      // whose url is absent is the degenerate case the prefix router can hand
+      // down; it reads as the root, not as an unknown path.
+      if (url.pathname !== ROUTE && url.pathname !== '/') {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+        res.end('not found');
+        return;
+      }
       if (req.method !== 'GET' && req.method !== 'POST') {
         res.writeHead(405, { allow: 'GET, POST', 'content-type': 'text/plain; charset=utf-8' });
         res.end('method not allowed');
@@ -158,7 +175,7 @@ export function createRouteHandler(
       );
       json(res, 200, payload);
     } catch (error) {
-      json(res, error instanceof HttpError ? error.status : 500, { error: errorMessage(error) }, true);
+      json(res, error instanceof HttpError ? error.status : 500, { error: errorMessage(error) });
     }
   };
 }

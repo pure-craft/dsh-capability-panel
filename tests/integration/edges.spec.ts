@@ -63,16 +63,28 @@ function bootHost(overrides: Record<string, unknown> = {}) {
   return route;
 }
 
-async function requestText(handler: Handler, method: string, url: string): Promise<{ status: number; body: string; headers: Record<string, string> }> {
+async function requestText(
+  handler: Handler,
+  method: string,
+  url: string,
+  extraHeaders: Record<string, string> = {},
+  payload?: string,
+): Promise<{ status: number; body: string; headers: Record<string, string> }> {
   let status = 0;
   let body = '';
   let headers: Record<string, string> = {};
   const req = {
     method,
     url,
-    headers: { host: '127.0.0.1:3080' },
+    headers: { host: '127.0.0.1:3080', ...extraHeaders },
     socket: { remoteAddress: '127.0.0.1' },
-    on: () => req,
+    // The route reads a POST body through the stream events, so a request
+    // carrying one has to replay them.
+    on(event: string, handle: (chunk?: unknown) => void) {
+      if (payload !== undefined && event === 'data') handle(Buffer.from(payload));
+      if (event === 'end') handle();
+      return req;
+    },
   };
   await handler(req, {
     writeHead(code: number, values: Record<string, string>) { status = code; headers = values; },
@@ -131,6 +143,56 @@ async function postRaw(
   await handler(req, { writeHead(code: number) { status = code; }, end(chunk?: string) { out = chunk ?? ''; } });
   return { status, body: out };
 }
+
+// Every one of these responses reflects live process state, and an error is
+// the most volatile of them: a 503 from a service that had not come up yet
+// must not be what the browser keeps showing after it has.
+describe('cache headers', () => {
+  it('marks catalog responses no-store', async () => {
+    const route = bootHost();
+    const result = await requestText(route.handler, 'GET', '/api/agent-toolkit?session=s1');
+
+    expect(result.status).toBe(200);
+    expect(result.headers['cache-control']).toBe('no-store');
+  });
+
+  it('marks error responses no-store too', async () => {
+    // A malformed toggle body: rejected by validation, so the response is
+    // produced by the error branch rather than the success one.
+    const route = bootHost();
+    const result = await requestText(route.handler, 'POST', '/api/agent-toolkit?session=s1', {
+      'content-type': 'application/json',
+    }, '{"kind":"nonsense"}');
+
+    expect(result.status).toBeGreaterThanOrEqual(400);
+    expect(result.headers['cache-control'], 'a transient failure must not be cacheable').toBe('no-store');
+  });
+});
+
+// The route owns one prefix and three paths under it. Anything else is a
+// caller mistake, and answering it with the catalogue hides typos and makes
+// every future sub-path a silent behaviour change.
+describe('unknown sub-paths', () => {
+  it.each(['/api/agent-toolkit/bogus', '/api/agent-toolkit/presets/extra', '/api/agent-toolkit/stats/x'])(
+    'answers 404 for %s',
+    async (path) => {
+      const route = bootHost();
+      const result = await requestText(route.handler, 'GET', path);
+
+      expect(result.status).toBe(404);
+    },
+  );
+
+  // The point is that each real path is still ROUTED -- not 404 -- whatever
+  // its handler then answers. This fixture has no agent-presets service, so
+  // /presets legitimately reports 503.
+  it('still routes the three real paths', async () => {
+    const route = bootHost();
+    for (const path of ['/api/agent-toolkit?session=s1', '/api/agent-toolkit/presets', '/api/agent-toolkit/stats']) {
+      expect((await requestText(route.handler, 'GET', path)).status, path).not.toBe(404);
+    }
+  });
+});
 
 describe('HTTP method boundaries', () => {
   it('allows only GET on the stats endpoint', async () => {
