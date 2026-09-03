@@ -4,7 +4,7 @@ import type { InspectorPayload } from '../../src/contract.js';
 // The host's client bundle touches `window` at import time, so tests stub the
 // store primitive with a minimal faithful implementation (reference-stable
 // snapshot, notify-on-set) — the store's own logic is what's under test.
-vi.mock('@deepseek-ai/dsh-client-runtime/client', () => ({
+vi.mock('@deepseek-ai/dsh-client-store', () => ({
   createSnapshotStore<T>(initial: T) {
     let state = initial;
     const listeners = new Set<() => void>();

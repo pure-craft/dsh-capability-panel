@@ -32,9 +32,10 @@ describe('bundle declaration', () => {
   it('declares the client half where the bundle loader looks for it', () => {
     const dsh = pkg['dsh'] as { client?: { inject?: string[]; platform?: string } } | undefined;
     expect(dsh?.client?.platform).toBe('web');
-    // The client half calls ctx.slots and the runtime store, so both must be
-    // injected or the browser half loads against an absent service.
-    expect(dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-runtime');
+    // The client half calls ctx.slots, so the renderer that provides the
+    // service must be injected or the browser half loads against an absent
+    // service.
+    expect(dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-renderer');
     expect(dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-layout');
     // The panel's copy registers into the locale runtime, so the locale
     // client plugin must be mounted first or ctx.locale is absent.

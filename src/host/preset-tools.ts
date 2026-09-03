@@ -1,4 +1,3 @@
-import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import z from '@deepseek-ai/schemastery';
 import { errorMessage, HttpError } from './errors.js';
 import type {
@@ -17,7 +16,10 @@ import type {
 } from './types.js';
 import { groupMcpTools } from '../load-state.js';
 
-export const PRESET_SETTINGS_NAMESPACE = settingsNamespace('agent-toolkit');
+// dsh-settings 0.1.2 removed the settingsNamespace() brander: register takes
+// the literal and validates it (lowercase-hyphenated) at the type level and
+// at runtime.
+export const PRESET_SETTINGS_NAMESPACE = 'agent-toolkit';
 import { RESERVED_TOOL } from './reserved.js';
 export { RESERVED_TOOL };
 

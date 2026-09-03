@@ -35,15 +35,15 @@ export default defineConfig([
     // factory's require resolves them to the host module graph's copies
     // (a bundled react is a second instance and hooks break; a bundled
     // primitives copy loses the host's theme and i18n context). Same for
-    // dsh-client-runtime/client (createSnapshotStore must share the host's
-    // store engine instance).
+    // dsh-client-store (createSnapshotStore must share the host's store
+    // engine instance; it is one of the shell's platform modules).
     external: [
       'react',
       'react-dom',
       /^react\//,
       /^react-dom\//,
       '@deepseek-ai/dsh-client-ui-primitives',
-      '@deepseek-ai/dsh-client-runtime/client',
+      '@deepseek-ai/dsh-client-store',
     ],
     // Base UI leaves development guards as `process.env.NODE_ENV` checks.
     // DSH's browser module runtime does not provide Node's `process` global,
