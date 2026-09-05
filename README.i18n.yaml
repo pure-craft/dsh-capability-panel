@@ -4,5 +4,5 @@
 #   git hash-object README.md README.zh.md README.ja.md README.ko.md
 README.md: 8a727fa6efb21b6f8e2fec3b1d509743f186b1ad
 README.zh.md: 7a42934470c4898de6e1ac72ab8739e7f07fca2f
-README.ja.md: 21d7b64457d1f99ac956cce3954b49ab470b5b12
-README.ko.md: f23e3a3286fd199ff3e57da715c08e75eb7f823b
+README.ja.md: 11be64383049c80ed7b6a05ee0982c5c91e64563
+README.ko.md: f7e346bec66eecce58af5a62f515f531f8ba2edf
