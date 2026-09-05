@@ -540,11 +540,13 @@ export function apply(ctx: SlotContext): void {
             )
           : null,
         // Partial reads are reported, so a short list is never silently wrong.
+        // The host note itself stays English (diagnostic payload, keyed by the
+        // raw note); the visible label around it is localized.
         payload?.degraded !== undefined
           ? h(
               'div',
               { key: 'degraded', style: { color: TOK.warn, padding: '2px 0' } },
-              ...payload.degraded.map((note) => h('div', { key: note }, `⚠ ${note}`)),
+              ...payload.degraded.map((note) => h('div', { key: note }, t('degraded.item', { note }))),
             )
           : null,
       ];

@@ -61,6 +61,7 @@ export const zh: Record<string, string> = {
   'preset.noTools': '这个 preset 没有可用能力。',
   'preset.reserved': '{name} 是保留的传输通道，不能关闭。',
   'preset.broken': '这个 preset 无法组装会话：{reason}。修好它之后才能列出工具。',
+  'degraded.item': '⚠ 部分读取失败：{note}',
 };
 
 export const en: Record<string, string> = {
@@ -111,6 +112,7 @@ export const en: Record<string, string> = {
   'preset.noTools': 'This preset exposes no capabilities.',
   'preset.reserved': '{name} is a reserved transport and cannot be disabled.',
   'preset.broken': 'This preset cannot compose a session: {reason}. Fix it before its tools can be listed.',
+  'degraded.item': '⚠ Partial read failed: {note}',
 };
 
 /**
