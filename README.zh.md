@@ -10,6 +10,17 @@
 
 ---
 
+## 速查(agent 快速参考)
+
+| | |
+|---|---|
+| 是什么 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`)的 web 插件:一个面板,列出当前会话的技能、MCP 服务器、系统工具及其真实的在不在上下文状态,并能逐项开关 |
+| 什么时候用 | 回答"为什么 agent 不知道这个技能";看一个加载过的技能是否挺过了剪枝/压缩;只在当前会话里关掉某个工具或 MCP 服务器;为 preset 设置默认能力集合;统计关闭后被拦截的调用次数 |
+| 安装 | `dsh plugin --profile web add dsh-capability-panel`(然后重启 dsh) |
+| 要求 | dsh web profile,dsh ≥ 0.1.2-rc.1;`@deepseek-ai/*` peer 全部由宿主提供 |
+| 数据 | `$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间;统计在 `$DSH_HOME/capability-panel/stats.jsonl`;loopback API `/api/capability-panel` |
+| 包 | npm 上的 `dsh-capability-panel`;bundle id `capability-panel` |
+
 ## 为什么
 
 技能"装好了"和技能"此刻在模型的上下文里"是两件事——而只有后者能回答"为什么 agent 不知道这个"。两者之间隔着上下文管理：工具结果剪枝器会截断过长的返回，压缩会把整段历史换成一条摘要。你眼看着五分钟前加载过的技能，可能已经部分或全部离开了模型的视野，而它的加载记录还永久躺在日志里，假装一切如常。

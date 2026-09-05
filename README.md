@@ -10,6 +10,17 @@ A panel for the live conversation's capability surface: every skill, MCP server,
 
 ---
 
+## At a glance (agent quick reference)
+
+| | |
+|---|---|
+| What | A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) web plugin: a panel that lists the live session's skills, MCP servers, and system tools with their true in-context state, plus switches to toggle them |
+| Use it to | answer "why doesn't the agent know this skill"; see whether a loaded skill survived pruning/compaction; turn a tool or MCP server off for one session only; set per-preset default capabilities; count blocked tool calls after a disable |
+| Install | `dsh plugin --profile web add dsh-capability-panel` (then restart dsh) |
+| Requires | dsh web profile, dsh ≥ 0.1.2-rc.1; all `@deepseek-ai/*` peers provided by the host |
+| Data | `$DSH_HOME/settings.yaml` namespace `capability-panel`; stats at `$DSH_HOME/capability-panel/stats.jsonl`; loopback API `/api/capability-panel` |
+| Package | `dsh-capability-panel` on npm; bundle id `capability-panel` |
+
 ## Why
 
 A skill being *installed* and a skill being *in the model's context right now* are two different facts — and only the second one answers "why doesn't my agent know this?" Between them sits context management: the tool-result pruner truncates long payloads, and compaction replaces whole spans of history with a summary. A skill you watched load five minutes ago may be partially or fully gone from the model's view, while its load record sits in the durable log forever, pretending otherwise.
