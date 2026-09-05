@@ -40,7 +40,13 @@ import * as React from 'react';
 // Same story for primitives: the module system resolves it to the host graph's
 // row (every shipped UI bundle requires it the same way), keeping Tooltip's
 // theme and i18n context singular. tsdown must NOT bundle it.
-import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
+import {
+  IconChevronRightOutline14,
+  IconContextInjectionOutline16,
+  IconRightUpOutline14,
+  IconSearchOutline16,
+  Tooltip,
+} from '@deepseek-ai/dsh-client-ui-primitives';
 // Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
 // the host instance, exactly like our own (verified against shipped bundles).
 import { Collapsible } from '@base-ui/react/collapsible';
@@ -135,67 +141,15 @@ export function apply(ctx: SlotContext): void {
   }, 'agent-toolkit: stylesheet');
 
   /** "Layers" glyph drawn at currentColor — stands for the context stack. */
-  const layersIcon = (size: number) =>
-    h(
-      'svg',
-      { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
-      h('path', {
-        d: 'M8 1.8 14.2 5 8 8.2 1.8 5 8 1.8Z',
-        stroke: 'currentColor',
-        strokeWidth: 1.2,
-        strokeLinejoin: 'round',
-      }),
-      h('path', {
-        d: 'M2.6 8 8 11 13.4 8',
-        stroke: 'currentColor',
-        strokeWidth: 1.2,
-        strokeLinecap: 'round',
-        strokeLinejoin: 'round',
-      }),
-      h('path', {
-        d: 'M2.6 10.8 8 13.8 13.4 10.8',
-        stroke: 'currentColor',
-        strokeWidth: 1.2,
-        strokeLinecap: 'round',
-        strokeLinejoin: 'round',
-      }),
-    );
+  // Host iconography: the panel inspects what lands in the session's context.
+  const layersIcon = (size: number) => h(IconContextInjectionOutline16, { size });
 
-  /** "Magnifier" glyph sitting inside the filter input. */
-  const searchIcon = (size: number) =>
-    h(
-      'svg',
-      { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
-      h('circle', { cx: 7, cy: 7, r: 4.2, stroke: 'currentColor', strokeWidth: 1.2 }),
-      h('path', {
-        d: 'M10.2 10.2 13.4 13.4',
-        stroke: 'currentColor',
-        strokeWidth: 1.2,
-        strokeLinecap: 'round',
-      }),
-    );
+  /** Magnifier sitting inside the filter input. */
+  const searchIcon = (size: number) => h(IconSearchOutline16, { size });
 
-  /** "Return" bent arrow: the row action lands the command in the composer,
+  /** Up-right arrow: the row action lands the command in the composer,
    *  ready for the user's own Enter. */
-  const insertIcon = (size: number) =>
-    h(
-      'svg',
-      { width: size, height: size, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
-      h('path', {
-        d: 'M6 6.8 2.8 10l3.2 3.2',
-        stroke: 'currentColor',
-        strokeWidth: 1.3,
-        strokeLinecap: 'round',
-        strokeLinejoin: 'round',
-      }),
-      h('path', {
-        d: 'M13.5 2.8v4.5c0 1.5-1.2 2.7-2.7 2.7H2.8',
-        stroke: 'currentColor',
-        strokeWidth: 1.3,
-        strokeLinecap: 'round',
-        strokeLinejoin: 'round',
-      }),
-    );
+  const insertIcon = (size: number) => h(IconRightUpOutline14, { size });
 
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
@@ -329,18 +283,8 @@ export function apply(ctx: SlotContext): void {
           },
         });
 
-      /** Chevron that rotates from pointing right to pointing down. */
-      const chevronIcon = h(
-        'svg',
-        { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
-        h('path', {
-          d: 'M6 3.5 10.5 8 6 12.5',
-          stroke: 'currentColor',
-          strokeWidth: 1.4,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-        }),
-      );
+      /** Right chevron the disclosure CSS rotates 90° when expanded. */
+      const chevronIcon = h(IconChevronRightOutline14, { size: 12 });
 
       const groupLabel = (text: string, first: boolean) =>
         h(
