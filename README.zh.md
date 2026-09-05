@@ -6,7 +6,7 @@
 
 一个面向当前对话能力面的面板：每个技能、每个 MCP 服务器、每个系统工具，都有真实的"在不在上下文里"状态，和一个从下一步模型调用就生效的开关。
 
-![能力面板:技能带加载状态、MCP 按服务器分组、每行一个开关](docs/images/panel.zh.svg)
+![会话中的能力面板:技能带加载状态、MCP 按服务器分组、每行一个开关](docs/images/panel-session.png)
 
 ---
 
@@ -81,6 +81,8 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 `run_code` 是保留的 Code Mode 传输通道——注册表禁止遮罩它，所以它的开关锁定为开。
 
 两个作用域，同一组开关：**输入框里的面板**绑定你眼前的会话（重启后随它恢复）;**设置 → 能力面板**决定之后每个会话从什么状态开始。Preset 默认在会话 agent 创建时读取——不改写 preset 文件，也不改变已经在运行的 agent。
+
+![设置 → 能力面板：每个 preset 的默认能力集合](docs/images/panel-settings.png)
 
 ## 工作原理
 

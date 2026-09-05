@@ -6,7 +6,7 @@ English | [中文](README.zh.md) | [日本語](README.ja.md) | [한국어](READM
 
 A panel for the live conversation's capability surface: every skill, MCP server, and system tool, with its real in-context state and a switch that takes effect on the very next model step.
 
-![The capability panel: skills with load states, MCP servers grouped, per-row switches](docs/images/panel.svg)
+![The capability panel in a live session: skills with load-state pills, MCP servers grouped, per-row switches](docs/images/panel-session.png)
 
 ---
 
@@ -81,6 +81,8 @@ Open any conversation and click the context icon at the right of the composer; t
 `run_code` is the reserved Code Mode transport — the registry forbids masking it, so its switch is locked on.
 
 Two scopes, same switches: **the composer panel** is bound to the session in front of you (and restored with it after a restart); **Settings → Capability Panel** decides what every later session starts from. Preset defaults are read when a session agent is created — they do not rewrite preset files and do not change agents that are already running.
+
+![Settings → Capability Panel: per-preset default capabilities](docs/images/panel-settings.png)
 
 ## How it works
 

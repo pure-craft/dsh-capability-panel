@@ -6,7 +6,7 @@
 
 현재 대화의 capability 표면을 보여주는 패널: 모든 스킬, MCP 서버, 시스템 도구의 실제 인컨텍스트 상태와, 다음 모델 스텝부터 바로 적용되는 스위치를 제공합니다.
 
-![capability 패널: 로드 상태가 표시된 스킬, 서버별로 그룹화된 MCP, 행별 스위치](docs/images/panel.svg)
+![라이브 세션의 capability 패널: 로드 상태 필이 붙은 스킬, 서버별 MCP, 행별 스위치](docs/images/panel-session.png)
 
 ---
 
@@ -75,6 +75,8 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 `run_code`는 예약된 Code Mode 트랜스포트로, 레지스트리가 마스킹을 금지하므로 스위치가 켜진 채로 고정됩니다.
 
 두 스코프, 같은 스위치: **입력창의 패널**은 눈앞의 세션에 바인딩되고(재시작 후에도 함께 복원), **설정 → capability 패널**은 이후 모든 세션의 시작점을 결정합니다.
+
+![설정 → capability 패널: 프리셋별 기본 capability](docs/images/panel-settings.png)
 
 ## 작동 원리
 
