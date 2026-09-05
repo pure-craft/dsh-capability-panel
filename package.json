@@ -30,7 +30,8 @@
     "lint": "oxlint --type-aware --tsconfig tsconfig.test.json src tests",
     "lint:fix": "oxlint --type-aware --tsconfig tsconfig.test.json src tests --fix",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test",
-    "clean": "rm -rf lib"
+    "clean": "rm -rf lib",
+    "prepublishOnly": "pnpm run check && pnpm run build"
   },
   "dsh": {
     "bundle": {
@@ -81,5 +82,15 @@
   "homepage": "https://github.com/pure-craft/dsh-agent-toolkit",
   "bugs": {
     "url": "https://github.com/pure-craft/dsh-agent-toolkit/issues"
-  }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "agent",
+    "skills",
+    "mcp",
+    "tools",
+    "context"
+  ]
 }

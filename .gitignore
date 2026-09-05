@@ -8,3 +8,4 @@ coverage/
 .oxlintcache
 .idea/
 .vscode/
+.npm-cache/
