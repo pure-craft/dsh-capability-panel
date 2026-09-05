@@ -57,7 +57,7 @@ describe('classifyBlockedCall', () => {
       {
         name: 'bash',
         agent: { id: 's3' },
-        error: { message: 'capability-panel: tool disabled "bash" (re-enable from the agent toolkit panel)' },
+        error: { message: 'capability-panel: tool disabled "bash" (re-enable from the Capability Panel)' },
       },
       new Set(),
       new Set(['bash']),

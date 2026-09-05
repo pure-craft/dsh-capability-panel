@@ -92,5 +92,9 @@
     "mcp",
     "tools",
     "context"
-  ]
+  ],
+  "author": "PureCraft",
+  "engines": {
+    "node": ">=20"
+  }
 }

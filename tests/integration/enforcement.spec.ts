@@ -211,7 +211,7 @@ describe('denials are counted', () => {
 
     host.onResult(
       { agent: { id: 's1' }, name: 'bash' },
-      { isError: true, error: { message: 'capability-panel: tool disabled "bash" (re-enable from the agent toolkit panel)' } },
+      { isError: true, error: { message: 'capability-panel: tool disabled "bash" (re-enable from the Capability Panel)' } },
     );
 
     // The count reaches the panel through the same payload the client reads.

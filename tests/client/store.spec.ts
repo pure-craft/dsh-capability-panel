@@ -210,7 +210,7 @@ describe('error detail extraction', () => {
     })));
 
     await store.refresh('s');
-    expect(store.getSnapshot().error).toBe('HTTP 500：session agent is not available');
+    expect(store.getSnapshot().error).toBe('HTTP 500: session agent is not available');
   });
 
   it('keeps the status-only message when the body is not valid JSON', async () => {

@@ -2,71 +2,77 @@
 
 English | [中文](README.zh.md)
 
-A skill and tool control surface for DeepSeek Harness: inspect and temporarily tune one running session, or persist the default tool set of each agent preset.
+**See what your DeepSeek Harness agent can actually reach right now — and switch it, per session or per preset.**
+
+A panel for the live conversation's capability surface: every skill, MCP server, and system tool, with its real in-context state and a switch that takes effect on the very next model step.
+
+![The capability panel: skills with load states, MCP servers grouped, per-row switches](docs/images/panel.svg)
 
 ---
 
-## What it solves
+## Why
 
-A skill being *installed* and a skill being *in the model's context right now* are two different facts, and only the second one answers "why doesn't the agent know this". Compaction replaces a span of history with a single summary, so a skill loaded earlier keeps its load record in the durable log forever while it has already disappeared from the model's view.
+A skill being *installed* and a skill being *in the model's context right now* are two different facts — and only the second one answers "why doesn't my agent know this?" Between them sits context management: the tool-result pruner truncates long payloads, and compaction replaces whole spans of history with a summary. A skill you watched load five minutes ago may be partially or fully gone from the model's view, while its load record sits in the durable log forever, pretending otherwise.
 
-Likewise, you may want the model to stop reaching for one tool in one conversation — not uninstall a plugin, not edit a config file and restart, just this session, starting from the next step.
+And sometimes you simply want the model to stop reaching for one tool in one conversation — not uninstall a plugin, not edit a config file and restart. Just this session, from the next step on.
 
-This plugin turns both of those into a panel in the bottom-right of the conversation.
+This plugin turns both into one panel at the right of the composer.
 
 ## Features
 
-- **Three sections**: skills, MCP, and system tools, each with its own count
-- **Load state**: every skill reads `loaded` (still in context), `pruned` (head/tail survive, the middle was truncated), `evicted` (compaction took it), or `unloaded`, with its cumulative load count — a skill reloaded after an eviction reads "loaded ×2"
-- **Per-session switches**: turning a skill or tool off hides it from the next prompt assembly onward, while the existing conversation history and already-loaded instructions stay untouched
-- **Preset defaults**: Settings → Agent Toolkit persists a tool allow/deny default for each agent preset; sessions created or resumed afterward inherit it, while the composer's Session context stays per-session. Same filter, same grouping, same switches as the session panel — MCP tools collapse under their server, which can be toggled in one write
-- **MCP grouped by server**: switch one tool off, or the whole server at once
-- **Blocked-attempt counts**: how many times the model still called a capability after it was turned off. A nonzero count means the model is acting from memory — the signal for whether the switch needs to tell the model more explicitly
-- **One-click command fill**: the button on a skill row drops `/skill-name` into the composer
-- **Filtering**: match on name or description, with matching descriptions auto-expanded while a filter is active
-- **Follows the UI language**: panel copy switches between 中文 and English with the host's language setting
+- **Ground-truth load states.** Every skill reports what the model actually sees on the next request: `loaded` (full instructions in context), `truncated` (the pruner kept head & tail, cut the middle), `evicted` (compaction took it entirely), or `not loaded` — plus a cumulative load count, so a skill reloaded after eviction reads `loaded ×2`.
+- **Per-session switches that survive restarts.** Turn a skill, tool, or whole MCP server off for the current conversation. The switch applies from the next prompt assembly, stays bound to that session across a dsh restart, and never touches another session or the conversation history.
+- **Preset defaults.** Settings → Capability Panel stores the default capability set per agent preset; sessions created or resumed afterward inherit it. Same filter, same grouping, same switches as the session panel — a preset default is a starting point the session can still override.
+- **MCP grouped by server.** Two hundred tools behind two servers stay scannable: collapse to one row per server, flip the whole server in one write.
+- **Blocked-attempt counts.** If the model still calls a capability after you turned it off, the panel counts it — the signal that the model is acting from memory and the switch needs a louder story.
+- **One-click command fill.** A skill row's paper-plane button drops `/skill-name` into the composer, ready for your Enter.
+- **Fast filtering.** Match on name, description, or the visible state pill ("truncated" / "已截断" both work), with matching descriptions auto-expanded.
+- **Follows the UI language.** Panel copy switches between 中文 and English with the host.
 
 ## Install
 
+From the marketplace or straight from the repo:
+
 ```bash
 dsh plugin --profile web add dsh-capability-panel
+# or
+dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 ```
 
 Restart dsh for the install to take effect.
 
+Requires a DeepSeek Harness web profile (`dsh web`). All `@deepseek-ai/*` runtime pieces are provided by the host as peer dependencies — there is nothing else to install.
+
 ## Usage
 
-Open any conversation and click the layers icon to the right of the composer (28×28, right-aligned); the panel opens upward.
+Open any conversation and click the context icon at the right of the composer; the panel opens upward.
 
-- Three tabs across the top: **Skills N** / **MCP N** / **Tools N**
-- The switch sits at the right of each row and takes effect immediately, with no refresh
+- Three tabs across the top: **Skills N** / **MCP N** / **Tools N**, each with its live count
+- The switch at the right of each row takes effect immediately — no refresh, no restart
 - Click the row itself to expand its description
-- The filter box at the top matches name or description, with an `X / Y matched` count just below it
-- A disabled item renders dimmed, and generates a note in the model's system prompt ("the user has turned off the following capabilities; do not attempt to call them")
+- The filter box at the top matches name, description, or state label, with an `X / Y` matched count
+- A disabled row renders dimmed, and the model is told in its system prompt that you turned the capability off
 
-`run_code` is the reserved Code Mode transport — the registry forbids masking it, so its switch is disabled.
+`run_code` is the reserved Code Mode transport — the registry forbids masking it, so its switch is locked on.
 
-The same switches exist at two scopes: **Session context** in the composer changes the conversation in front of you (and stays with that session across a restart), and **Settings → Agent Toolkit** changes what every later session starts from. For persistent defaults, open Settings → Agent Toolkit, pick a preset, and switch tools on or off. A preset can expose hundreds of tools, so the section carries the panel's filter and collapses each MCP server into one row with a switch that covers all of its tools. The stored defaults are read when a session agent is created (including a restored session); they do not rewrite the preset files and do not change agents that are already running.
+Two scopes, same switches: **the composer panel** is bound to the session in front of you (and restored with it after a restart); **Settings → Capability Panel** decides what every later session starts from. Preset defaults are read when a session agent is created — they do not rewrite preset files and do not change agents that are already running.
 
 ## How it works
 
-**Load state is read off the live session's in-memory surface, not folded from the log on every read.** The panel borrows the running session's own view — `session.snapshotEvents()` for the event references and `session.surface.nodes` for the incrementally maintained set of seqs the model sees on the next request — so a read is one zero-copy scan with no log clones, no replay validation, and no cross-read race. (Going through `sessionQuery.readSession`/`listEvents` instead cloned and re-validated the entire log up to twice per panel open, which froze the host process on long sessions.) A skill's state still comes from the tool result **paired with** its `skill` call — not the call itself, because after a compaction a high-seq summary node sits at the shadowed range's *position*, so surface order stops tracking seq order and a numeric `start <= seq <= end` test silently misjudges later compactions. Three outcomes are distinguished: `loaded` (the full result is on the surface), `pruned` (the tool-result pruner left a head+marker+tail stub on the surface — head and tail still visible to the model), and `evicted` (compaction shadowed the result entirely). The durable log is never touched; these states describe the model's current view, not the archive.
+**Load state is read off the live session's in-memory surface, not folded from the log on every read.** The panel borrows the running session's own view — `session.snapshotEvents()` for the event references and `session.surface.nodes` for the incrementally maintained set of events the model sees on the next request — so one read is a zero-copy scan: no log clones, no replay validation, no cross-read race. A skill's state comes from the tool result *paired with* its `skill` call, not the call itself: after a compaction, a high-seq summary node sits at the shadowed range's position, so surface order stops tracking seq order and any numeric range test would misjudge later compactions.
 
-**Switching happens at two layers.** A global tool goes through `tools.restrict`, which masks it at the registry level so dispatch reports `UNKNOWN_TOOL`. `restrict` cannot mask a preset-level system tool, so those take two paths instead: the `system-prompt/assemble` event drops the tool's schema at every assembly (the model neither sees it nor spends context on it), and `tools.guard` backstops execution (a model calling it from memory is denied). Both register at the host level and match the exact agent id, so no other session is affected.
+**Switching happens at two layers.** A global tool goes through `tools.restrict`, masking it at the registry so dispatch reports `UNKNOWN_TOOL`. A preset-level system tool cannot be restricted that way, so it takes two paths instead: the `system-prompt/assemble` event drops its schema at every assembly (the model neither sees it nor spends context on it), and `tools.guard` backstops execution in case the model calls it from memory. A skill's switch is a same-name shadow with `modelInvocable: false` in that agent's own scope layer — the layered registry lets the nearest scope win, while `/name` user invocation stays available.
 
-**A skill's switch is a same-name shadow.** It registers a same-name skill with `modelInvocable: false` in that agent's own scope layer. The layered registry lets the nearest scope win the name, so the model-facing catalog and the `skill` loader both stop offering it, while `/name` user invocation stays available. Re-enabling disposes the shadow and the original wins again.
+**Session switches are session-bound and persisted, but never written to the conversation log.** Each toggle is recorded under the session's own id in the plugin's settings namespace, so a restored session gets its own switches back on top of its preset defaults — and no session's switches can leak into another. The "these are off" prompt note is recomputed at every assembly, so nothing stale survives anywhere.
 
-**Session switches are session-bound and persisted, but never written to the conversation log.** Each toggle is recorded in the plugin's settings namespace under the session's own id, so a restored session (a fresh agent after a restart) gets its own switches back on top of its preset defaults — and no session's switches can leak into another. The conversation history itself is never affected: the masks are per-assembly overlays, and the "these are off" prompt note is computed at assembly time, so nothing stale survives in the log. The preset default remains the layer every NEW session starts from.
-
-**Stats stay out of the control flow.** Blocked-attempt counts are appended to a JSONL log and replayed at startup; any I/O failure is swallowed rather than allowed to break the switch itself.
+**Stats stay out of the control flow.** Blocked-attempt counts are appended to a JSONL log and replayed at startup; any I/O failure is swallowed rather than allowed to break a switch.
 
 ## Where data lives
 
-- Preset defaults and session-bound switch positions: the `capability-panel` namespace in `$DSH_HOME/settings.yaml` (session switches live under `sessions.<sessionId>`, kept for up to 200 sessions, oldest evicted first; a section whose plugin is not loaded is never dropped by the harness, so uninstalling keeps them until you delete the section)
-- Blocked-attempt stats: `$DSH_HOME/capability-panel/stats.jsonl`
-- The raw stats are readable directly: `curl 'http://127.0.0.1:3080/api/capability-panel/stats'`
+- Preset defaults and session-bound switch positions: the `capability-panel` namespace in `$DSH_HOME/settings.yaml` (session switches under `sessions.<sessionId>`, kept for up to 200 sessions, oldest evicted first). The harness never drops a section whose plugin is not loaded, so uninstalling keeps these until you delete the section.
+- Blocked-attempt stats: `$DSH_HOME/capability-panel/stats.jsonl`, readable directly at `curl 'http://127.0.0.1:3080/api/capability-panel/stats'`.
 
-The data route accepts loopback callers only. The decision keys on the connection's peer address; the Host and Origin headers are a fallback used only when the socket is unavailable, and with neither present the route refuses.
+The data route accepts loopback callers only, keyed on the connection's peer address.
 
 ## Development
 
@@ -77,7 +83,7 @@ pnpm build      # build both the host and client halves
 pnpm test       # run the tests
 pnpm typecheck  # typecheck
 pnpm lint       # oxlint, including its type-aware rules
-pnpm check      # typecheck + lint + test
+pnpm check      # typecheck + lint + test (100% coverage gates)
 ```
 
 A change to the host half needs a dsh restart; the client half hot-swaps while `dsh web` and the watch build run together.

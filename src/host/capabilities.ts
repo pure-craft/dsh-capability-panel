@@ -54,7 +54,7 @@ function renderDisabledNote(state: SessionCapabilityState): string {
   return [
     'The user has turned off the following capabilities for this session:',
     ...lines,
-    'Do not attempt to call them. If the user\'s request depends on one, say it is disabled and can be re-enabled from the agent toolkit panel.',
+    'Do not attempt to call them. If the user\'s request depends on one, say it is disabled and can be re-enabled from the Capability Panel.',
   ].join('\n');
 }
 
@@ -98,7 +98,7 @@ export function createCapabilityController(
       const state = sessionId === null ? undefined : states.get(sessionId);
       const name = typeof execution.name === 'string' ? execution.name : null;
       if (state === undefined || name === null || !state.systemTools.has(name)) return undefined;
-      return `${GUARD_DENIAL_PREFIX} "${name}" (re-enable from the agent toolkit panel)`;
+      return `${GUARD_DENIAL_PREFIX} "${name}" (re-enable from the Capability Panel)`;
     });
     if (guardDispose === undefined) return;
     guardRegistered = true;

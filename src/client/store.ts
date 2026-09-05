@@ -64,7 +64,7 @@ async function requestPayload(sessionId: string | null, init?: RequestInit): Pro
     try {
       const body: unknown = await response.json();
       if (body !== null && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string') {
-        detail = `：${(body as { error: string }).error}`;
+        detail = `: ${(body as { error: string }).error}`;
       }
     } catch {
       // A non-JSON error still has a useful HTTP status.

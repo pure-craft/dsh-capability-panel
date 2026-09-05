@@ -219,7 +219,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                 React.createElement(
                   'span',
                   { className: 'ci-preset-tool-description' },
-                  t('server.tools', { count: server.tools.length }),
+                  server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length }),
                 ),
               ),
             ),

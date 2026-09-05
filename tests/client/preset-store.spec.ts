@@ -166,7 +166,7 @@ describe('preset tool store', () => {
 
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ error: 'read only' }, 503))));
     await store.setPresetTool('standard', 'bash', false);
-    expect(store.getPresetToolsSnapshot().error).toBe('HTTP 503：read only');
+    expect(store.getPresetToolsSnapshot().error).toBe('HTTP 503: read only');
     expect(store.getPresetToolsSnapshot().payload).not.toBeNull();
 
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ error: 42 }, 500))));

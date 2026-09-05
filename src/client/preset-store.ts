@@ -31,7 +31,7 @@ async function requestPayload(init?: RequestInit): Promise<PresetToolPayload> {
     let detail = '';
     try {
       const body = await response.json() as { error?: unknown };
-      if (typeof body.error === 'string') detail = `：${body.error}`;
+      if (typeof body.error === 'string') detail = `: ${body.error}`;
     } catch {}
     throw new Error(`HTTP ${response.status}${detail}`);
   }

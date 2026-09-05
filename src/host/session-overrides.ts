@@ -3,7 +3,7 @@ import type { ToolkitSettingsAccess } from './settings-scope.js';
 import type { CapabilityKind, SessionOverrideState } from './types.js';
 
 /**
- * Session-bound switch positions, persisted in the toolkit settings namespace
+ * Session-bound switch positions, persisted in the capability-panel settings namespace
  * so a restored session gets its own toggles back after a restart.
  *
  * The binding is the session id: a record is read only by the session that

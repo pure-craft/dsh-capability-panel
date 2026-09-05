@@ -490,7 +490,7 @@ export function apply(ctx: SlotContext): void {
               h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
             ),
             nameText(server.server),
-            metaText(t('server.tools', { count: server.tools.length })),
+            metaText(server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length })),
             blockedChip(serverBlocked),
             switchControl('mcp-server', server.server, server.enabled),
           ),
