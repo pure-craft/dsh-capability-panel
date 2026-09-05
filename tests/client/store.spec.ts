@@ -96,7 +96,7 @@ describe('refresh', () => {
 
     await store.refresh(null);
     await store.refresh('sess 1');
-    expect(calls).toEqual(['/api/agent-toolkit', '/api/agent-toolkit?session=sess%201']);
+    expect(calls).toEqual(['/api/capability-panel', '/api/capability-panel?session=sess%201']);
   });
 
   it('commits loading first, then the payload', async () => {
@@ -165,7 +165,7 @@ describe('setCapability', () => {
 
     await store.setCapability('s', 'skill', 'find-skills', false);
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/agent-toolkit?session=s', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/capability-panel?session=s', {
       credentials: 'same-origin',
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -258,7 +258,7 @@ describe('setCapability', () => {
 
     await store.setCapability('s', 'skill', 'find-skills', false);
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/agent-toolkit?session=s', expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith('/api/capability-panel?session=s', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ kind: 'skill', name: 'find-skills', enabled: false }),
     }));

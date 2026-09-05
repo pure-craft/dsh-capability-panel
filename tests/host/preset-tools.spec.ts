@@ -38,7 +38,7 @@ function fixture(options: FixtureOptions = {}) {
     services['settings'] = {
       writable: true,
       register: () => {
-        throw new Error('settings namespace "agent-toolkit" is already registered');
+        throw new Error('settings namespace "capability-panel" is already registered');
       },
     };
   } else if (options.settings !== false) {

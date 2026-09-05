@@ -62,9 +62,9 @@ dsh plugin --profile web add dsh-capability-panel
 
 ## 数据存放
 
-- Preset 默认值与会话绑定的开关位置：`$DSH_HOME/settings.yaml` 的 `agent-toolkit` 命名空间（命名空间、stats 目录和 `/api/agent-toolkit` 路由早于改名为 `dsh-capability-panel`，有意保留，让存量设置与统计无缝延续）（会话开关在 `sessions.<sessionId>` 下，最多保留 200 个会话、最旧的先淘汰；宿主从不丢弃未加载插件的分节，所以卸载后它们还在，直到你手动删除该段）
-- 拦截统计：`$DSH_HOME/agent-toolkit/stats.jsonl`
-- 原始统计可直接读取：`curl 'http://127.0.0.1:3080/api/agent-toolkit/stats'`
+- Preset 默认值与会话绑定的开关位置：`$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间（会话开关在 `sessions.<sessionId>` 下，最多保留 200 个会话、最旧的先淘汰；宿主从不丢弃未加载插件的分节，所以卸载后它们还在，直到你手动删除该段）
+- 拦截统计：`$DSH_HOME/capability-panel/stats.jsonl`
+- 原始统计可直接读取：`curl 'http://127.0.0.1:3080/api/capability-panel/stats'`
 
 数据路由只接受 loopback 请求：判定依据是连接对端地址，Host / Origin 头只在 socket 不可用时回落，两者都没有时拒绝。
 

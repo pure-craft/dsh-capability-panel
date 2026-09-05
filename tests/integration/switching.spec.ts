@@ -116,7 +116,7 @@ async function post(
   const listeners: Record<string, (chunk?: unknown) => void> = {};
   const req = {
     method: 'POST',
-    url: session === null ? '/api/agent-toolkit' : `/api/agent-toolkit?session=${session}`,
+    url: session === null ? '/api/capability-panel' : `/api/capability-panel?session=${session}`,
     headers: { host: '127.0.0.1:3080', ...(contentType === null ? {} : { 'content-type': contentType }) },
     socket: { remoteAddress: '127.0.0.1' },
     on(event: string, listener: (chunk?: unknown) => void) {
@@ -155,7 +155,7 @@ async function readCatalog(handler: Handler, session = 's1') {
   let body = '';
   const req = {
     method: 'GET',
-    url: `/api/agent-toolkit?session=${session}`,
+    url: `/api/capability-panel?session=${session}`,
     headers: { host: '127.0.0.1:3080' },
     socket: { remoteAddress: '127.0.0.1' },
     on: () => req,

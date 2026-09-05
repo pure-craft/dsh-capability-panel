@@ -100,7 +100,7 @@ function bootHost({ withSystemPrompt = true }: { withSystemPrompt?: boolean } = 
 async function disable(handler: Handler, kind: string, name: string, session = 's1'): Promise<void> {
   const req = {
     method: 'POST',
-    url: `/api/agent-toolkit?session=${session}`,
+    url: `/api/capability-panel?session=${session}`,
     headers: { host: '127.0.0.1:3080', 'content-type': 'application/json' },
     socket: { remoteAddress: '127.0.0.1' },
     on(event: string, listener: (chunk?: unknown) => void) {
@@ -125,7 +125,7 @@ describe('the model is told what the user switched off', () => {
     await disable(host.route.handler, 'skill', 'find-skills');
 
     expect(host.rec.contexts).toHaveLength(1);
-    expect(host.rec.contexts[0]?.name).toBe('agent-toolkit:disabled-capabilities');
+    expect(host.rec.contexts[0]?.name).toBe('capability-panel:disabled-capabilities');
   });
 
   it('renders the live state at assembly time, listing every kind', async () => {
@@ -151,7 +151,7 @@ describe('the model is told what the user switched off', () => {
     // Re-enable through the same route the panel uses.
     const req = {
       method: 'POST',
-      url: '/api/agent-toolkit?session=s1',
+      url: '/api/capability-panel?session=s1',
       headers: { host: '127.0.0.1:3080', 'content-type': 'application/json' },
       socket: { remoteAddress: '127.0.0.1' },
       on(event: string, listener: (chunk?: unknown) => void) {

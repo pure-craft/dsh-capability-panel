@@ -11,7 +11,7 @@
  * and checks every key the component looks up exists in both.
  */
 
-export const LOCALE_NS = 'agent-toolkit';
+export const LOCALE_NS = 'capability-panel';
 
 export const zh: Record<string, string> = {
   'state.loaded': '已加载',

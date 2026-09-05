@@ -37,7 +37,7 @@ async function call(method: string, body?: unknown, contentType?: string) {
   );
   let status = 0;
   let text = '';
-  const pendingRequest = request(method, '/api/agent-toolkit/presets', body, contentType);
+  const pendingRequest = request(method, '/api/capability-panel/presets', body, contentType);
   const pending = handler(pendingRequest.req, {
     writeHead(code: number) { status = code; },
     end(chunk?: string) { text = chunk ?? ''; },

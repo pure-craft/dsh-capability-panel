@@ -175,7 +175,7 @@ export async function get(
 describe('the route answers a payload the client half accepts', () => {
   it('serves a catalog the client parser validates', async () => {
     const route = hostWithCatalog();
-    const { status, body } = await get(route.handler, '/api/agent-toolkit?session=s1');
+    const { status, body } = await get(route.handler, '/api/capability-panel?session=s1');
     expect(status).toBe(200);
 
     // The client refuses an unexpected shape rather than rendering an empty
@@ -203,7 +203,7 @@ describe('the route answers a payload the client half accepts', () => {
         register: () => ({ get: () => ({ presets: { cordis: ['read'] }, presetSkills: { cordis: ['lark-im'] } }), replace: () => Promise.resolve() }),
       },
     });
-    const { status, body } = await get(route.handler, '/api/agent-toolkit/presets');
+    const { status, body } = await get(route.handler, '/api/capability-panel/presets');
     expect(status).toBe(200);
 
     const parsed = parsePresetToolPayload(JSON.parse(body));
@@ -218,7 +218,7 @@ describe('the route answers a payload the client half accepts', () => {
 
   it('groups MCP tools under their server, not as flat system tools', async () => {
     const route = hostWithCatalog();
-    const { body } = await get(route.handler, '/api/agent-toolkit?session=s1');
+    const { body } = await get(route.handler, '/api/capability-panel?session=s1');
     const parsed = parseInspectorPayload(JSON.parse(body));
 
     const server = parsed?.mcp[0];
@@ -231,7 +231,7 @@ describe('the route answers a payload the client half accepts', () => {
 
   it('serves the stats sub-route as its own JSON document', async () => {
     const route = hostWithCatalog();
-    const { status, body } = await get(route.handler, '/api/agent-toolkit/stats');
+    const { status, body } = await get(route.handler, '/api/capability-panel/stats');
     expect(status).toBe(200);
     const payload = JSON.parse(body) as { logFile?: unknown; blocked?: unknown; records?: unknown };
     expect(typeof payload.logFile).toBe('string');
@@ -243,7 +243,7 @@ describe('the route answers a payload the client half accepts', () => {
 describe('the route refuses a non-loopback caller', () => {
   it('answers 403 for a remote address', async () => {
     const route = hostWithCatalog();
-    const { status, body } = await get(route.handler, '/api/agent-toolkit', '203.0.113.7');
+    const { status, body } = await get(route.handler, '/api/capability-panel', '203.0.113.7');
     expect(status).toBe(403);
     expect(body).toBe('forbidden');
   });

@@ -14,8 +14,8 @@ afterEach(() => {
 
 describe('stats store', () => {
   it('resolves DSH_HOME and the default home consistently', () => {
-    expect(statsFilePath({ DSH_HOME: '/state' }, '/home/me')).toBe('/state/agent-toolkit/stats.jsonl');
-    expect(statsFilePath({}, '/home/me')).toBe('/home/me/.dsh/agent-toolkit/stats.jsonl');
+    expect(statsFilePath({ DSH_HOME: '/state' }, '/home/me')).toBe('/state/capability-panel/stats.jsonl');
+    expect(statsFilePath({}, '/home/me')).toBe('/home/me/.dsh/capability-panel/stats.jsonl');
   });
 
   it('treats only ENOENT as an empty store', () => {

@@ -92,7 +92,7 @@ function bootHost(options: { schemas?: { name: string; description: string }[]; 
 async function disable(handler: Handler, kind: string, name: string, session = 's1'): Promise<void> {
   const req = {
     method: 'POST',
-    url: `/api/agent-toolkit?session=${session}`,
+    url: `/api/capability-panel?session=${session}`,
     headers: { host: '127.0.0.1:3080', 'content-type': 'application/json' },
     socket: { remoteAddress: '127.0.0.1' },
     on(event: string, listener: (chunk?: unknown) => void) {
@@ -119,7 +119,7 @@ async function readStatsBody(handler: Handler): Promise<{ blocked: Record<string
   let body = '';
   const req = {
     method: 'GET',
-    url: '/api/agent-toolkit/stats',
+    url: '/api/capability-panel/stats',
     headers: { host: '127.0.0.1:3080' },
     socket: { remoteAddress: '127.0.0.1' },
     on: () => req,
@@ -211,14 +211,14 @@ describe('denials are counted', () => {
 
     host.onResult(
       { agent: { id: 's1' }, name: 'bash' },
-      { isError: true, error: { message: 'agent-toolkit: tool disabled "bash" (re-enable from the agent toolkit panel)' } },
+      { isError: true, error: { message: 'capability-panel: tool disabled "bash" (re-enable from the agent toolkit panel)' } },
     );
 
     // The count reaches the panel through the same payload the client reads.
     let body = '';
     const req = {
       method: 'GET',
-      url: '/api/agent-toolkit?session=s1',
+      url: '/api/capability-panel?session=s1',
       headers: { host: '127.0.0.1:3080' },
       socket: { remoteAddress: '127.0.0.1' },
       on: () => req,
@@ -262,7 +262,7 @@ describe('the result listener ignores what it should', () => {
     let body = '';
     const req = {
       method: 'GET',
-      url: '/api/agent-toolkit?session=s1',
+      url: '/api/capability-panel?session=s1',
       headers: { host: '127.0.0.1:3080' },
       socket: { remoteAddress: '127.0.0.1' },
       on: () => req,

@@ -17,7 +17,7 @@ export interface StatsStore {
 }
 
 export function statsFilePath(environment: NodeJS.ProcessEnv = process.env, home = homedir()): string {
-  return join(environment['DSH_HOME'] ?? join(home, '.dsh'), 'agent-toolkit', 'stats.jsonl');
+  return join(environment['DSH_HOME'] ?? join(home, '.dsh'), 'capability-panel', 'stats.jsonl');
 }
 
 function isEnoent(error: unknown): boolean {

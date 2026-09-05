@@ -27,7 +27,7 @@ export function close(): void {
   if (snapshot.open) store.set({ ...snapshot, open: false });
 }
 
-const ROUTE = '/api/agent-toolkit';
+const ROUTE = '/api/capability-panel';
 
 /**
  * Reads and writes have different ordering domains. A newer refresh supersedes

@@ -102,7 +102,7 @@ export function createCapabilityController(
     });
     if (guardDispose === undefined) return;
     guardRegistered = true;
-    ctx.effect(() => guardDispose, 'agent-toolkit: tool guard');
+    ctx.effect(() => guardDispose, 'capability-panel: tool guard');
   };
   ensureGuard();
 
@@ -131,7 +131,7 @@ export function createCapabilityController(
     const systemPrompt = agent.ctx?.get('systemPrompt') as ScopedSystemPrompt | undefined;
     if (systemPrompt === undefined) return;
     state.noteDispose = systemPrompt.context({
-      name: 'agent-toolkit:disabled-capabilities',
+      name: 'capability-panel:disabled-capabilities',
       order: 900,
       text: () => renderDisabledNote(state),
     });
@@ -171,7 +171,7 @@ export function createCapabilityController(
       description: original.description,
       content: original.content,
       source: 'custom',
-      provider: 'agent-toolkit',
+      provider: 'capability-panel',
       ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
       invocation: { modelInvocable: false, userInvocable: true },
     }));
@@ -244,7 +244,7 @@ export function createCapabilityController(
       state.noteDispose?.();
     }
     states.clear();
-  }, 'agent-toolkit: capability masks');
+  }, 'capability-panel: capability masks');
 
   const seed = async (sessionId: string, defaults: PresetDefaults): Promise<void> => {
     const agent = ctx.get('agents')?.get(sessionId);
@@ -308,7 +308,7 @@ export function createCapabilityController(
             description: original.description,
             content: original.content,
             source: 'custom',
-            provider: 'agent-toolkit',
+            provider: 'capability-panel',
             ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
             invocation: { modelInvocable: false, userInvocable: true },
           });

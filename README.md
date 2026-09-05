@@ -62,9 +62,9 @@ The same switches exist at two scopes: **Session context** in the composer chang
 
 ## Where data lives
 
-- Preset defaults and session-bound switch positions: the `agent-toolkit` namespace in `$DSH_HOME/settings.yaml` (the namespace, stats directory, and `/api/agent-toolkit` route predate the rename to `dsh-capability-panel` and are intentionally kept so existing settings and stats carry over) (session switches live under `sessions.<sessionId>`, kept for up to 200 sessions, oldest evicted first; a section whose plugin is not loaded is never dropped by the harness, so uninstalling keeps them until you delete the section)
-- Blocked-attempt stats: `$DSH_HOME/agent-toolkit/stats.jsonl`
-- The raw stats are readable directly: `curl 'http://127.0.0.1:3080/api/agent-toolkit/stats'`
+- Preset defaults and session-bound switch positions: the `capability-panel` namespace in `$DSH_HOME/settings.yaml` (session switches live under `sessions.<sessionId>`, kept for up to 200 sessions, oldest evicted first; a section whose plugin is not loaded is never dropped by the harness, so uninstalling keeps them until you delete the section)
+- Blocked-attempt stats: `$DSH_HOME/capability-panel/stats.jsonl`
+- The raw stats are readable directly: `curl 'http://127.0.0.1:3080/api/capability-panel/stats'`
 
 The data route accepts loopback callers only. The decision keys on the connection's peer address; the Host and Origin headers are a fallback used only when the socket is unavailable, and with neither present the route refuses.
 

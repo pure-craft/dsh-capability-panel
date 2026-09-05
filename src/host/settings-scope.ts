@@ -4,11 +4,7 @@ import type { HostServices, SettingsScopeLike, ToolkitSettings } from './types.j
 // dsh-settings 0.1.2 removed the settingsNamespace() brander: register takes
 // the literal and validates it (lowercase-hyphenated) at the type level and
 // at runtime.
-// The namespace predates the package's rename to dsh-capability-panel and
-// stays: renaming it would orphan every stored preset default and session
-// override (the harness never drops an unloaded plugin's section, so the old
-// name resolves forever). Same for the stats directory and the data route.
-export const TOOLKIT_SETTINGS_NAMESPACE = 'agent-toolkit';
+export const TOOLKIT_SETTINGS_NAMESPACE = 'capability-panel';
 
 // The schema crosses no declaration boundary: the settings service takes it
 // as `unknown`, and annotating it as such sidesteps the non-portable inferred

@@ -18,7 +18,7 @@
  */
 
 /** Stable prefix of the guard's denial text, marking a hard call to a preset-layer tool the user turned off. */
-export const GUARD_DENIAL_PREFIX = 'agent-toolkit: tool disabled';
+export const GUARD_DENIAL_PREFIX = 'capability-panel: tool disabled';
 
 export interface StatsRecord {
   readonly ts: string;

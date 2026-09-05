@@ -7,7 +7,7 @@ import type { SessionOverrideStore } from './session-overrides.js';
 import type { StatsStore } from './stats-store.js';
 import type { CapabilityKind, HostServices, IncomingLike, ServerResponseLike } from './types.js';
 
-export const ROUTE = '/api/agent-toolkit';
+export const ROUTE = '/api/capability-panel';
 const KINDS: readonly CapabilityKind[] = ['skill', 'mcp-server', 'mcp-tool', 'system-tool'];
 
 class ClientRequestError extends HttpError {
@@ -143,7 +143,7 @@ export function createRouteHandler(
         return;
       }
       // The catalogue answers the prefix itself, not everything beneath it.
-      // Falling through meant /api/agent-toolkit/bogus returned the catalogue
+      // Falling through meant /api/capability-panel/bogus returned the catalogue
       // with a 200, which hides a caller's typo and would silently change
       // meaning the day a real sub-path is added under that name. A request
       // whose url is absent is the degenerate case the prefix router can hand

@@ -10,7 +10,7 @@ import { get, hostWithCatalog } from './composition.spec.js';
 
 /** Read the payload the route serves, failing loudly on a non-200. */
 async function payloadFrom(route: { handler: (req: unknown, res: unknown) => Promise<void> | void }) {
-  const { status, body } = await get(route.handler, '/api/agent-toolkit?session=s1');
+  const { status, body } = await get(route.handler, '/api/capability-panel?session=s1');
   expect(status).toBe(200);
   return JSON.parse(body) as {
     skills: { name: string; description?: string; enabled: boolean }[];

@@ -110,7 +110,7 @@ export function apply(ctx: SlotContext): void {
 
   // Panel copy follows the host's language switch: dictionaries register into
   // the shared locale runtime, and `t` reads the active locale per call.
-  ctx.effect(() => registerLocale(ctx.locale), 'agent-toolkit: dictionaries');
+  ctx.effect(() => registerLocale(ctx.locale), 'capability-panel: dictionaries');
   const t = ctx.locale.bind(LOCALE_NS);
   // uSES channel over the locale revision: a language switch re-renders the
   // panel even though `t` itself is a stable reference.
@@ -138,7 +138,7 @@ export function apply(ctx: SlotContext): void {
     style.textContent = PANEL_CSS;
     document.head.appendChild(style);
     return () => { style.remove(); };
-  }, 'agent-toolkit: stylesheet');
+  }, 'capability-panel: stylesheet');
 
   /** Host iconography: the panel inspects what lands in the session's context. */
   const layersIcon = (size: number) => h(IconContextInjectionOutline16, { size });
@@ -152,13 +152,13 @@ export function apply(ctx: SlotContext): void {
 
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
-      { name: 'settings.section', id: 'agent-toolkit', order: 25, label: () => t('preset.nav') },
+      { name: 'settings.section', id: 'capability-panel', order: 25, label: () => t('preset.nav') },
       () => h(PresetToolSection, { t, subscribeLocale, getLocaleSnapshot }),
     ),
   );
 
   ctx.slots.inject('conversation.input.right', () =>
-    ctx.slots.register({ name: 'conversation.input.right', id: 'agent-toolkit', order: 1000 }, (props: DockProps) => {
+    ctx.slots.register({ name: 'conversation.input.right', id: 'capability-panel', order: 1000 }, (props: DockProps) => {
       const snap = react.useSyncExternalStore(subscribe, getSnapshot);
       // Subscribed for the re-render, not the value: `t` reads the active
       // locale at call time, so a revision bump is all the panel needs.

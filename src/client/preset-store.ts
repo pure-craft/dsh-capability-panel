@@ -26,7 +26,7 @@ export const subscribePresetTools = (listener: () => void): (() => void) => stor
 export const getPresetToolsSnapshot = (): PresetToolState => store.getSnapshot();
 
 async function requestPayload(init?: RequestInit): Promise<PresetToolPayload> {
-  const response = await fetch('/api/agent-toolkit/presets', { credentials: 'same-origin', ...init });
+  const response = await fetch('/api/capability-panel/presets', { credentials: 'same-origin', ...init });
   if (!response.ok) {
     let detail = '';
     try {

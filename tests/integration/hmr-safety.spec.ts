@@ -162,7 +162,7 @@ describe('every registration goes through ctx.effect', () => {
 
     host.runEffects();
     expect(host.routes).toHaveLength(1);
-    expect(host.routes[0]?.path).toBe('/api/agent-toolkit');
+    expect(host.routes[0]?.path).toBe('/api/capability-panel');
   });
 
   it('labels every effect, so a leak is attributable in diagnostics', () => {
@@ -170,11 +170,11 @@ describe('every registration goes through ctx.effect', () => {
     apply(host.ctx as never);
     host.runEffects();
 
-    expect(host.effectLabels).toContain('agent-toolkit: tool guard');
-    expect(host.effectLabels).toContain('agent-toolkit: capability masks');
-    expect(host.effectLabels).toContain('agent-toolkit: data route');
+    expect(host.effectLabels).toContain('capability-panel: tool guard');
+    expect(host.effectLabels).toContain('capability-panel: capability masks');
+    expect(host.effectLabels).toContain('capability-panel: data route');
     for (const label of host.effectLabels) {
-      expect(label).toMatch(/^agent-toolkit: /);
+      expect(label).toMatch(/^capability-panel: /);
     }
   });
 
@@ -185,7 +185,7 @@ describe('every registration goes through ctx.effect', () => {
     expect(host.routeDisposed).toEqual([]);
 
     host.dispose();
-    expect(host.routeDisposed).toEqual(['/api/agent-toolkit']);
+    expect(host.routeDisposed).toEqual(['/api/capability-panel']);
   });
 
   it('removes the execution guard when the fiber unwinds', () => {
@@ -212,7 +212,7 @@ describe('per-session masks are released on teardown', () => {
     const listeners = new Map<string, ((arg?: unknown) => void)[]>();
     const req = {
       method: 'POST',
-      url: '/api/agent-toolkit?session=s1',
+      url: '/api/capability-panel?session=s1',
       headers: { host: '127.0.0.1:3080', 'content-type': 'application/json' },
       socket: { remoteAddress: '127.0.0.1' },
       on(event: string, listener: (arg?: unknown) => void) {
@@ -266,7 +266,7 @@ describe('per-session masks are released on teardown', () => {
 
     await toggle(host, { kind: 'skill', name: 'find-skills', enabled: false });
     expect(host.promptNote).toMatchObject({
-      name: 'agent-toolkit:disabled-capabilities',
+      name: 'capability-panel:disabled-capabilities',
       disposed: false,
     });
 

@@ -29,7 +29,7 @@ export function apply(ctx: HostServices): void {
 
   ctx.effect(
     () => webServer.register({ kind: 'prefix', path: ROUTE, handler }),
-    'agent-toolkit: data route',
+    'capability-panel: data route',
   );
 }
 

@@ -118,7 +118,7 @@ async function postRaw(
   let out = '';
   const req: Record<string, unknown> = {
     method: 'POST',
-    url: '/api/agent-toolkit?session=s1',
+    url: '/api/capability-panel?session=s1',
     headers: { host: '127.0.0.1:3080', 'content-type': 'application/json' },
     socket: { remoteAddress: '127.0.0.1' },
   };
@@ -150,7 +150,7 @@ async function postRaw(
 describe('cache headers', () => {
   it('marks catalog responses no-store', async () => {
     const route = bootHost();
-    const result = await requestText(route.handler, 'GET', '/api/agent-toolkit?session=s1');
+    const result = await requestText(route.handler, 'GET', '/api/capability-panel?session=s1');
 
     expect(result.status).toBe(200);
     expect(result.headers['cache-control']).toBe('no-store');
@@ -160,7 +160,7 @@ describe('cache headers', () => {
     // A malformed toggle body: rejected by validation, so the response is
     // produced by the error branch rather than the success one.
     const route = bootHost();
-    const result = await requestText(route.handler, 'POST', '/api/agent-toolkit?session=s1', {
+    const result = await requestText(route.handler, 'POST', '/api/capability-panel?session=s1', {
       'content-type': 'application/json',
     }, '{"kind":"nonsense"}');
 
@@ -173,7 +173,7 @@ describe('cache headers', () => {
 // caller mistake, and answering it with the catalogue hides typos and makes
 // every future sub-path a silent behaviour change.
 describe('unknown sub-paths', () => {
-  it.each(['/api/agent-toolkit/bogus', '/api/agent-toolkit/presets/extra', '/api/agent-toolkit/stats/x'])(
+  it.each(['/api/capability-panel/bogus', '/api/capability-panel/presets/extra', '/api/capability-panel/stats/x'])(
     'answers 404 for %s',
     async (path) => {
       const route = bootHost();
@@ -188,7 +188,7 @@ describe('unknown sub-paths', () => {
   // /presets legitimately reports 503.
   it('still routes the three real paths', async () => {
     const route = bootHost();
-    for (const path of ['/api/agent-toolkit?session=s1', '/api/agent-toolkit/presets', '/api/agent-toolkit/stats']) {
+    for (const path of ['/api/capability-panel?session=s1', '/api/capability-panel/presets', '/api/capability-panel/stats']) {
       expect((await requestText(route.handler, 'GET', path)).status, path).not.toBe(404);
     }
   });
@@ -197,7 +197,7 @@ describe('unknown sub-paths', () => {
 describe('HTTP method boundaries', () => {
   it('allows only GET on the stats endpoint', async () => {
     const route = bootHost();
-    const result = await requestText(route.handler, 'POST', '/api/agent-toolkit/stats');
+    const result = await requestText(route.handler, 'POST', '/api/capability-panel/stats');
 
     expect(result.status).toBe(405);
     expect(result.headers['allow']).toBe('GET');
@@ -205,7 +205,7 @@ describe('HTTP method boundaries', () => {
 
   it('allows only GET and POST on the catalog endpoint', async () => {
     const route = bootHost();
-    const result = await requestText(route.handler, 'DELETE', '/api/agent-toolkit');
+    const result = await requestText(route.handler, 'DELETE', '/api/capability-panel');
 
     expect(result.status).toBe(405);
     expect(result.headers['allow']).toBe('GET, POST');
@@ -264,12 +264,12 @@ describe('the stats endpoint', () => {
     // The stats log is append-only and shared per DSH_HOME: other tests in
     // this file (and a real ~/.dsh) may already have written to it, so "no
     // log exists" needs its own empty home to be a meaningful assertion.
-    const home = mkdtempSync(join(tmpdir(), 'dsh-agent-toolkit-stats-'));
+    const home = mkdtempSync(join(tmpdir(), 'dsh-capability-panel-stats-'));
     const previous = env['DSH_HOME'];
     env['DSH_HOME'] = home;
     try {
       const route = bootHost();
-      const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
+      const { status, parsed } = await getJson(route.handler, '/api/capability-panel/stats');
 
       expect(status).toBe(200);
       const payload = parsed as { logFile: string; blocked: Record<string, number>; records: unknown[] };
@@ -301,7 +301,7 @@ describe('unexpected service shapes are degraded, never guessed', () => {
         }),
       },
     });
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     const payload = parsed as { degraded?: string[] };
     expect(payload.degraded?.some((note) => note.includes('live session view unavailable'))).toBe(true);
@@ -321,7 +321,7 @@ describe('unexpected service shapes are degraded, never guessed', () => {
         }),
       },
     });
-    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { status, parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     expect(status).toBe(200);
     const payload = parsed as { degraded?: string[] };
@@ -337,7 +337,7 @@ describe('unexpected service shapes are degraded, never guessed', () => {
         guard: () => () => {},
       },
     });
-    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { status, parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     expect(status).toBe(200);
     const payload = parsed as { degraded?: string[]; systemTools: unknown[] };
@@ -352,7 +352,7 @@ describe('unexpected service shapes are degraded, never guessed', () => {
         guard: () => () => {},
       },
     });
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     const payload = parsed as { systemTools: { name: string }[] };
     expect(payload.systemTools.map((tool) => tool.name)).toEqual(['bash']);
@@ -365,7 +365,7 @@ describe('non-loopback callers', () => {
     let status = 0;
     const req = {
       method: 'GET',
-      url: '/api/agent-toolkit?session=s1',
+      url: '/api/capability-panel?session=s1',
       headers: { host: '127.0.0.1:3080' },
       socket: { remoteAddress: '203.0.113.9' },
       on: () => req,
@@ -381,7 +381,7 @@ describe('a request with no session', () => {
     // The panel opens before a session is chosen; it must still render, and
     // an arbitrary ?session= must never mint a state entry.
     const route = bootHost();
-    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit');
+    const { status, parsed } = await getJson(route.handler, '/api/capability-panel');
 
     expect(status).toBe(200);
     const payload = parsed as { sessionId: null; skills: unknown[]; systemTools: unknown[] };
@@ -437,7 +437,7 @@ describe('server masks expand over the global tool view', () => {
       { isError: true, error: { info: { code: 'UNKNOWN_TOOL' }, message: 'unknown tool' } },
     );
 
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel/stats');
     const payload = parsed as { blocked: Record<string, number> };
     expect(payload.blocked['mcp__doubao-search__web_search']).toBe(1);
   });
@@ -445,13 +445,13 @@ describe('server masks expand over the global tool view', () => {
 
 describe('the stats endpoint reads a real log', () => {
   it('returns the recorded lines and ignores blank or corrupt ones', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'dsh-agent-toolkit-stats-'));
+    const home = mkdtempSync(join(tmpdir(), 'dsh-capability-panel-stats-'));
     const previous = env['DSH_HOME'];
     env['DSH_HOME'] = home;
     try {
-      mkdirSync(join(home, 'agent-toolkit'), { recursive: true });
+      mkdirSync(join(home, 'capability-panel'), { recursive: true });
       writeFileSync(
-        join(home, 'agent-toolkit', 'stats.jsonl'),
+        join(home, 'capability-panel', 'stats.jsonl'),
         [
           JSON.stringify({ ts: '2025-01-01T00:00:00.000Z', sessionId: 's1', kind: 'blocked-tool', name: 'bash' }),
           '',
@@ -462,7 +462,7 @@ describe('the stats endpoint reads a real log', () => {
       );
 
       const route = bootHost();
-      const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
+      const { status, parsed } = await getJson(route.handler, '/api/capability-panel/stats');
 
       expect(status).toBe(200);
       const payload = parsed as { records: { name: string }[] };
@@ -475,15 +475,15 @@ describe('the stats endpoint reads a real log', () => {
   });
 
   it('answers rather than failing when the log holds a corrupt line', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'dsh-agent-toolkit-stats-'));
+    const home = mkdtempSync(join(tmpdir(), 'dsh-capability-panel-stats-'));
     const previous = env['DSH_HOME'];
     env['DSH_HOME'] = home;
     try {
-      mkdirSync(join(home, 'agent-toolkit'), { recursive: true });
-      writeFileSync(join(home, 'agent-toolkit', 'stats.jsonl'), '{not json\n', 'utf8');
+      mkdirSync(join(home, 'capability-panel'), { recursive: true });
+      writeFileSync(join(home, 'capability-panel', 'stats.jsonl'), '{not json\n', 'utf8');
 
       const route = bootHost();
-      const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
+      const { status, parsed } = await getJson(route.handler, '/api/capability-panel/stats');
 
       // A truncated tail is normal for an append-only log; the endpoint must
       // still answer instead of turning a diagnostic into an outage.
@@ -546,7 +546,7 @@ describe('reading the live session view', () => {
         get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c' }),
       },
     });
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     const payload = parsed as { skills: { name: string; state: string }[] };
     expect(payload.skills.find((s) => s.name === 'find-skills')?.state).toBe('evicted');
@@ -556,7 +556,7 @@ describe('reading the live session view', () => {
   it('reads loaded when the paired result is on the surface intact', async () => {
     const events = [skillCall(1, 'find-skills', 'c1'), skillResult(2, 'c1')];
     const route = bootHost(agentWith(events, [2]));
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     const payload = parsed as { skills: { name: string; state: string }[] };
     expect(payload.skills.find((s) => s.name === 'find-skills')?.state).toBe('loaded');
@@ -578,7 +578,7 @@ describe('reading the live session view', () => {
         }),
       },
     });
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     expect((parsed as { degraded?: string[] }).degraded?.some((n) => n.includes('log vanished'))).toBe(true);
   });
@@ -613,7 +613,7 @@ describe('tool descriptions', () => {
         guard: () => () => {},
       },
     });
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     const payload = parsed as { systemTools: { name: string; description?: string }[] };
     expect(payload.systemTools.find((t) => t.name === 'bash')).not.toHaveProperty('description');
@@ -629,7 +629,7 @@ describe('boundary shape variants', () => {
         get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c' }),
       },
     });
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     const payload = parsed as { skills: { name: string; description?: string }[] };
     const skill = payload.skills.find((s) => s.name === 'find-skills');
@@ -646,7 +646,7 @@ describe('boundary shape variants', () => {
         guard: () => () => {},
       },
     });
-    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { status, parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     expect(status).toBe(200);
     const payload = parsed as { degraded?: string[] };
@@ -662,7 +662,7 @@ describe('boundary shape variants', () => {
         guard: () => () => {},
       },
     });
-    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit');
+    const { status, parsed } = await getJson(route.handler, '/api/capability-panel');
 
     expect(status).toBe(200);
     const payload = parsed as { sessionId: null; degraded?: string[] };
@@ -702,7 +702,7 @@ describe('boundary shape variants', () => {
         },
       },
     });
-    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { status, parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     expect(status).toBe(500);
     expect((parsed as { error: string }).error).toMatch(/agent registry gone/);
@@ -715,11 +715,11 @@ describe('stats file location', () => {
     delete env['DSH_HOME'];
     try {
       const route = bootHost();
-      const { parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
+      const { parsed } = await getJson(route.handler, '/api/capability-panel/stats');
 
-      // Not `~/agent-toolkit`: a normal install does not export DSH_HOME into
+      // Not `~/capability-panel`: a normal install does not export DSH_HOME into
       // the server process, so this fallback is the common path, not an edge.
-      expect((parsed as { logFile: string }).logFile).toBe(join(homedir(), '.dsh', 'agent-toolkit', 'stats.jsonl'));
+      expect((parsed as { logFile: string }).logFile).toBe(join(homedir(), '.dsh', 'capability-panel', 'stats.jsonl'));
     } finally {
       if (previous !== undefined) env['DSH_HOME'] = previous;
     }
@@ -737,7 +737,7 @@ describe('MCP tool descriptions', () => {
         guard: () => () => {},
       },
     });
-    const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
+    const { parsed } = await getJson(route.handler, '/api/capability-panel?session=s1');
 
     const payload = parsed as { mcp: { tools: { name: string; description?: string }[] }[] };
     const tools = payload.mcp[0]?.tools ?? [];
