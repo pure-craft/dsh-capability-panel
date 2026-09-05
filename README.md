@@ -1,6 +1,6 @@
 # dsh-capability-panel
 
-English | [中文](README.zh.md)
+English | [中文](README.zh.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 **See what your DeepSeek Harness agent can actually reach right now — and switch it, per session or per preset.**
 
@@ -38,6 +38,7 @@ This plugin turns both into one panel at the right of the composer.
 - **Blocked-attempt counts.** If the model still calls a capability after you turned it off, the panel counts it — the signal that the model is acting from memory and the switch needs a louder story.
 - **One-click command fill.** A skill row's paper-plane button drops `/skill-name` into the composer, ready for your Enter.
 - **Fast filtering.** Match on name, description, or the visible state pill ("truncated" / "已截断" both work), with matching descriptions auto-expanded.
+- **Lightweight.** Zero runtime dependencies, zero-copy reads, no background work — the panel only reads when open.
 - **Follows the UI language.** Panel copy switches between 中文 and English with the host.
 
 ## Install
@@ -70,13 +71,9 @@ Two scopes, same switches: **the composer panel** is bound to the session in fro
 
 ## How it works
 
-**Load state is read off the live session's in-memory surface, not folded from the log on every read.** The panel borrows the running session's own view — `session.snapshotEvents()` for the event references and `session.surface.nodes` for the incrementally maintained set of events the model sees on the next request — so one read is a zero-copy scan: no log clones, no replay validation, no cross-read race. A skill's state comes from the tool result *paired with* its `skill` call, not the call itself: after a compaction, a high-seq summary node sits at the shadowed range's position, so surface order stops tracking seq order and any numeric range test would misjudge later compactions.
+**Lightweight by construction.** The plugin ships zero runtime dependencies — React, the UI primitives, and every `@deepseek-ai/*` piece are provided by the host — and its reads are zero-copy: load states come from the live session's in-memory surface (what the model will see next), never re-folded from the durable log, so opening the panel costs a scan of references, not a parse of history.
 
-**Switching happens at two layers.** A global tool goes through `tools.restrict`, masking it at the registry so dispatch reports `UNKNOWN_TOOL`. A preset-level system tool cannot be restricted that way, so it takes two paths instead: the `system-prompt/assemble` event drops its schema at every assembly (the model neither sees it nor spends context on it), and `tools.guard` backstops execution in case the model calls it from memory. A skill's switch is a same-name shadow with `modelInvocable: false` in that agent's own scope layer — the layered registry lets the nearest scope win, while `/name` user invocation stays available.
-
-**Session switches are session-bound and persisted, but never written to the conversation log.** Each toggle is recorded under the session's own id in the plugin's settings namespace, so a restored session gets its own switches back on top of its preset defaults — and no session's switches can leak into another. The "these are off" prompt note is recomputed at every assembly, so nothing stale survives anywhere.
-
-**Stats stay out of the control flow.** Blocked-attempt counts are appended to a JSONL log and replayed at startup; any I/O failure is swallowed rather than allowed to break a switch.
+Switches are thin overlays on the next prompt assembly — a same-name shadow for skills, a registry mask for tools — plus a per-assembly note telling the model what you turned off. Session toggles persist under the session's own id in the plugin's settings namespace, so a restored session gets exactly its own switches back, and nothing ever writes to the conversation log.
 
 ## Where data lives
 
