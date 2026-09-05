@@ -47,6 +47,11 @@ This plugin turns both into one panel at the right of the composer.
 - **Honest failures**: when any one read fails (skill registry, session view, settings store), the panel shows partial data plus an explicit degraded note — a read failure never masquerades as an empty list.
 - **Race-free writes**: preset defaults and session switches share one serialized write queue, so two panels writing at once cannot clobber each other.
 - **Never a drag on the host**: the agent-created listener is fully failure-isolated — no plugin error can stop your session from starting.
+- **Local-first, zero network**: the data route accepts loopback callers only, and the plugin makes no outbound calls, sends no telemetry, and talks to no third-party service — all state stays in the local settings.yaml and one JSONL file.
+- **Instant even on huge sessions**: on a 60k-event, tens-of-MB session log the panel still opens instantly — zero-copy surface reads, one read per open, no polling, no background work.
+- **History-preserving switches**: a switch never rewrites conversation history — disabled capabilities stay intact in the log, and the "these are off" note is recomputed at every assembly. Every switch is a reversible decision, not irreversible surgery.
+- **Sanctioned seams only**: every capability comes from dsh's official extension points (`tools.restrict`, `system-prompt/assemble`, the settings namespace, UI slots) — no monkey-patching, so host upgrades are far less likely to break it.
+- **Theme comes free**: all colors are host design tokens and all icons come from the host's own set — light/dark and language switches follow the host automatically, no theme code to maintain.
 - **i18n-friendly**: panel copy follows the host's UI language (中文/English), and the docs are kept section-aligned across four languages.
 
 ## Install
