@@ -584,6 +584,24 @@ describe('reading the live session view', () => {
   });
 });
 
+describe('toggle persistence', () => {
+  it('applies the switch and reports when it could not be persisted', async () => {
+    // bootHost has no settings service: the mask lands in memory, the record
+    // fails, and the payload must SAY so — silently unpersisted switches would
+    // vanish on restart while looking stored.
+    const route = bootHost();
+    const { status, body } = await postRaw(
+      route.handler,
+      JSON.stringify({ kind: 'system-tool', name: 'bash', enabled: false }),
+    );
+
+    expect(status).toBe(200);
+    const payload = JSON.parse(body) as { systemTools: { name: string; enabled: boolean }[]; degraded?: string[] };
+    expect(payload.systemTools.find((tool) => tool.name === 'bash')?.enabled).toBe(false);
+    expect(payload.degraded?.some((note) => note.includes('could not be persisted'))).toBe(true);
+  });
+});
+
 describe('tool descriptions', () => {
   it('omits an empty description rather than shipping a blank field', async () => {
     const route = bootHost({

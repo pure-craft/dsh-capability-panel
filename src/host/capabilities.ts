@@ -67,7 +67,7 @@ export function createCapabilityController(
   const stateFor = (sessionId: string): SessionCapabilityState => {
     let state = states.get(sessionId);
     if (state === undefined) {
-      state = { skills: new Map(), mcpServers: new Map(), mcpTools: new Map(), systemTools: new Map() };
+      state = { skills: new Map(), mcpServers: new Map(), mcpTools: new Map(), systemTools: new Map(), userToggled: new Set() };
       states.set(sessionId, state);
     }
     return state;
@@ -345,6 +345,10 @@ export function createCapabilityController(
       ];
       for (const [kind, positions] of groups) {
         for (const [name, enabled] of Object.entries(positions)) {
+          // A panel toggle landing mid-restore (restore awaits skill I/O per
+          // entry) is newer than the record on disk; re-applying the stored
+          // position would silently diverge memory from it.
+          if (states.get(sessionId)?.userToggled.has(`${kind}:${name}`) === true) continue;
           try {
             if (kind === 'skill') await setSkill(sessionId, name, enabled);
             else if (kind === 'mcp-server') setServer(sessionId, name, enabled);
@@ -359,13 +363,14 @@ export function createCapabilityController(
       // an empty state entry behind: "no state" is the panel's "nothing is
       // off" signal, and stale entries would only ever accumulate.
       const st = states.get(sessionId);
-      if (st !== undefined && st.skills.size === 0 && st.mcpServers.size === 0 && st.mcpTools.size === 0 && st.systemTools.size === 0) {
+      if (st !== undefined && st.userToggled.size === 0 && st.skills.size === 0 && st.mcpServers.size === 0 && st.mcpTools.size === 0 && st.systemTools.size === 0) {
         st.noteDispose?.();
         delete st.noteDispose;
         states.delete(sessionId);
       }
     },
     async set(sessionId, kind, name, enabled) {
+      stateFor(sessionId).userToggled.add(`${kind}:${name}`);
       if (kind === 'skill') await setSkill(sessionId, name, enabled);
       else if (kind === 'mcp-server') setServer(sessionId, name, enabled);
       else setTool(sessionId, name, enabled, kind === 'system-tool');

@@ -47,6 +47,17 @@ describe('filterPayload', () => {
     expect(filterPayload(payload(), '云文档').skills.map((s) => s.name)).toEqual(['lark-doc']);
   });
 
+  it('matches skills by their visible state label, localized or raw', () => {
+    const p = payload();
+    // Raw key works without any locale wiring.
+    expect(filterPayload(p, 'loaded').skills.length).toBeGreaterThan(0);
+    // The composer panel passes the localized pill text, so searching what
+    // the row visibly says (已截断) finds the skills wearing it.
+    const zh = (skill: { state: string }) => (skill.state === 'loaded' ? '已加载' : skill.state);
+    expect(filterPayload(p, '已加载', zh).skills.length).toBeGreaterThan(0);
+    expect(filterPayload(p, '已截断', zh).skills).toEqual([]);
+  });
+
   it('keeps every tool when the server name matches', () => {
     const view = filterPayload(payload(), 'yunxiao');
     expect(view.mcp).toHaveLength(1);

@@ -3,7 +3,9 @@
  * rules are unit-testable without a DOM and each component stays a projection.
  *
  * Matching rules (case-insensitive substring, query trimmed):
- * - skill: name or description;
+ * - skill: name, description, or `stateLabel` (the localized load-state pill
+ *   text the row shows — searching the visible "已截断/truncated" finds the
+ *   skills wearing it);
  * - MCP server: server name keeps ALL of its tools (the match is the server's
  *   identity); otherwise only the matching tools survive and a server with no
  *   surviving tools drops out;
@@ -23,6 +25,11 @@
 export interface MatchableSkill {
   readonly name: string;
   readonly description?: string;
+  /**
+   * Localized state pill text, supplied by the caller that owns the locale.
+   * Optional so the settings panel (whose rows have no state) stays valid.
+   */
+  readonly stateLabel?: string;
 }
 
 /** The fields a tool row is matched on, for system tools and MCP tools alike. */
@@ -77,7 +84,7 @@ export function filterCapabilities<
       total: source.skills.length + source.mcp.length + source.systemTools.length,
     };
   }
-  const skills = source.skills.filter((skill) => hit(query, [skill.name, skill.description]));
+  const skills = source.skills.filter((skill) => hit(query, [skill.name, skill.description, skill.stateLabel]));
   const mcp = source.mcp.flatMap((server) => {
     if (hit(query, [server.server])) return [server];
     const tools = server.tools.filter((tool) => hit(query, [tool.label, tool.name, tool.description]));

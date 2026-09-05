@@ -4,11 +4,15 @@ import type { RawEvent } from '../load-state.js';
 import type { AgentLike, HostServices, SessionCapabilityState } from './types.js';
 import { RESERVED_TOOL } from './reserved.js';
 
+// Shared singleton for "no switches on this session". Never mutate it: every
+// reader treats the maps as read-only, and a write here would leak into every
+// session that has no state of its own.
 export const EMPTY_STATE: SessionCapabilityState = {
   skills: new Map(),
   mcpServers: new Map(),
   mcpTools: new Map(),
   systemTools: new Map(),
+  userToggled: new Set(),
 };
 
 export async function readAvailable(

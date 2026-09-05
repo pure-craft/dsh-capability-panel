@@ -43,7 +43,7 @@ import * as React from 'react';
 import {
   IconChevronRightOutline14,
   IconContextInjectionOutline16,
-  IconRightUpOutline14,
+  IconSendOutline14,
   IconSearchOutline16,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives';
@@ -140,16 +140,15 @@ export function apply(ctx: SlotContext): void {
     return () => { style.remove(); };
   }, 'agent-toolkit: stylesheet');
 
-  /** "Layers" glyph drawn at currentColor — stands for the context stack. */
-  // Host iconography: the panel inspects what lands in the session's context.
+  /** Host iconography: the panel inspects what lands in the session's context. */
   const layersIcon = (size: number) => h(IconContextInjectionOutline16, { size });
 
   /** Magnifier sitting inside the filter input. */
   const searchIcon = (size: number) => h(IconSearchOutline16, { size });
 
-  /** Up-right arrow: the row action lands the command in the composer,
+  /** Paper plane: the row action lands the command in the composer,
    *  ready for the user's own Enter. */
-  const insertIcon = (size: number) => h(IconRightUpOutline14, { size });
+  const insertIcon = (size: number) => h(IconSendOutline14, { size });
 
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
@@ -193,7 +192,7 @@ export function apply(ctx: SlotContext): void {
       const normalizedQuery = query.trim();
       const filtering = normalizedQuery !== '';
       const payload = snap.payload;
-      const view = payload === null ? null : filterPayload(payload, normalizedQuery);
+      const view = payload === null ? null : filterPayload(payload, normalizedQuery, (skill) => t(`state.${skill.state}`));
       const skills = view === null ? [] : sortSkills(view.skills);
       const mcp = view?.mcp ?? [];
       const systemTools = view?.systemTools ?? [];

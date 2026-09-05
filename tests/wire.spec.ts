@@ -140,6 +140,17 @@ describe('skill entry rejection', () => {
     }
   });
 
+  it('accepts every state the host emits', () => {
+    // A state missing from this list (e.g. 'pruned' dropped from the wire
+    // whitelist) would make the panel reject the whole real payload as an
+    // error page — this is the positive pin for each known value.
+    const base = { name: 'x', enabled: true, loadCount: 1 };
+    for (const state of ['loaded', 'pruned', 'evicted', 'unloaded']) {
+      const parsed = parseInspectorPayload(withSkill({ ...base, state }));
+      expect(parsed?.skills[0]?.state).toBe(state);
+    }
+  });
+
   it('rejects a skill whose enabled flag or loadCount has the wrong type', () => {
     const base = { name: 'x', state: 'loaded' };
     expect(parseInspectorPayload(withSkill({ ...base, enabled: 'yes', loadCount: 1 }))).toBeNull();

@@ -46,7 +46,7 @@ Open any conversation and click the layers icon to the right of the composer (28
 
 `run_code` is the reserved Code Mode transport — the registry forbids masking it, so its switch is disabled.
 
-The same switches exist at two scopes: **Session context** in the composer changes the conversation in front of you, and **Settings → Agent Toolkit** changes what every later session starts from. For persistent defaults, open Settings → Agent Toolkit, pick a preset, and switch tools on or off. A preset can expose hundreds of tools, so the section carries the panel's filter and collapses each MCP server into one row with a switch that covers all of its tools. The stored defaults are read when a session agent is created (including a restored session); they do not rewrite the preset files and do not change agents that are already running.
+The same switches exist at two scopes: **Session context** in the composer changes the conversation in front of you (and stays with that session across a restart), and **Settings → Agent Toolkit** changes what every later session starts from. For persistent defaults, open Settings → Agent Toolkit, pick a preset, and switch tools on or off. A preset can expose hundreds of tools, so the section carries the panel's filter and collapses each MCP server into one row with a switch that covers all of its tools. The stored defaults are read when a session agent is created (including a restored session); they do not rewrite the preset files and do not change agents that are already running.
 
 ## How it works
 
@@ -62,6 +62,7 @@ The same switches exist at two scopes: **Session context** in the composer chang
 
 ## Where data lives
 
+- Preset defaults and session-bound switch positions: the `agent-toolkit` namespace in `$DSH_HOME/settings.yaml` (session switches live under `sessions.<sessionId>`, kept for up to 200 sessions, oldest evicted first; a section whose plugin is not loaded is never dropped by the harness, so uninstalling keeps them until you delete the section)
 - Blocked-attempt stats: `$DSH_HOME/agent-toolkit/stats.jsonl`
 - The raw stats are readable directly: `curl 'http://127.0.0.1:3080/api/agent-toolkit/stats'`
 

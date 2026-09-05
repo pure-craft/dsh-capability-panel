@@ -7,6 +7,13 @@ export interface SessionCapabilityState {
   readonly mcpServers: Map<string, () => void>;
   readonly mcpTools: Map<string, () => void>;
   readonly systemTools: Map<string, () => void>;
+  /**
+   * `${kind}:${name}` keys the user flipped through the panel while this
+   * state exists. A restore replaying persisted positions must skip these:
+   * the user's live action is newer than anything on disk, and re-applying
+   * the stored position would silently diverge memory from the record.
+   */
+  readonly userToggled: Set<string>;
   noteDispose?: () => void;
 }
 

@@ -382,6 +382,20 @@ describe('session overrides restored onto a fresh agent', () => {
     expect(fx.capabilities.state('session-1')).toBeUndefined();
   });
 
+  it('skips a stored position the user already flipped in the live session', async () => {
+    const fx = fixture({
+      overrides: { skills: { writing: false }, mcpServers: {}, mcpTools: {}, systemTools: {} },
+    });
+    // The user re-enabled the skill in the live session BEFORE the restore
+    // replayed the stored "off". The live action is newer than the record,
+    // and restore must not silently diverge memory from what the panel shows.
+    await fx.capabilities.set('session-1', 'skill', 'writing', true);
+    await fx.emitCreated();
+
+    expect(fx.registeredSkills).toEqual([]);
+    expect(fx.capabilities.state('session-1')?.skills.size ?? 0).toBe(0);
+  });
+
   it('swallows an unreadable overrides store and leaves the agent as composed', async () => {
     const fx = fixture({ overridesThrow: true });
     await fx.emitCreated();

@@ -46,7 +46,7 @@ dsh plugin --profile web add dsh-agent-toolkit
 
 `run_code` 是 Code Mode 的保留传输通道，注册表禁止遮蔽它，所以它的开关不可操作。
 
-同一组开关存在于两个作用域：输入框里的**会话上下文**只改眼前这轮对话，**设置 → Agent Toolkit** 则决定之后每个会话从什么状态开始。要修改持久默认值，打开设置 → Agent Toolkit，选择一个 preset 后开关工具。一个 preset 可能暴露上百个工具，因此这里同样带筛选框，并把每个 MCP 服务器折叠成一行，用一个开关覆盖它的所有工具。设置会在会话 agent 创建时读取（包括恢复的会话），不会改写 preset 文件，也不会改变已经运行的 agent。
+同一组开关存在于两个作用域：输入框里的**会话上下文**只改眼前这轮对话（重启后随该会话恢复），**设置 → Agent Toolkit** 则决定之后每个会话从什么状态开始。要修改持久默认值，打开设置 → Agent Toolkit，选择一个 preset 后开关工具。一个 preset 可能暴露上百个工具，因此这里同样带筛选框，并把每个 MCP 服务器折叠成一行，用一个开关覆盖它的所有工具。设置会在会话 agent 创建时读取（包括恢复的会话），不会改写 preset 文件，也不会改变已经运行的 agent。
 
 ## 工作原理
 
@@ -62,6 +62,7 @@ dsh plugin --profile web add dsh-agent-toolkit
 
 ## 数据存放
 
+- Preset 默认值与会话绑定的开关位置：`$DSH_HOME/settings.yaml` 的 `agent-toolkit` 命名空间（会话开关在 `sessions.<sessionId>` 下，最多保留 200 个会话、最旧的先淘汰；宿主从不丢弃未加载插件的分节，所以卸载后它们还在，直到你手动删除该段）
 - 拦截统计：`$DSH_HOME/agent-toolkit/stats.jsonl`
 - 原始统计可直接读取：`curl 'http://127.0.0.1:3080/api/agent-toolkit/stats'`
 
