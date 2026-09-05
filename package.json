@@ -96,5 +96,6 @@
   "author": "PureCraft",
   "engines": {
     "node": ">=20"
-  }
+  },
+  "packageManager": "pnpm@10.17.1"
 }
