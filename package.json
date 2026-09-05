@@ -1,6 +1,6 @@
 {
   "name": "dsh-capability-panel",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Inspect and manage the skills, tools, and MCP capabilities available to a DeepSeek Harness agent session.",
   "license": "MIT",
   "type": "module",
