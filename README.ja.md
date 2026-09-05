@@ -65,6 +65,15 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 
 インストール後は dsh の再起動が必要です。
 
+DeepSeek Harness の web プロファイル(`dsh web`)、dsh ≥ 0.1.2-rc.1 が必要です。`@deepseek-ai/*` の peer はすべてホストが提供するため、他にインストールするものはありません。
+
+**設定不要**——このプラグインに設定項目はありません。再起動後、2 か所に現れます:
+
+- 会話の入力欄右側にある**コンテキストアイコン**——セッションパネルを開きます
+- **設定 → 能力パネル**——プリセットごとのデフォルト能力
+
+`--profile web` は `dsh web` GUI が使うプロファイルなので、そのまま実行できます。マーケットプレイスで "capability panel" を検索してワンクリックで入れることもできます。アンインストールは `dsh plugin --profile web remove dsh-capability-panel`。設定と統計は `$DSH_HOME` に残ります("データの保存場所"参照)。
+
 ## 使い方
 
 会話を開き、入力欄右側のコンテキストアイコンをクリックすると、パネルが上に開きます。

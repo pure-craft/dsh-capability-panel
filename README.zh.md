@@ -71,6 +71,13 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 
 要求 DeepSeek Harness 的 web profile(`dsh web`),dsh ≥ 0.1.2-rc.1。所有 `@deepseek-ai/*` 运行时件都由宿主以 peer 依赖形式提供——没有别的要装。
 
+**安装即用，不需要任何配置**——插件没有配置项。重启后你会在两个地方看到它：
+
+- 任意对话输入框右侧的**上下文图标**——点开就是会话面板
+- **设置 → 能力面板**——管理每个 preset 的默认能力集合
+
+`--profile web` 就是 dsh web GUI 使用的配置档；如果你平时用 `dsh web` 启动界面，照抄命令即可。也可以在插件市场里搜索 "capability panel" 一键安装。卸载用 `dsh plugin --profile web remove dsh-capability-panel`；设置和统计会保留在 `$DSH_HOME`（见"数据存放")。
+
 ## 使用
 
 打开任意对话，点输入框右侧的上下文图标，面板向上展开。

@@ -69,7 +69,14 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 
 Restart dsh for the install to take effect.
 
-Requires a DeepSeek Harness web profile (`dsh web`). All `@deepseek-ai/*` runtime pieces are provided by the host as peer dependencies — there is nothing else to install.
+Requires a DeepSeek Harness web profile (`dsh web`), dsh ≥ 0.1.2-rc.1. All `@deepseek-ai/*` runtime pieces are provided by the host as peer dependencies — there is nothing else to install.
+
+**Zero configuration** — the plugin has no settings of its own. After the restart you will find it in two places:
+
+- the **context icon** at the right of any conversation's composer — that opens the session panel
+- **Settings → Capability Panel** — the per-preset default capabilities
+
+`--profile web` is the profile your `dsh web` GUI already uses, so the command applies verbatim. You can also search "capability panel" in the marketplace UI for a one-click install. Uninstall with `dsh plugin --profile web remove dsh-capability-panel`; settings and stats stay in `$DSH_HOME` (see "Where data lives").
 
 ## Usage
 
