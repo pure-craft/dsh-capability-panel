@@ -1,4 +1,4 @@
-# dsh-agent-toolkit
+# dsh-capability-panel
 
 English | [中文](README.zh.md)
 
@@ -29,7 +29,7 @@ This plugin turns both of those into a panel in the bottom-right of the conversa
 ## Install
 
 ```bash
-dsh plugin --profile web add dsh-agent-toolkit
+dsh plugin --profile web add dsh-capability-panel
 ```
 
 Restart dsh for the install to take effect.
@@ -62,7 +62,7 @@ The same switches exist at two scopes: **Session context** in the composer chang
 
 ## Where data lives
 
-- Preset defaults and session-bound switch positions: the `agent-toolkit` namespace in `$DSH_HOME/settings.yaml` (session switches live under `sessions.<sessionId>`, kept for up to 200 sessions, oldest evicted first; a section whose plugin is not loaded is never dropped by the harness, so uninstalling keeps them until you delete the section)
+- Preset defaults and session-bound switch positions: the `agent-toolkit` namespace in `$DSH_HOME/settings.yaml` (the namespace, stats directory, and `/api/agent-toolkit` route predate the rename to `dsh-capability-panel` and are intentionally kept so existing settings and stats carry over) (session switches live under `sessions.<sessionId>`, kept for up to 200 sessions, oldest evicted first; a section whose plugin is not loaded is never dropped by the harness, so uninstalling keeps them until you delete the section)
 - Blocked-attempt stats: `$DSH_HOME/agent-toolkit/stats.jsonl`
 - The raw stats are readable directly: `curl 'http://127.0.0.1:3080/api/agent-toolkit/stats'`
 

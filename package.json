@@ -1,5 +1,5 @@
 {
-  "name": "dsh-agent-toolkit",
+  "name": "dsh-capability-panel",
   "version": "0.1.0",
   "description": "Inspect and manage the skills, tools, and MCP capabilities available to a DeepSeek Harness agent session.",
   "license": "MIT",
@@ -77,11 +77,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pure-craft/dsh-agent-toolkit.git"
+    "url": "git+https://github.com/pure-craft/dsh-capability-panel.git"
   },
-  "homepage": "https://github.com/pure-craft/dsh-agent-toolkit",
+  "homepage": "https://github.com/pure-craft/dsh-capability-panel",
   "bugs": {
-    "url": "https://github.com/pure-craft/dsh-agent-toolkit/issues"
+    "url": "https://github.com/pure-craft/dsh-capability-panel/issues"
   },
   "keywords": [
     "deepseek-harness",

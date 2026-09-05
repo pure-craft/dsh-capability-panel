@@ -1,6 +1,6 @@
 import { defineConfig } from 'tsdown';
 
-const packageId = 'dsh-agent-toolkit';
+const packageId = 'dsh-capability-panel';
 
 // DSH uses two different loaders: the host entry is a plain Node ESM module,
 // while the browser entry must be a deferred CJS factory registered through

@@ -25,8 +25,8 @@ describe('bundle declaration', () => {
     expect(patchPath).toBe('./cordis.patch.yml');
     // The row id the loader inserts must match the package name's tail, so a
     // renamed package cannot silently mount under a stale id.
-    expect(cordisPatch).toContain('id: agent-toolkit');
-    expect(cordisPatch).toContain("name: 'dsh-agent-toolkit'");
+    expect(cordisPatch).toContain('id: capability-panel');
+    expect(cordisPatch).toContain("name: 'dsh-capability-panel'");
   });
 
   it('declares the client half where the bundle loader looks for it', () => {

@@ -1,4 +1,4 @@
-# dsh-agent-toolkit bundle patch: mounts this plugin into the composition.
+# dsh-capability-panel bundle patch: mounts this plugin into the composition.
 #
 # Both halves resolve through the official bundle flow: the host entry (data
 # route) comes from `main`, the client entry (__ModuleLoader__ UI) from
@@ -6,5 +6,5 @@
 #
 # Install: dsh plugin --profile web add <this package, path or git URL>
 - insert:
-    - id: agent-toolkit
-      name: 'dsh-agent-toolkit'
+    - id: capability-panel
+      name: 'dsh-capability-panel'

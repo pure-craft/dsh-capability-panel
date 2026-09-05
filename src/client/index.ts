@@ -134,7 +134,7 @@ export function apply(ctx: SlotContext): void {
   ctx.effect(() => {
     if (typeof document === 'undefined') return () => {};
     const style = document.createElement('style');
-    style.dataset.plugin = 'dsh-agent-toolkit';
+    style.dataset.plugin = 'dsh-capability-panel';
     style.textContent = PANEL_CSS;
     document.head.appendChild(style);
     return () => { style.remove(); };

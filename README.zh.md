@@ -1,4 +1,4 @@
-# dsh-agent-toolkit
+# dsh-capability-panel
 
 [English](README.md) | 中文
 
@@ -29,7 +29,7 @@ DeepSeek Harness 的技能与工具控制面：既能看清并临时调整当前
 ## 安装
 
 ```bash
-dsh plugin --profile web add dsh-agent-toolkit
+dsh plugin --profile web add dsh-capability-panel
 ```
 
 安装后需要重启 dsh 才生效。
@@ -62,7 +62,7 @@ dsh plugin --profile web add dsh-agent-toolkit
 
 ## 数据存放
 
-- Preset 默认值与会话绑定的开关位置：`$DSH_HOME/settings.yaml` 的 `agent-toolkit` 命名空间（会话开关在 `sessions.<sessionId>` 下，最多保留 200 个会话、最旧的先淘汰；宿主从不丢弃未加载插件的分节，所以卸载后它们还在，直到你手动删除该段）
+- Preset 默认值与会话绑定的开关位置：`$DSH_HOME/settings.yaml` 的 `agent-toolkit` 命名空间（命名空间、stats 目录和 `/api/agent-toolkit` 路由早于改名为 `dsh-capability-panel`，有意保留，让存量设置与统计无缝延续）（会话开关在 `sessions.<sessionId>` 下，最多保留 200 个会话、最旧的先淘汰；宿主从不丢弃未加载插件的分节，所以卸载后它们还在，直到你手动删除该段）
 - 拦截统计：`$DSH_HOME/agent-toolkit/stats.jsonl`
 - 原始统计可直接读取：`curl 'http://127.0.0.1:3080/api/agent-toolkit/stats'`
 
