@@ -1,5 +1,8 @@
 # dsh-capability-panel
 
+[![npm](https://img.shields.io/npm/v/dsh-capability-panel)](https://www.npmjs.com/package/dsh-capability-panel) [![CI](https://github.com/pure-craft/dsh-capability-panel/actions/workflows/check.yml/badge.svg)](https://github.com/pure-craft/dsh-capability-panel/actions/workflows/check.yml) [![license](https://img.shields.io/npm/l/dsh-capability-panel)](LICENSE)
+
+
 [English](README.md) | 中文 | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 **看清你的 DeepSeek Harness agent 此刻真正能触达什么——并且随时开关，按会话或按 preset。**

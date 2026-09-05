@@ -1,5 +1,8 @@
 # dsh-capability-panel
 
+[![npm](https://img.shields.io/npm/v/dsh-capability-panel)](https://www.npmjs.com/package/dsh-capability-panel) [![CI](https://github.com/pure-craft/dsh-capability-panel/actions/workflows/check.yml/badge.svg)](https://github.com/pure-craft/dsh-capability-panel/actions/workflows/check.yml) [![license](https://img.shields.io/npm/l/dsh-capability-panel)](LICENSE)
+
+
 [English](README.md) | [中文](README.zh.md) | 日本語 | [한국어](README.ko.md)
 
 **DeepSeek Harness のエージェントが今まさに到達できるものを可視化し、セッション単位・プリセット単位で切り替える。**

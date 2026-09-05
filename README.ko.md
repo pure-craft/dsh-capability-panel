@@ -1,5 +1,8 @@
 # dsh-capability-panel
 
+[![npm](https://img.shields.io/npm/v/dsh-capability-panel)](https://www.npmjs.com/package/dsh-capability-panel) [![CI](https://github.com/pure-craft/dsh-capability-panel/actions/workflows/check.yml/badge.svg)](https://github.com/pure-craft/dsh-capability-panel/actions/workflows/check.yml) [![license](https://img.shields.io/npm/l/dsh-capability-panel)](LICENSE)
+
+
 [English](README.md) | [中文](README.zh.md) | [日本語](README.ja.md) | 한국어
 
 **DeepSeek Harness 에이전트가 지금 실제로 도달할 수 있는 것을 확인하고, 세션 단위 또는 프리셋 단위로 전환하세요.**
