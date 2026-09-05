@@ -10,6 +10,7 @@ import type {
   ScopedSystemPrompt,
   ScopedToolsRegistry,
   SessionCapabilityState,
+  SessionOverrideState,
 } from './types.js';
 
 export interface PresetDefaults {
@@ -31,6 +32,16 @@ export interface CapabilityController {
    * overwrites a mask already in place.
    */
   seed(sessionId: string, defaults: PresetDefaults): Promise<void>;
+  /**
+   * Re-apply one session's persisted switch positions onto a freshly created
+   * agent (e.g. a restored session after a restart). Runs AFTER seeding:
+   * preset defaults first, the session's own recorded toggles second, so the
+   * user's last word wins — including an explicit re-enable of a preset
+   * default. Never throws and never writes stats: a position that can no
+   * longer apply (skill uninstalled, MCP server gone) is dropped, and no
+   * toggle actually happened here.
+   */
+  restore(sessionId: string, overrides: SessionOverrideState): Promise<void>;
 }
 
 function renderDisabledNote(state: SessionCapabilityState): string {
@@ -325,6 +336,35 @@ export function createCapabilityController(
     states,
     state: (sessionId) => states.get(sessionId),
     seed,
+    async restore(sessionId, overrides) {
+      const groups: readonly (readonly [CapabilityKind, Readonly<Record<string, boolean>>])[] = [
+        ['skill', overrides.skills],
+        ['mcp-server', overrides.mcpServers],
+        ['mcp-tool', overrides.mcpTools],
+        ['system-tool', overrides.systemTools],
+      ];
+      for (const [kind, positions] of groups) {
+        for (const [name, enabled] of Object.entries(positions)) {
+          try {
+            if (kind === 'skill') await setSkill(sessionId, name, enabled);
+            else if (kind === 'mcp-server') setServer(sessionId, name, enabled);
+            else setTool(sessionId, name, enabled, kind === 'system-tool');
+          } catch {
+            // A stored position that can no longer apply is dropped, not
+            // escalated -- same rule as seeding a stale preset default.
+          }
+        }
+      }
+      // Positions that all dropped (or all re-enabled neutral) must not leave
+      // an empty state entry behind: "no state" is the panel's "nothing is
+      // off" signal, and stale entries would only ever accumulate.
+      const st = states.get(sessionId);
+      if (st !== undefined && st.skills.size === 0 && st.mcpServers.size === 0 && st.mcpTools.size === 0 && st.systemTools.size === 0) {
+        st.noteDispose?.();
+        delete st.noteDispose;
+        states.delete(sessionId);
+      }
+    },
     async set(sessionId, kind, name, enabled) {
       if (kind === 'skill') await setSkill(sessionId, name, enabled);
       else if (kind === 'mcp-server') setServer(sessionId, name, enabled);

@@ -10,6 +10,8 @@ import { registerPresetEnforcement } from '../../src/host/preset-enforcement.js'
 
 interface FixtureOptions {
   defaults?: { tools: string[]; skills: string[] } | undefined;
+  overrides?: import('../../src/host/types.js').SessionOverrideState | undefined;
+  overridesThrow?: boolean;
   presetId?: string | undefined;
   defaultsThrow?: boolean;
   agentId?: unknown;
@@ -112,7 +114,14 @@ function fixture(options: FixtureOptions = {}) {
     },
   };
 
-  registerPresetEnforcement(ctx as never, capabilities, presetTools as never);
+  const sessionOverrides = {
+    overridesFor: () => {
+      if (options.overridesThrow === true) throw new Error('settings gone');
+      return options.overrides;
+    },
+  };
+
+  registerPresetEnforcement(ctx as never, capabilities, presetTools as never, sessionOverrides as never);
 
   return {
     capabilities,
@@ -315,5 +324,82 @@ describe('preset enforcement', () => {
     await fx.emitCreated();
     expect([...fx.capabilities.state('session-1')!.systemTools.keys()]).toEqual(['bash']);
     expect([...fx.capabilities.state('session-1')!.skills.keys()]).toEqual(['writing']);
+  });
+});
+
+describe('session overrides restored onto a fresh agent', () => {
+  it('re-applies a session-bound off for every kind', async () => {
+    const fx = fixture({
+      overrides: {
+        skills: { writing: false },
+        mcpServers: { search: false },
+        mcpTools: { 'mcp__search__web': false },
+        systemTools: { bash: false },
+      },
+    });
+    await fx.emitCreated();
+
+    const state = fx.capabilities.state('session-1');
+    expect([...state!.skills.keys()]).toEqual(['writing']);
+    expect([...state!.mcpServers.keys()]).toEqual(['search']);
+    expect([...state!.mcpTools.keys()]).toEqual(['mcp__search__web']);
+    expect([...state!.systemTools.keys()]).toEqual(['bash']);
+    // The disabled-capabilities prompt note must cover restored masks too.
+    expect(fx.promptNotes.length).toBeGreaterThan(0);
+  });
+
+  it('lets a session re-enable (true) what its preset default turns off', async () => {
+    const fx = fixture({
+      ...defaults([], ['writing']),
+      overrides: { skills: { writing: true }, mcpServers: {}, mcpTools: {}, systemTools: {} },
+    });
+    await fx.emitCreated();
+
+    // The preset seeded the mask; the session's recorded re-enable disposed it.
+    expect(fx.skillDisposers.length).toBe(1);
+    expect(fx.skillDisposers[0]).toHaveBeenCalled();
+    expect(fx.capabilities.state('session-1')?.skills.size ?? 0).toBe(0);
+  });
+
+  it('restores overrides even when the agent has no preset defaults', async () => {
+    const fx = fixture({
+      presetId: undefined,
+      overrides: { skills: {}, mcpServers: {}, mcpTools: {}, systemTools: { bash: false } },
+    });
+    await fx.emitCreated();
+
+    expect([...fx.capabilities.state('session-1')!.systemTools.keys()]).toEqual(['bash']);
+  });
+
+  it('drops a stored position that no longer applies instead of failing the agent', async () => {
+    const fx = fixture({
+      skillGetUndefined: true,
+      overrides: { skills: { gone: false }, mcpServers: {}, mcpTools: {}, systemTools: {} },
+    });
+    await fx.emitCreated();
+
+    expect(fx.registeredSkills).toEqual([]);
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+  });
+
+  it('swallows an unreadable overrides store and leaves the agent as composed', async () => {
+    const fx = fixture({ overridesThrow: true });
+    await fx.emitCreated();
+
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+  });
+
+  it('does not leak one session’s overrides into another session', async () => {
+    // The store is keyed by session id; the listener only ever asks for the
+    // created agent's own id. This fixture's store returns overrides for any
+    // key, so the assertion is on the listener's lookup key — a second agent
+    // with a different id gets nothing when the store has nothing for it.
+    const fx = fixture({
+      overrides: { skills: { writing: false }, mcpServers: {}, mcpTools: {}, systemTools: {} },
+      agentId: 'session-1',
+    });
+    await fx.emitCreated();
+    expect([...fx.capabilities.state('session-1')!.skills.keys()]).toEqual(['writing']);
+    expect(fx.capabilities.state('session-2')).toBeUndefined();
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createPresetToolController, PRESET_SETTINGS_NAMESPACE } from '../../src/host/preset-tools.js';
+import { createToolkitSettingsAccess } from '../../src/host/settings-scope.js';
 import { HttpError } from '../../src/host/errors.js';
 
 interface FixtureOptions {
@@ -20,13 +21,15 @@ interface FixtureOptions {
 function fixture(options: FixtureOptions = {}) {
   // Both keys carry a schema default, so the settings service always resolves
   // both. Omitting one here would model a section no provider can produce.
-  const values: { presets: Record<string, string[]>; presetSkills: Record<string, string[]> } = {
+  const values: { presets: Record<string, string[]>; presetSkills: Record<string, string[]>; sessions: Record<string, unknown> } = {
     presets: { alpha: ['bash'] },
     presetSkills: options.disabledSkills === undefined ? {} : { alpha: options.disabledSkills },
+    sessions: {},
   };
-  const update = vi.fn((section: { presets?: Record<string, string[]>; presetSkills?: Record<string, string[]> }) => {
+  const update = vi.fn((section: { presets?: Record<string, string[]>; presetSkills?: Record<string, string[]>; sessions?: Record<string, unknown> }) => {
     values.presets = section.presets ?? {};
     values.presetSkills = section.presetSkills ?? {};
+    values.sessions = section.sessions ?? {};
     return Promise.resolve();
   });
   const registrations: unknown[][] = [];
@@ -89,7 +92,7 @@ function fixture(options: FixtureOptions = {}) {
     get: (name: string) => services[name],
   };
   return {
-    controller: createPresetToolController(ctx as never),
+    controller: createPresetToolController(ctx as never, createToolkitSettingsAccess(ctx as never)),
     values,
     update,
     registrations,
@@ -136,11 +139,11 @@ describe('preset tool settings', () => {
   it('persists disable and enable changes without touching running agents', async () => {
     const host = fixture();
     await host.controller.set('alpha', 'run_code', true);
-    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {} });
+    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {}, sessions: {} });
     await host.controller.set('alpha', 'bash', true);
     // Re-enabling the last disabled tool must REMOVE the preset key, which a
     // merge patch cannot express: the section is written wholesale.
-    expect(host.update).toHaveBeenLastCalledWith({ presets: {}, presetSkills: {} });
+    expect(host.update).toHaveBeenLastCalledWith({ presets: {}, presetSkills: {}, sessions: {} });
     expect(host.values.presets).toEqual({});
     await host.controller.set('alpha', 'bash', false);
     expect(host.values.presets).toEqual({ alpha: ['bash'] });
@@ -154,6 +157,7 @@ describe('preset tool settings', () => {
     expect(host.update).toHaveBeenLastCalledWith({
       presets: { alpha: ['bash', 'mcp__search__image', 'mcp__search__web'] },
       presetSkills: {},
+      sessions: {},
     });
     // Starting from an empty stored set exercises the other side of `?? []`.
     const fresh = fixture();
@@ -162,9 +166,10 @@ describe('preset tool settings', () => {
     expect(fresh.update).toHaveBeenLastCalledWith({
       presets: { alpha: ['mcp__search__image', 'mcp__search__web'] },
       presetSkills: {},
+      sessions: {},
     });
     const payload = await host.controller.setServer('alpha', 'search', true);
-    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {} });
+    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {}, sessions: {} });
     expect(payload.presets[0]?.mcp[0]).toMatchObject({ server: 'search', enabled: true });
   });
 
@@ -262,9 +267,10 @@ describe('preset tool settings', () => {
     expect(host.update).toHaveBeenLastCalledWith({
       presets: { alpha: ['bash'] },
       presetSkills: { alpha: ['writing'] },
+      sessions: {},
     });
     await host.controller.setSkill('alpha', 'writing', true);
-    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {} });
+    expect(host.update).toHaveBeenLastCalledWith({ presets: { alpha: ['bash'] }, presetSkills: {}, sessions: {} });
   });
 
   it('refuses a skill toggle the preset cannot see, and one it cannot mount', async () => {

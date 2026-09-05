@@ -29,10 +29,11 @@ async function call(method: string, body?: unknown, contentType?: string) {
   const setSkill = vi.fn(() => Promise.resolve(payload));
   const handler = createRouteHandler(
     { get: () => undefined } as never,
-    { states: new Map(), state: () => undefined, set: () => Promise.resolve(), seed: () => Promise.resolve() },
+    { states: new Map(), state: () => undefined, set: () => Promise.resolve(), seed: () => Promise.resolve(), restore: () => Promise.resolve() },
     { file: '/tmp/stats', read: () => ({ blocked: {}, records: [], warnings: [] }) } as never,
     {},
     { list, set, setServer, setSkill, defaultsFor: () => undefined },
+    { overridesFor: () => undefined, record: () => Promise.resolve() },
   );
   let status = 0;
   let text = '';

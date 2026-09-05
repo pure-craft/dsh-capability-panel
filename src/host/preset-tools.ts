@@ -1,4 +1,3 @@
-import z from '@deepseek-ai/schemastery';
 import { errorMessage, HttpError } from './errors.js';
 import type {
   AgentPresetLike,
@@ -9,24 +8,20 @@ import type {
   PresetToolEntry,
   PresetToolPayload,
   PresetToolRow,
-  PresetToolSettings,
-  SettingsScopeLike,
   SkillsService,
   ToolsService,
+  ToolkitSettings,
 } from './types.js';
+import type { ToolkitSettingsAccess } from './settings-scope.js';
+import { TOOLKIT_SETTINGS_NAMESPACE } from './settings-scope.js';
 import { groupMcpTools } from '../load-state.js';
 
-// dsh-settings 0.1.2 removed the settingsNamespace() brander: register takes
-// the literal and validates it (lowercase-hyphenated) at the type level and
-// at runtime.
-export const PRESET_SETTINGS_NAMESPACE = 'agent-toolkit';
+// Kept for the tests and any importer that names the settings row: the
+// namespace now lives with the shared scope accessor so the preset controller
+// and the session-override store cannot register divergent schemas.
+export { TOOLKIT_SETTINGS_NAMESPACE as PRESET_SETTINGS_NAMESPACE };
 import { RESERVED_TOOL } from './reserved.js';
 export { RESERVED_TOOL };
-
-const PresetToolSettingsSchema = z.object({
-  presets: z.dict(z.array(z.string())).default({}),
-  presetSkills: z.dict(z.array(z.string())).default({}),
-});
 
 function requireService<T>(service: T | undefined, message: string): T {
   if (service === undefined) throw new HttpError(503, message);
@@ -116,25 +111,10 @@ export interface PresetToolController {
   defaultsFor(presetId: string): { tools: readonly string[]; skills: readonly string[] } | undefined;
 }
 
-export function createPresetToolController(ctx: HostServices): PresetToolController {
-  // Registered on first read, not at apply time: this row does not `inject`
-  // settings, so at composition the service may not be published yet. Binding
-  // it eagerly would freeze an early `undefined` into a permanent 503 even
-  // after settings arrives. The registration is an effect on this fiber, so it
-  // is still disposed with the plugin.
-  let scope: SettingsScopeLike<PresetToolSettings> | undefined;
-  const settingsScope = (): SettingsScopeLike<PresetToolSettings> | undefined => {
-    if (scope === undefined) {
-      scope = ctx.get('settings')?.register<PresetToolSettings>(
-        PRESET_SETTINGS_NAMESPACE,
-        PresetToolSettingsSchema,
-        { applies: 'live' },
-      );
-    }
-    return scope;
-  };
+export function createPresetToolController(ctx: HostServices, access: ToolkitSettingsAccess): PresetToolController {
+  const settingsScope = (): ReturnType<ToolkitSettingsAccess['scope']> => access.scope();
 
-  const services = (): { agentPresets: AgentPresetsService; tools: ToolsService; settings: SettingsScopeLike<PresetToolSettings> } => ({
+  const services = (): { agentPresets: AgentPresetsService; tools: ToolsService; settings: NonNullable<ReturnType<ToolkitSettingsAccess['scope']>> } => ({
     agentPresets: requireService(ctx.get('agentPresets'), 'agentPresets service unavailable'),
     tools: requireService(ctx.get('tools'), 'tools service unavailable'),
     settings: requireService(settingsScope(), 'settings service unavailable'),
@@ -210,36 +190,21 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     return { presets: entries, writable: ctx.get('settings')?.writable === true };
   };
 
-  // Every write is read-modify-write over the whole namespace, and the settings
-  // scope exposes no revision to write against (`replace` closes over the
-  // namespace and drops the optimistic-concurrency argument the service itself
-  // accepts). Two writes that interleave would therefore each persist a section
-  // computed from the same pre-read snapshot, and the later one would silently
-  // undo the earlier -- across registries too, since both maps are written
-  // together. Serializing the read and the write as one critical section is
-  // what keeps a second browser tab, or a fast double-click, from losing a
-  // toggle the user actually made.
-  let writeQueue: Promise<unknown> = Promise.resolve();
-  const serialize = <T>(work: () => Promise<T>): Promise<T> => {
-    const next = writeQueue.then(work, work);
-    writeQueue = next.then(
-      () => undefined,
-      () => undefined,
-    );
-    return next;
-  };
+  // Every write is read-modify-write over the whole namespace, serialized
+  // through the SHARED access queue (settings-scope.ts) so a preset edit and
+  // a session toggle cannot interleave their snapshots.
 
   /** Persist one preset's disabled set for one registry, then re-read. */
   const persist = (
     presetId: string,
-    settingsScope: SettingsScopeLike<PresetToolSettings>,
+    settingsScope: NonNullable<ReturnType<ToolkitSettingsAccess['scope']>>,
     disabled: ReadonlySet<string>,
     registry: 'presets' | 'presetSkills' = 'presets',
-  ): Promise<PresetToolPayload> => serialize(async () => {
+  ): Promise<PresetToolPayload> => access.serialize(async () => {
     const stored = settingsScope.get();
-    // Both maps are always present: each carries a schema default, so a section
-    // written before skills existed still resolves with an empty `presetSkills`
-    // rather than a missing one. The compatibility layer is the schema, not a
+    // All maps are always present: each carries a schema default, so a section
+    // written before skills/sessions existed still resolves with empty ones
+    // rather than missing keys. The compatibility layer is the schema, not a
     // guard here -- an optional read would only imply a shape the settings
     // service cannot hand back.
     const prune = (map: Readonly<Record<string, readonly string[]>>): Record<string, readonly string[]> =>
@@ -250,14 +215,17 @@ export function createPresetToolController(ctx: HostServices): PresetToolControl
     // `replace`, not `update`: the settings merge recurses into the stored
     // section, so a merge patch can only ever add or grow keys. Re-enabling a
     // preset's last disabled tool has to REMOVE its key, and only a wholesale
-    // replace of this namespace's user section can express that.
-    await settingsScope.replace({ presets, presetSkills });
+    // replace of this namespace's user section can express that. `sessions`
+    // passes through untouched: session-bound overrides belong to the other
+    // writer sharing this namespace, and dropping them here would silently
+    // unpersist every session's switches.
+    await settingsScope.replace({ presets, presetSkills, sessions: stored.sessions });
     return list();
   });
 
   return {
     defaultsFor(presetId) {
-      let stored: PresetToolSettings;
+      let stored: ToolkitSettings;
       try {
         const settings = settingsScope();
         if (settings === undefined) return undefined;

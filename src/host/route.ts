@@ -3,6 +3,7 @@ import { buildPayload, EMPTY_STATE } from './catalog.js';
 import type { CapabilityController } from './capabilities.js';
 import { errorMessage, HttpError } from './errors.js';
 import type { PresetToolController } from './preset-tools.js';
+import type { SessionOverrideStore } from './session-overrides.js';
 import type { StatsStore } from './stats-store.js';
 import type { CapabilityKind, HostServices, IncomingLike, ServerResponseLike } from './types.js';
 
@@ -102,6 +103,7 @@ export function createRouteHandler(
   stats: StatsStore,
   blockedCounts: Record<string, number>,
   presetTools: PresetToolController,
+  sessionOverrides: SessionOverrideStore,
 ): (req: IncomingLike, res: ServerResponseLike) => Promise<void> {
   return async (req, res) => {
     if (!isLoopback(req)) {
@@ -157,6 +159,7 @@ export function createRouteHandler(
         return;
       }
       const sessionId = url.searchParams.get('session');
+      let persistNote: string | undefined;
       if (req.method === 'POST') {
         const contentType = req.headers['content-type'];
         if (typeof contentType !== 'string' || !contentType.startsWith('application/json')) {
@@ -166,6 +169,14 @@ export function createRouteHandler(
         }
         const toggle = validateToggle(sessionId, await readRequestBody(req));
         await capabilities.set(toggle.sessionId, toggle.kind, toggle.name, toggle.enabled);
+        // The mask is live; persisting it for the session's next agent is
+        // best-effort. A failed write must degrade the payload, not the
+        // toggle the user already made.
+        try {
+          await sessionOverrides.record(toggle.sessionId, toggle.kind, toggle.name, toggle.enabled);
+        } catch (error) {
+          persistNote = `switch applied for this session but could not be persisted across a restart: ${errorMessage(error)}`;
+        }
       }
       const payload = await buildPayload(
         services,
@@ -173,7 +184,9 @@ export function createRouteHandler(
         sessionId === null ? EMPTY_STATE : (capabilities.state(sessionId) ?? EMPTY_STATE),
         blockedCounts,
       );
-      json(res, 200, payload);
+      json(res, 200, persistNote === undefined
+        ? payload
+        : { ...payload, degraded: [...(payload.degraded ?? []), persistNote] });
     } catch (error) {
       json(res, error instanceof HttpError ? error.status : 500, { error: errorMessage(error) });
     }

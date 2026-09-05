@@ -56,7 +56,7 @@ The same switches exist at two scopes: **Session context** in the composer chang
 
 **A skill's switch is a same-name shadow.** It registers a same-name skill with `modelInvocable: false` in that agent's own scope layer. The layered registry lets the nearest scope win the name, so the model-facing catalog and the `skill` loader both stop offering it, while `/name` user invocation stays available. Re-enabling disposes the shadow and the original wins again.
 
-**Session switch state is process-local and never written to the log.** It remains a temporary override and the conversation history itself is never affected. The preset default is a separate persistent settings layer: a restored session starts a new agent that inherits its preset default, without reviving the old session-local switches.
+**Session switches are session-bound and persisted, but never written to the conversation log.** Each toggle is recorded in the plugin's settings namespace under the session's own id, so a restored session (a fresh agent after a restart) gets its own switches back on top of its preset defaults — and no session's switches can leak into another. The conversation history itself is never affected: the masks are per-assembly overlays, and the "these are off" prompt note is computed at assembly time, so nothing stale survives in the log. The preset default remains the layer every NEW session starts from.
 
 **Stats stay out of the control flow.** Blocked-attempt counts are appended to a JSONL log and replayed at startup; any I/O failure is swallowed rather than allowed to break the switch itself.
 

@@ -28,7 +28,21 @@ export interface AgentPresetsService {
   composedPreset(agentCtx: unknown): string | undefined;
 }
 
-export interface PresetToolSettings {
+/**
+ * One session's persisted switch positions, keyed by capability kind. A name
+ * maps to the user's final toggle: false = masked for this session, true =
+ * explicitly re-enabled (which is what lets a session override a preset
+ * default across a restart). Session-bound: restored only into the session
+ * whose id keys the entry, never applied to another session.
+ */
+export interface SessionOverrideState {
+  readonly skills: Readonly<Record<string, boolean>>;
+  readonly mcpServers: Readonly<Record<string, boolean>>;
+  readonly mcpTools: Readonly<Record<string, boolean>>;
+  readonly systemTools: Readonly<Record<string, boolean>>;
+}
+
+export interface ToolkitSettings {
   readonly presets: Readonly<Record<string, readonly string[]>>;
   /**
    * Disabled skills, keyed by preset id. Kept in its own map rather than mixed
@@ -36,6 +50,8 @@ export interface PresetToolSettings {
    * single list could not say which registry a stored name belonged to.
    */
   readonly presetSkills: Readonly<Record<string, readonly string[]>>;
+  /** Session-bound switch positions, keyed by session id. */
+  readonly sessions: Readonly<Record<string, SessionOverrideState>>;
 }
 
 export interface SettingsScopeLike<T> {
