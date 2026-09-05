@@ -510,12 +510,23 @@ describe('reading the live session view', () => {
     seq,
     data: { message: { source: { callId }, content: [{ content: [{ type: 'text', text }] }] } },
   });
+  // The method reads `this.seq` in a default parameter exactly like the real
+  // Session, so a host that detaches the method (const f = s.snapshotEvents)
+  // fails here instead of silently passing with an arrow-function fake.
+  const liveSession = (events: unknown[], nodes: unknown[]) => ({
+    header: { cwd: '/tmp/session' },
+    seq: 0,
+    surface: { nodes },
+    snapshotEvents(this: { seq: number }, _fromSeq = 0, _toSeqExclusive: number = this.seq) {
+      return events;
+    },
+  });
   const agentWith = (events: unknown[], nodes: unknown[]) => ({
     agents: {
       get: () => ({
         id: 'agent-1',
         ctx: { get: () => undefined },
-        session: { header: { cwd: '/tmp/session' }, snapshotEvents: () => events, surface: { nodes } },
+        session: liveSession(events, nodes),
       }),
     },
   });

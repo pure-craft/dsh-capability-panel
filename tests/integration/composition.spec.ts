@@ -59,6 +59,26 @@ describe('bundle declaration', () => {
   });
 });
 
+/**
+ * Mirrors the REAL Session's binding requirement: snapshotEvents defaults a
+ * parameter from `this.seq` (snapshotEvents(fromSeq = 0, toSeqExclusive =
+ * this.seq)), so a detached `const f = session.snapshotEvents; f()` crashes.
+ * A plain arrow-function fake would let that regression pass.
+ */
+class FakeLiveSession {
+  readonly header = { cwd: '/tmp/session' };
+  readonly surface = { nodes: [] as number[] };
+  private readonly seq = 0;
+
+  constructor(private readonly events: unknown[] = []) {}
+
+  snapshotEvents(fromSeq = 0, toSeqExclusive: number = this.seq): readonly unknown[] {
+    void fromSeq;
+    void toSeqExclusive;
+    return this.events;
+  }
+}
+
 /** A minimal host exposing the services the route needs to answer a GET. */
 /**
  * Boot the real `apply()` over a fake host and return its registered route.
@@ -79,13 +99,9 @@ export function hostWithCatalog(overrides: Record<string, unknown> = {}) {
     agents: {
       get: () => ({
         ctx: { get: () => undefined },
-        session: {
-          header: { cwd: '/tmp/session' },
-          // The live-session view the catalog reads load states from:
-          // borrowed event references plus the current surface seqs.
-          snapshotEvents: () => [],
-          surface: { nodes: [] },
-        },
+        // The live-session view the catalog reads load states from: borrowed
+        // event references plus the current surface seqs.
+        session: new FakeLiveSession(),
       }),
     },
     skills: {

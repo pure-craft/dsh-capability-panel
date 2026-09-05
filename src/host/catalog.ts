@@ -98,13 +98,15 @@ export function readLogFacts(
   const empty = { loads: [], shadowed: new Set<number>(), pruned: new Set<number>() };
   try {
     const session = services.get('agents')?.get(sessionId)?.session;
-    const snapshotEvents = session?.snapshotEvents;
     const nodes = session?.surface?.nodes;
-    if (typeof snapshotEvents !== 'function' || !Array.isArray(nodes)) {
+    if (session === undefined || typeof session.snapshotEvents !== 'function' || !Array.isArray(nodes)) {
       degraded.push('live session view unavailable: load states cannot be determined');
       return empty;
     }
-    const events = snapshotEvents();
+    // snapshotEvents must stay BOUND to the session: the real Session's
+    // signature is snapshotEvents(fromSeq = 0, toSeqExclusive = this.seq),
+    // so a detached call crashes on `this.seq`.
+    const events = session.snapshotEvents();
     // A wrong shape must surface as degraded, never read as "no loads".
     if (!Array.isArray(events)) {
       degraded.push('snapshotEvents() returned an unexpected shape; cannot read skill loads');
