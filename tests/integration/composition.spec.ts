@@ -79,7 +79,13 @@ export function hostWithCatalog(overrides: Record<string, unknown> = {}) {
     agents: {
       get: () => ({
         ctx: { get: () => undefined },
-        session: { header: { cwd: '/tmp/session' } },
+        session: {
+          header: { cwd: '/tmp/session' },
+          // The live-session view the catalog reads load states from:
+          // borrowed event references plus the current surface seqs.
+          snapshotEvents: () => [],
+          surface: { nodes: [] },
+        },
       }),
     },
     skills: {
@@ -98,10 +104,6 @@ export function hostWithCatalog(overrides: Record<string, unknown> = {}) {
         { name: 'mcp__doubao-search__image_search', description: 'search images' },
       ],
       guard: () => () => {},
-    },
-    sessionQuery: {
-      readSession: () => Promise.resolve({ events: [] }),
-      listEvents: () => Promise.resolve([]),
     },
     on: () => {},
     effect(factory: () => (() => void) | void) {

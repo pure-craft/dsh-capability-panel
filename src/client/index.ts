@@ -90,7 +90,7 @@ type ReactLike = {
  * Order by how much the reader needs to act on it: what fell out of context
  * first, then what is in it, then the rest.
  */
-const STATE_ORDER: Record<SkillLoadState, number> = { evicted: 0, loaded: 1, unloaded: 2 };
+const STATE_ORDER: Record<SkillLoadState, number> = { evicted: 0, pruned: 1, loaded: 2, unloaded: 3 };
 
 function sortSkills(skills: readonly SkillEntry[]): SkillEntry[] {
   return [...skills].sort(
@@ -256,9 +256,10 @@ export function apply(ctx: SlotContext): void {
       };
 
       /**
-       * Stable pill geometry for every skill state: green means loaded,
-       * neutral means unloaded, amber means evicted, and the independent red
-       * pill records blocked attempts after a capability was disabled.
+       * Stable pill geometry for every skill state: green means loaded, blue
+       * means pruned (head/tail still visible), neutral means unloaded, amber
+       * means evicted, and the independent red pill records blocked attempts
+       * after a capability was disabled.
        */
       const chip = (text: string, color: string) =>
         h(
@@ -299,11 +300,19 @@ export function apply(ctx: SlotContext): void {
         );
 
       // Skill state always occupies the same pill-shaped visual slot. Color,
-      // not geometry, communicates meaning: loaded is green, unloaded stays
+      // not geometry, communicates meaning: loaded is green, pruned is the
+      // informational blue of a partially visible result, unloaded stays
       // neutral, and evicted is amber because it may need attention.
       const stateMeta = (skill: SkillEntry) => {
         const text = t(`state.${skill.state}`) + (skill.loadCount > 1 ? ` ×${skill.loadCount}` : '');
-        const color = skill.state === 'loaded' ? TOK.success : skill.state === 'evicted' ? TOK.warn : TOK.textTertiary;
+        const color =
+          skill.state === 'loaded'
+            ? TOK.success
+            : skill.state === 'pruned'
+              ? TOK.info
+              : skill.state === 'evicted'
+                ? TOK.warn
+                : TOK.textTertiary;
         return chip(text, color);
       };
 

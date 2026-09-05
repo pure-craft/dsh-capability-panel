@@ -39,12 +39,17 @@ describe('a missing service costs one section, not the answer', () => {
     expect(payload.skills.length).toBeGreaterThan(0);
   });
 
-  it('serves the catalog when the session-query service is absent', async () => {
-    // Without the log there is no load state, but the catalog still stands.
-    const payload = await payloadFrom(hostWithCatalog({ sessionQuery: undefined }));
+  it('serves the catalog when the session has no live log view', async () => {
+    // Without the in-memory log there is no load state, but the catalog
+    // still stands — the panel must not read this as "no skills loaded".
+    const payload = await payloadFrom(
+      hostWithCatalog({
+        agents: { get: () => ({ ctx: { get: () => undefined }, session: { header: { cwd: '/tmp/session' } } }) },
+      }),
+    );
 
     expect(payload.skills.length).toBeGreaterThan(0);
-    expect(payload.degraded?.length).toBeGreaterThan(0);
+    expect(payload.degraded?.some((note) => note.includes('live session view unavailable'))).toBe(true);
   });
 
   it('does not fall back to global skills when no agent resolves for the session', async () => {
@@ -89,26 +94,40 @@ describe('a throwing service is reported, never swallowed', () => {
     expect(payload.degraded?.some((note) => note.includes('registry vanished'))).toBe(true);
   });
 
-  it('records the reason when the session log rejects', async () => {
+  it('records the reason when the live log read throws', async () => {
     const route = hostWithCatalog({
-      sessionQuery: {
-        readSession: () => Promise.reject(new Error('log unreadable')),
-        listEvents: () => Promise.reject(new Error('log unreadable')),
+      agents: {
+        get: () => ({
+          ctx: { get: () => undefined },
+          session: {
+            header: { cwd: '/tmp/session' },
+            snapshotEvents: () => {
+              throw new Error('log unreadable');
+            },
+            surface: { nodes: [] },
+          },
+        }),
       },
     });
     const payload = await payloadFrom(route);
 
     expect(payload.skills.length).toBeGreaterThan(0);
-    expect(payload.degraded?.length).toBeGreaterThan(0);
+    expect(payload.degraded?.some((note) => note.includes('log unreadable'))).toBe(true);
   });
 
   it('rejects an unexpected log shape instead of reading it as no loads', async () => {
-    // The guessed `{ events }` wrapper once hid a total read failure behind a
-    // clean-looking payload; a wrong shape must surface as degraded.
+    // A clean-looking payload must never hide a total read failure; a wrong
+    // shape surfaces as degraded.
     const route = hostWithCatalog({
-      sessionQuery: {
-        readSession: () => Promise.resolve({ notEvents: true }),
-        listEvents: () => Promise.resolve({ notAnArray: true }),
+      agents: {
+        get: () => ({
+          ctx: { get: () => undefined },
+          session: {
+            header: { cwd: '/tmp/session' },
+            snapshotEvents: () => ({ notEvents: true }),
+            surface: { nodes: [] },
+          },
+        }),
       },
     });
     const payload = await payloadFrom(route);

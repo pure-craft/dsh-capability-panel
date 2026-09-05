@@ -1,6 +1,6 @@
 import type { InspectorPayload, McpServerEntry, McpToolEntry, SkillEntry, ToolEntry } from '../contract.js';
-import { collectLoadRecords, decideStates, groupMcpTools, indexToolResultSeqs, shadowedLoadSeqs } from '../load-state.js';
-import type { EventSurfaceRecord, RawEvent } from '../load-state.js';
+import { collectLoadRecords, decideStates, groupMcpTools, indexToolResultSeqs, prunedLoadSeqs, shadowedLoadSeqs } from '../load-state.js';
+import type { RawEvent } from '../load-state.js';
 import type { AgentLike, HostServices, SessionCapabilityState } from './types.js';
 import { RESERVED_TOOL } from './reserved.js';
 
@@ -67,69 +67,61 @@ export async function readAvailable(
   }
 }
 
-function requireEventArray(value: unknown, label: string, degraded: string[]): readonly RawEvent[] | null {
-  if (!Array.isArray(value)) {
-    degraded.push(`${label} returned an unexpected shape; cannot read skill loads`);
-    return null;
-  }
-  return value as readonly RawEvent[];
-}
-
-function toSurfaceRecords(value: unknown, label: string, degraded: string[]): readonly EventSurfaceRecord[] | null {
-  if (!Array.isArray(value)) {
-    degraded.push(`${label} returned an unexpected shape; cannot read surface verdicts`);
-    return null;
-  }
-  const out: EventSurfaceRecord[] = [];
-  for (const item of value as readonly unknown[]) {
-    if (item === null || typeof item !== 'object') continue;
-    const record = item as { seq?: unknown; surface?: unknown };
-    if (typeof record.seq === 'number' && typeof record.surface === 'string') {
-      out.push({ seq: record.seq, surface: record.surface });
-    }
-  }
-  if (value.length > 0 && out.length === 0) {
-    degraded.push(`${label} records lack seq/surface; cannot read surface verdicts`);
-    return null;
-  }
-  return out;
-}
-
-function lastSeq(events: readonly { seq?: number }[]): number | null {
-  const last = events.at(-1)?.seq;
-  return typeof last === 'number' ? last : null;
-}
-
-export async function readLogFacts(
+/**
+ * Read load facts off the LIVE session's in-memory log — the same object the
+ * agent loop itself reads to assemble the next request.
+ *
+ * This used to go through `sessionQuery.readSession` + `listEvents`, which are
+ * built for cross-session/cold reads: each call structuredClones the ENTIRE
+ * event log, `readSession` additionally replay-validates it via Session.create,
+ * and a write landing between the two parallel reads forced a whole second
+ * round. On a long session (60k events / tens of MB) that meant four full-log
+ * clones plus two full replays of synchronous CPU work on every panel open —
+ * blocking the Node event loop and freezing the GUI served by the same process.
+ *
+ * The live session needs none of that: `snapshotEvents()` hands back borrowed
+ * references (zero-copy), and `surface.nodes` is maintained incrementally as
+ * events land, so "what the model sees right now" is an O(1) membership test.
+ * Scanning references for the few `skill` tool calls costs microseconds even
+ * on the longest log. Both reads happen in one synchronous tick, so the view
+ * is always self-consistent — no cross-read race, no retry loop.
+ *
+ * A session without a live in-memory view (e.g. restored but not yet attached)
+ * degrades honestly instead of paying for a cold-log read the panel never
+ * asked for.
+ */
+export function readLogFacts(
   services: HostServices,
   sessionId: string,
   degraded: string[],
-): Promise<{ loads: ReturnType<typeof collectLoadRecords>; shadowed: Set<number> }> {
-  const query = services.get('sessionQuery');
-  if (query === undefined) {
-    degraded.push('sessionQuery unavailable: eviction state cannot be determined');
-    return { loads: [], shadowed: new Set() };
-  }
+): { loads: ReturnType<typeof collectLoadRecords>; shadowed: Set<number>; pruned: Set<number> } {
+  const empty = { loads: [], shadowed: new Set<number>(), pruned: new Set<number>() };
   try {
-    for (let attempt = 0; ; attempt++) {
-      const [raw, listed] = await Promise.all([query.readSession(sessionId), query.listEvents(sessionId)]);
-      const rawEvents = requireEventArray(
-        raw !== null && typeof raw === 'object' ? (raw as { events?: unknown }).events : undefined,
-        'readSession().events',
-        degraded,
-      );
-      const records = toSurfaceRecords(listed, 'listEvents()', degraded);
-      if (rawEvents === null || records === null) return { loads: [], shadowed: new Set() };
-      const agreed = lastSeq(rawEvents) === lastSeq(records);
-      if (!agreed && attempt === 0) continue;
-      if (!agreed) degraded.push('session log moved while reading; load states may straddle a write');
-      const loads = collectLoadRecords(rawEvents);
-      const surfaceBySeq = new Map<number, string>(records.map((record) => [record.seq, record.surface]));
-      return { loads, shadowed: shadowedLoadSeqs(loads, indexToolResultSeqs(rawEvents), surfaceBySeq) };
+    const session = services.get('agents')?.get(sessionId)?.session;
+    const snapshotEvents = session?.snapshotEvents;
+    const nodes = session?.surface?.nodes;
+    if (typeof snapshotEvents !== 'function' || !Array.isArray(nodes)) {
+      degraded.push('live session view unavailable: load states cannot be determined');
+      return empty;
     }
+    const events = snapshotEvents();
+    // A wrong shape must surface as degraded, never read as "no loads".
+    if (!Array.isArray(events)) {
+      degraded.push('snapshotEvents() returned an unexpected shape; cannot read skill loads');
+      return empty;
+    }
+    const surfaceSeqs = new Set<number>();
+    for (const seq of nodes) if (typeof seq === 'number') surfaceSeqs.add(seq);
+    const loads = collectLoadRecords(events as readonly RawEvent[]);
+    const resultSeqs = indexToolResultSeqs(events);
+    return {
+      loads,
+      shadowed: shadowedLoadSeqs(loads, resultSeqs, surfaceSeqs),
+      pruned: prunedLoadSeqs(loads, resultSeqs, surfaceSeqs, events),
+    };
   } catch (error) {
     degraded.push(`event read failed: ${error instanceof Error ? error.message : String(error)}`);
-    return { loads: [], shadowed: new Set() };
+    return empty;
   }
 }
 
@@ -243,11 +235,9 @@ export async function buildPayload(
     };
   }
   const agent = services.get('agents')?.get(sessionId);
-  const [available, logFacts] = await Promise.all([
-    readAvailable(services, sessionId, degraded),
-    readLogFacts(services, sessionId, degraded),
-  ]);
-  const skills: SkillEntry[] = decideStates(available, logFacts.loads, logFacts.shadowed, disabledSkills);
+  const available = await readAvailable(services, sessionId, degraded);
+  const logFacts = readLogFacts(services, sessionId, degraded);
+  const skills: SkillEntry[] = decideStates(available, logFacts.loads, logFacts.shadowed, disabledSkills, logFacts.pruned);
   return {
     sessionId,
     skills,

@@ -16,6 +16,9 @@ export const TOK = {
   success: 'var(--dsw-alias-state-success-primary, #22c55e)',
   warn: 'var(--dsw-alias-state-warn-primary, #f59e0b)',
   error: 'var(--dsw-alias-state-error-primary, #ec1313)',
+  /** Informational accent (e.g. a pruned-but-visible skill), decoupled from
+   *  the Switch track token so restyling one does not recolor the other. */
+  info: 'var(--dsw-alias-state-business-primary, #4176e6)',
 } as const;
 
 export const PANEL_CSS = [

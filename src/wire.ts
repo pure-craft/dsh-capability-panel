@@ -17,7 +17,7 @@ const optString = (value: unknown): string | undefined => (typeof value === 'str
 function parseSkillEntry(value: unknown): SkillEntry | null {
   if (!isRecord(value) || typeof value['name'] !== 'string') return null;
   const state = value['state'];
-  if (state !== 'loaded' && state !== 'evicted' && state !== 'unloaded') return null;
+  if (state !== 'loaded' && state !== 'pruned' && state !== 'evicted' && state !== 'unloaded') return null;
   if (typeof value['enabled'] !== 'boolean' || typeof value['loadCount'] !== 'number') return null;
   const description = optString(value['description']);
   return {

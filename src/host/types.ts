@@ -71,11 +71,6 @@ export interface ToolsService {
   guard?(guard: (execution: { name?: unknown; agent?: { id?: unknown } }) => string | undefined): () => void;
 }
 
-export interface SessionQueryService {
-  readSession(sessionId: string): Promise<{ readonly events?: unknown }>;
-  listEvents(sessionId: string): Promise<unknown>;
-}
-
 /** The `agent/created` payload, named so a listener wrapper can restate it. */
 export interface AgentCreatedPayload {
   readonly agent: AgentLike & {
@@ -97,7 +92,6 @@ export interface HostServices {
   get(name: 'settings'): SettingsService | undefined;
   get(name: 'skills'): SkillsService | undefined;
   get(name: 'tools'): ToolsService | undefined;
-  get(name: 'sessionQuery'): SessionQueryService | undefined;
   on(
     event: 'agent/created',
     /**
@@ -147,7 +141,17 @@ export interface ScopedToolsRegistry {
 }
 
 export interface AgentLike {
-  readonly session?: { readonly header?: { readonly cwd?: string } };
+  readonly session?: {
+    readonly header?: { readonly cwd?: string };
+    /**
+     * Live in-memory log view, present on every real Session. Borrowed
+     * references, zero-copy — the panel scans this instead of asking a query
+     * service to clone and replay-validate the whole log.
+     */
+    readonly snapshotEvents?: () => readonly unknown[];
+    /** Incrementally maintained current surface: seqs the model sees now. */
+    readonly surface?: { readonly nodes?: readonly unknown[] };
+  };
   readonly ctx?: { get(name: string): unknown };
 }
 

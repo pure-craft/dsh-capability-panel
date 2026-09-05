@@ -38,14 +38,12 @@ export interface RawEvent {
     readonly arguments?: string;
     readonly callId?: string;
     /** tool/result payload; the pairing callId lives at message.source.callId. */
-    readonly message?: { readonly source?: { readonly callId?: unknown } };
+    readonly message?: {
+      readonly source?: { readonly callId?: unknown };
+      /** Result blocks; read for prune-marker detection on surface nodes. */
+      readonly content?: unknown;
+    };
   };
-}
-
-/** One listEvents() record: the light projection carrying the fold verdict. */
-export interface EventSurfaceRecord {
-  readonly seq: number;
-  readonly surface: string;
 }
 
 /** Pull the skill name out of a `skill` tool call's stringified arguments. */
@@ -123,7 +121,12 @@ export function indexToolResultSeqs(events: readonly RawEvent[]): Map<string, nu
  * dsh-session is exactly { user/message, assistant/message, tool/result }, and
  * real skill calls carry `surfaceOp: null`. What the model actually sees of a
  * skill is its tool RESULT (a surface node), so eviction keys on the paired
- * result's fold verdict, not on the call's position.
+ * result's surface membership, not on the call's position.
+ *
+ * `surfaceSeqs` is the live session's CURRENT surface (`session.surface.nodes`),
+ * which the session maintains incrementally — reading it is O(1), no log fold
+ * is ever run for this panel. A paired result seq absent from that set was
+ * displaced by a prune stub's or a summary's `replace` op, i.e. shadowed.
  *
  * A load with no paired result is in flight or its result never landed; it is
  * NOT counted as shadowed, so it reports `loaded` — the honest reading of "the
@@ -132,13 +135,67 @@ export function indexToolResultSeqs(events: readonly RawEvent[]): Map<string, nu
 export function shadowedLoadSeqs(
   loads: readonly SkillLoadRecord[],
   resultSeqByCallId: ReadonlyMap<string, number>,
-  surfaceBySeq: ReadonlyMap<number, string>,
+  surfaceSeqs: ReadonlySet<number>,
 ): Set<number> {
   const out = new Set<number>();
   for (const load of loads) {
     const resultSeq = resultSeqByCallId.get(load.callId);
     if (resultSeq === undefined) continue;
-    if (surfaceBySeq.get(resultSeq) === 'shadowed') out.add(load.seq);
+    if (!surfaceSeqs.has(resultSeq)) out.add(load.seq);
+  }
+  return out;
+}
+
+/**
+ * Substring of dsh-compaction-tool-result-pruner's PRUNE_MARKER. Matching on
+ * the bracketed phrase (without the surrounding newlines) keeps the check
+ * robust to marker framing changes across pruner versions.
+ */
+export const PRUNE_MARKER_TEXT = '[... tool result middle pruned ...]';
+
+function textBlocksOf(event: RawEvent): readonly string[] {
+  const content = event.data?.message?.content;
+  if (!Array.isArray(content)) return [];
+  const out: string[] = [];
+  // A tool/result message wraps its blocks one level deep: message.content is
+  // [{ type: 'tool_result', content: blocks }] on the pruner's write path.
+  const walk = (blocks: readonly unknown[]): void => {
+    for (const block of blocks) {
+      if (block === null || typeof block !== 'object') continue;
+      const record = block as { type?: unknown; text?: unknown; content?: unknown };
+      if (record.type === 'text' && typeof record.text === 'string') out.push(record.text);
+      else if (Array.isArray(record.content)) walk(record.content);
+    }
+  };
+  walk(content);
+  return out;
+}
+
+/**
+ * The load seqs whose paired tool result sits on the surface TRUNCATED —
+ * head and tail visible, middle replaced by the pruner's marker. The model
+ * partially sees these skills, so they read as their own state rather than
+ * either extreme. Only surface-resident results are inspected; a shadowed
+ * result is already reported by shadowedLoadSeqs and its content is
+ * irrelevant to the model now.
+ */
+export function prunedLoadSeqs(
+  loads: readonly SkillLoadRecord[],
+  resultSeqByCallId: ReadonlyMap<string, number>,
+  surfaceSeqs: ReadonlySet<number>,
+  events: readonly RawEvent[],
+): Set<number> {
+  const prunedResults = new Set<number>();
+  for (const event of events) {
+    if (event.type !== 'tool/result') continue;
+    const seq = event.seq;
+    if (typeof seq !== 'number' || !surfaceSeqs.has(seq)) continue;
+    if (textBlocksOf(event).some((text) => text.includes(PRUNE_MARKER_TEXT))) prunedResults.add(seq);
+  }
+  const out = new Set<number>();
+  for (const load of loads) {
+    const resultSeq = resultSeqByCallId.get(load.callId);
+    if (resultSeq !== undefined && prunedResults.has(resultSeq)) out.add(load.seq);
   }
   return out;
 }
@@ -146,27 +203,27 @@ export function shadowedLoadSeqs(
 /**
  * Decide each skill's state.
  *
- * `shadowedSeqs` holds LOAD seqs whose paired tool result the fold classified
- * `shadowed` (see shadowedLoadSeqs for why the result, not the call, carries
- * the verdict). Do NOT re-derive it from replacement ranges here: after a
- * replacement lands, a high-seq summary node sits at the shadowed range's
- * *position*, so surface order stops tracking seq order and a numeric
- * `start <= seq <= end` test silently misjudges later compactions.
+ * `shadowedSeqs` holds LOAD seqs whose paired tool result is absent from the
+ * current surface (see shadowedLoadSeqs for why the result, not the call,
+ * carries the verdict); `prunedSeqs` holds load seqs whose result survives on
+ * the surface with its middle truncated. Do NOT re-derive either from
+ * replacement ranges here: after a replacement lands, a high-seq summary node
+ * sits at the shadowed range's *position*, so surface order stops tracking
+ * seq order and a numeric `start <= seq <= end` test silently misjudges later
+ * compactions.
  *
- * Verified against real data, by running the host's own
- * buildSessionEventRecords fold over the persisted log: the
- * middle-pruner had replaced the lark-shared / lark-im / lark-event results
- * with stubs, and a later full-history compaction (one replace over
- * [7..16114]) shadowed those stubs plus the find-skills /
- * git-worktree-discipline results — all five loads read evicted. An earlier
- * note claiming the last two "stayed current" was derived from the prune
- * singles alone and was wrong.
+ * Verified against real data: the middle-pruner had replaced the lark-shared /
+ * lark-im / lark-event results with stubs (those now read `pruned`), and a
+ * later full-history compaction (one replace over [7..16114]) shadowed those
+ * stubs plus the find-skills / git-worktree-discipline results (those read
+ * `evicted`).
  */
 export function decideStates(
   available: readonly { name: string; description?: string; masked?: boolean }[],
   loads: readonly SkillLoadRecord[],
   shadowedSeqs: ReadonlySet<number>,
   disabledSkills: ReadonlySet<string> = new Set(),
+  prunedSeqs: ReadonlySet<number> = new Set(),
 ): SkillEntry[] {
   const byName = new Map<string, SkillLoadRecord[]>();
   for (const record of loads) {
@@ -180,8 +237,11 @@ export function decideStates(
     let state: SkillLoadState = 'unloaded';
     if (records.length > 0) {
       // A reload after an eviction is still loaded: any surviving record wins.
-      const anyCurrent = records.some((r) => !shadowedSeqs.has(r.seq));
-      state = anyCurrent ? 'loaded' : 'evicted';
+      const current = records.filter((r) => !shadowedSeqs.has(r.seq));
+      if (current.length === 0) state = 'evicted';
+      // One fully intact copy in context is enough; truncation shows only
+      // when every surviving copy was middle-pruned.
+      else state = current.some((r) => !prunedSeqs.has(r.seq)) ? 'loaded' : 'pruned';
     }
     return {
       name,

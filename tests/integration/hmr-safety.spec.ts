@@ -65,7 +65,11 @@ function fakeHost() {
         return undefined;
       },
     },
-    session: { header: { cwd: '/tmp/fake-session' } },
+    session: {
+          header: { cwd: '/tmp/fake-session' },
+          snapshotEvents: () => [],
+          surface: { nodes: [] },
+        },
   };
 
   const ctx = {
@@ -95,10 +99,6 @@ function fakeHost() {
           guardDisposed = true;
         };
       },
-    },
-    sessionQuery: {
-      readSession: () => Promise.resolve({ events: [] }),
-      listEvents: () => Promise.resolve([]),
     },
     on(event: string, listener: unknown) {
       const bucket = listeners.get(event);

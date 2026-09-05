@@ -58,7 +58,11 @@ function bootHost({ withSystemPrompt = true }: { withSystemPrompt?: boolean } = 
             return undefined;
           },
         },
-        session: { header: { cwd: '/tmp/session' } },
+        session: {
+            header: { cwd: '/tmp/session' },
+            snapshotEvents: () => [],
+            surface: { nodes: [] },
+          },
       }),
     },
     skills: {
@@ -72,10 +76,6 @@ function bootHost({ withSystemPrompt = true }: { withSystemPrompt?: boolean } = 
         { name: 'mcp__doubao-search__image_search', description: 'images' },
       ],
       guard: () => () => {},
-    },
-    sessionQuery: {
-      readSession: () => Promise.resolve({ events: [] }),
-      listEvents: () => Promise.resolve([]),
     },
     on: () => {},
     effect(factory: () => (() => void) | void) {

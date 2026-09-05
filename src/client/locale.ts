@@ -15,6 +15,7 @@ export const LOCALE_NS = 'agent-toolkit';
 
 export const zh: Record<string, string> = {
   'state.loaded': '已加载',
+  'state.pruned': '已截断',
   'state.evicted': '已挤出',
   'state.unloaded': '未加载',
   'blocked.count': '拦截 ×{count}',
@@ -63,6 +64,7 @@ export const zh: Record<string, string> = {
 
 export const en: Record<string, string> = {
   'state.loaded': 'loaded',
+  'state.pruned': 'truncated',
   'state.evicted': 'evicted',
   'state.unloaded': 'not loaded',
   'blocked.count': 'blocked ×{count}',

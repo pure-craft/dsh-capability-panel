@@ -5,6 +5,7 @@ import {
   decideStates,
   groupMcpTools,
   indexToolResultSeqs,
+  prunedLoadSeqs,
   shadowedLoadSeqs,
 } from '../src/load-state.js';
 
@@ -108,29 +109,79 @@ describe('shadowedLoadSeqs', () => {
     // call-1141 has no result: in flight.
   ]);
 
-  it('marks a load shadowed only when its paired RESULT is shadowed', () => {
-    const surface = new Map([
-      [74, 'current'],
-      [92, 'shadowed'],
-    ]);
+  it('marks a load shadowed only when its paired RESULT left the surface', () => {
+    // 74 stays on the surface; 92 was displaced by a replace (prune/compaction).
+    const surface = new Set([74]);
     expect([...shadowedLoadSeqs(loads, resultSeqs, surface)]).toEqual([91]);
   });
 
   it('treats a missing result as not shadowed (in flight reads as loaded)', () => {
-    const surface = new Map([
-      [74, 'shadowed'],
-      [92, 'shadowed'],
-    ]);
+    const surface = new Set<number>();
     const out = shadowedLoadSeqs(loads, resultSeqs, surface);
     expect(out.has(1141)).toBe(false);
   });
 
-  it('ignores verdicts other than shadowed, including log-only', () => {
-    const surface = new Map([
-      [74, 'log-only'],
-      [92, 'current'],
-    ]);
+  it('treats any surface-resident result as current', () => {
+    const surface = new Set([74, 92]);
     expect(shadowedLoadSeqs(loads, resultSeqs, surface).size).toBe(0);
+  });
+});
+
+describe('prunedLoadSeqs', () => {
+  const loads = [
+    { seq: 73, skillName: 'find-skills', callId: 'call-73' },
+    { seq: 91, skillName: 'lark-shared', callId: 'call-91' },
+  ];
+  const resultSeqs = new Map([
+    ['call-73', 74],
+    ['call-91', 92],
+  ]);
+  const stub = (seq: number, callId: string, text: string) => ({
+    type: 'tool/result',
+    seq,
+    data: { message: { source: { callId }, content: [{ content: [{ type: 'text', text }] }] } },
+  });
+
+  it('flags a load whose surface-resident result carries the prune marker', () => {
+    const events = [
+      stub(74, 'call-73', 'head\n\n[... tool result middle pruned ...]\n\ntail'),
+      stub(92, 'call-91', 'a fully intact result'),
+    ];
+    const surface = new Set([74, 92]);
+    expect([...prunedLoadSeqs(loads, resultSeqs, surface, events)]).toEqual([73]);
+  });
+
+  it('ignores pruned results that are no longer on the surface', () => {
+    // A stub shadowed by a later compaction reports evicted, not pruned.
+    const events = [stub(74, 'call-73', 'head [... tool result middle pruned ...] tail')];
+    const surface = new Set([92]);
+    expect(prunedLoadSeqs(loads, resultSeqs, surface, events).size).toBe(0);
+  });
+
+  it('ignores non-result events and unpaired results', () => {
+    const events = [
+      { type: 'user/message', seq: 50, data: { message: { content: [{ type: 'text', text: '[... tool result middle pruned ...]' }] } } },
+      stub(99, 'call-unrelated', '[... tool result middle pruned ...]'),
+    ];
+    const surface = new Set([50, 99]);
+    expect(prunedLoadSeqs(loads, resultSeqs, surface, events as never).size).toBe(0);
+  });
+
+  it('tolerates results without readable content blocks', () => {
+    const events = [
+      // No content at all.
+      { type: 'tool/result', seq: 74, data: { message: { source: { callId: 'call-73' } } } },
+      // Content that is not a block array.
+      { type: 'tool/result', seq: 75, data: { message: { source: { callId: 'call-91' }, content: 'nope' } } },
+      // Blocks that are null, non-objects, or nested arrays without text.
+      {
+        type: 'tool/result',
+        seq: 76,
+        data: { message: { source: { callId: 'call-91' }, content: [null, 42, { content: [{ type: 'image' }] }] } },
+      },
+    ];
+    const surface = new Set([74, 75, 76]);
+    expect(prunedLoadSeqs(loads, resultSeqs, surface, events as never).size).toBe(0);
   });
 });
 
@@ -173,6 +224,31 @@ describe('decideStates', () => {
     expect(states[0]).toMatchObject({ state: 'loaded', enabled: false });
     expect(states[1]).toMatchObject({ state: 'unloaded', enabled: false });
     expect(states[2]).toMatchObject({ state: 'unloaded', enabled: true });
+  });
+
+  it('reads pruned when every surviving copy was middle-truncated', () => {
+    const loads = [
+      { seq: 1, skillName: 'alpha', callId: 'a' },
+      { seq: 3, skillName: 'gamma', callId: 'c' },
+    ];
+    const states = decideStates(available, loads, new Set(), new Set(), new Set([1, 3]));
+    expect(states[0]).toMatchObject({ state: 'pruned', loadCount: 1 });
+    expect(states[2]).toMatchObject({ state: 'pruned', loadCount: 1 });
+  });
+
+  it('prefers loaded when one surviving copy is intact and another is pruned', () => {
+    const loads = [
+      { seq: 1, skillName: 'alpha', callId: 'a' },
+      { seq: 2, skillName: 'alpha', callId: 'b' },
+    ];
+    const states = decideStates(available, loads, new Set(), new Set(), new Set([1]));
+    expect(states[0]).toMatchObject({ state: 'loaded', loadCount: 2 });
+  });
+
+  it('reports evicted rather than pruned when every copy left the surface', () => {
+    const loads = [{ seq: 1, skillName: 'alpha', callId: 'a' }];
+    const states = decideStates(available, loads, new Set([1]), new Set(), new Set([1]));
+    expect(states[0]).toMatchObject({ state: 'evicted' });
   });
 });
 

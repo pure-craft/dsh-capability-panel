@@ -59,7 +59,11 @@ function bootHost(overrides: Record<string, unknown> = {}) {
         ctx: {
           get: (name: string) => (name === 'tools' ? scopedTools : name === 'skills' ? scopedSkills : undefined),
         },
-        session: { header: { cwd: '/tmp/session' } },
+        session: {
+            header: { cwd: '/tmp/session' },
+            snapshotEvents: () => [],
+            surface: { nodes: [] },
+          },
       }),
     },
     skills: {
@@ -75,10 +79,6 @@ function bootHost(overrides: Record<string, unknown> = {}) {
         ...(scope === undefined ? [] : [{ name: 'preset_only', description: 'preset scoped tool' }]),
       ],
       guard: () => () => {},
-    },
-    sessionQuery: {
-      readSession: () => Promise.resolve({ events: [] }),
-      listEvents: () => Promise.resolve([]),
     },
     on: () => {},
     effect(factory: () => (() => void) | void) {
@@ -437,7 +437,11 @@ describe('when the session has no usable agent', () => {
 
   it('reports missing scoped capability registries as unavailable', async () => {
     const { route } = bootHost({
-      agents: { get: () => ({ id: 'a', ctx: { get: () => undefined }, session: { header: {} } }) },
+      agents: { get: () => ({ id: 'a', ctx: { get: () => undefined }, session: {
+            header: {},
+            snapshotEvents: () => [],
+            surface: { nodes: [] },
+          } }) },
     });
     const tool = await post(route.handler, { kind: 'system-tool', name: 'bash', enabled: false });
     expect(tool.status).toBe(503);
@@ -450,7 +454,11 @@ describe('when the session has no usable agent', () => {
 
   it('reports a missing scoped skills registry separately', async () => {
     const { route } = bootHost({
-      agents: { get: () => ({ id: 'a', ctx: { get: () => undefined }, session: { header: {} } }) },
+      agents: { get: () => ({ id: 'a', ctx: { get: () => undefined }, session: {
+            header: {},
+            snapshotEvents: () => [],
+            surface: { nodes: [] },
+          } }) },
     });
     const { status, body } = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
 
@@ -601,7 +609,11 @@ describe('capability paths with partial hosts', () => {
             get: (name: string) =>
               name === 'skills' ? { register: (entry: { name: string }) => { rec.registeredSkills.push(entry); return () => {}; } } : undefined,
           },
-          session: { header: {} },
+          session: {
+            header: {},
+            snapshotEvents: () => [],
+            surface: { nodes: [] },
+          },
         }),
       },
     });

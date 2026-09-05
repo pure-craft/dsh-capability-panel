@@ -28,7 +28,11 @@ function bootHost(overrides: Record<string, unknown> = {}) {
       get: () => ({
         id: 'agent-1',
         ctx: { get: (name: string) => (name === 'tools' ? { restrict: () => () => {} } : undefined) },
-        session: { header: { cwd: '/tmp/session' } },
+        session: {
+          header: { cwd: '/tmp/session' },
+          snapshotEvents: () => [],
+          surface: { nodes: [] },
+        },
       }),
     },
     skills: {
@@ -38,10 +42,6 @@ function bootHost(overrides: Record<string, unknown> = {}) {
     tools: {
       schemas: () => [{ name: 'bash', description: 'run a shell command' }],
       guard: () => () => {},
-    },
-    sessionQuery: {
-      readSession: () => Promise.resolve({ events: [] }),
-      listEvents: () => Promise.resolve([]),
     },
     on: () => {},
     effect(factory: () => (() => void) | void) {
@@ -261,45 +261,71 @@ describe('request body limits', () => {
 
 describe('the stats endpoint', () => {
   it('answers with the log path and counts even when no log exists yet', async () => {
-    const route = bootHost();
-    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
+    // The stats log is append-only and shared per DSH_HOME: other tests in
+    // this file (and a real ~/.dsh) may already have written to it, so "no
+    // log exists" needs its own empty home to be a meaningful assertion.
+    const home = mkdtempSync(join(tmpdir(), 'dsh-agent-toolkit-stats-'));
+    const previous = env['DSH_HOME'];
+    env['DSH_HOME'] = home;
+    try {
+      const route = bootHost();
+      const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit/stats');
 
-    expect(status).toBe(200);
-    const payload = parsed as { logFile: string; blocked: Record<string, number>; records: unknown[] };
-    expect(payload.logFile).toMatch(/stats\.jsonl$/);
-    expect(payload.records).toEqual([]);
-    expect(payload.blocked).toEqual({});
+      expect(status).toBe(200);
+      const payload = parsed as { logFile: string; blocked: Record<string, number>; records: unknown[] };
+      expect(payload.logFile).toMatch(/stats\.jsonl$/);
+      expect(payload.records).toEqual([]);
+      expect(payload.blocked).toEqual({});
+    } finally {
+      if (previous === undefined) delete env['DSH_HOME'];
+      else env['DSH_HOME'] = previous;
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 
 describe('unexpected service shapes are degraded, never guessed', () => {
-  it('rejects surface records that lack seq/surface fields', async () => {
+  it('degrades when the surface view is not an array of seqs', async () => {
     const route = bootHost({
-      sessionQuery: {
-        readSession: () => Promise.resolve({ events: [{ seq: 1 }] }),
-        // Records present but none usable: reading this as "no verdicts"
-        // would silently mislabel every skill's load state.
-        listEvents: () => Promise.resolve([{ unrelated: true }, { seq: 'not-a-number', surface: 5 }]),
+      agents: {
+        get: () => ({
+          id: 'agent-1',
+          ctx: { get: () => undefined },
+          session: {
+            header: { cwd: '/tmp/session' },
+            snapshotEvents: () => [],
+            // Reading this as "empty surface" would silently mislabel every
+            // loaded skill as evicted.
+            surface: { nodes: { not: 'an array' } },
+          },
+        }),
       },
     });
     const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
 
     const payload = parsed as { degraded?: string[] };
-    expect(payload.degraded?.some((note) => note.includes('surface verdicts'))).toBe(true);
+    expect(payload.degraded?.some((note) => note.includes('live session view unavailable'))).toBe(true);
   });
 
-  it('skips non-object entries but keeps the usable ones', async () => {
+  it('skips non-numeric surface nodes but keeps the usable ones', async () => {
     const route = bootHost({
-      sessionQuery: {
-        readSession: () => Promise.resolve({ events: [{ seq: 1 }] }),
-        listEvents: () => Promise.resolve([null, 'junk', { seq: 1, surface: 'visible' }]),
+      agents: {
+        get: () => ({
+          id: 'agent-1',
+          ctx: { get: () => undefined },
+          session: {
+            header: { cwd: '/tmp/session' },
+            snapshotEvents: () => [],
+            surface: { nodes: [null, 'junk', 7] },
+          },
+        }),
       },
     });
     const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
 
     expect(status).toBe(200);
     const payload = parsed as { degraded?: string[] };
-    expect(payload.degraded?.some((note) => note.includes('surface verdicts'))).not.toBe(true);
+    expect(payload.degraded?.some((note) => note.includes('live session view unavailable'))).not.toBe(true);
   });
 
   it('reports a tools service that throws', async () => {
@@ -383,12 +409,15 @@ describe('server masks expand over the global tool view', () => {
         get: () => ({
           id: 'agent-1',
           ctx: { get: (name: string) => (name === 'tools' ? { restrict: () => () => {} } : undefined) },
-          session: { header: { cwd: '/tmp' } },
+          session: {
+            header: { cwd: '/tmp' },
+            snapshotEvents: () => [],
+            surface: { nodes: [] },
+          },
         }),
       },
       skills: { list: () => Promise.resolve([]), get: () => Promise.resolve(undefined) },
       tools: { schemas: () => schemas, guard: () => () => {} },
-      sessionQuery: { readSession: () => Promise.resolve({ events: [] }), listEvents: () => Promise.resolve([]) },
       on(event: string, listener: unknown) {
         if (event === 'tools/result') onResult = listener as (execution: unknown, result: unknown) => void;
       },
@@ -470,59 +499,72 @@ describe('the stats endpoint reads a real log', () => {
   });
 });
 
-describe('reading a log that is being written', () => {
-  it('flags the answer when two reads never agree', async () => {
-    // readSession and listEvents are separate calls; a write landing between
-    // them yields a mismatched pair. The reader retries once, and if the log
-    // is still moving it says so rather than presenting a torn view as fact.
-    let seq = 0;
+describe('reading the live session view', () => {
+  const skillCall = (seq: number, name: string, callId: string) => ({
+    type: 'tool/call',
+    seq,
+    data: { name: 'skill', arguments: JSON.stringify({ name }), callId },
+  });
+  const skillResult = (seq: number, callId: string, text = 'skill instructions') => ({
+    type: 'tool/result',
+    seq,
+    data: { message: { source: { callId }, content: [{ content: [{ type: 'text', text }] }] } },
+  });
+  const agentWith = (events: unknown[], nodes: unknown[]) => ({
+    agents: {
+      get: () => ({
+        id: 'agent-1',
+        ctx: { get: () => undefined },
+        session: { header: { cwd: '/tmp/session' }, snapshotEvents: () => events, surface: { nodes } },
+      }),
+    },
+  });
+
+  it('classifies loaded, pruned, and evicted skills from the surface', async () => {
+    const events = [
+      skillCall(1, 'find-skills', 'c1'),
+      skillResult(2, 'c1'),
+      skillCall(3, 'lark-im', 'c2'),
+      skillResult(4, 'c2', 'head\n\n[... tool result middle pruned ...]\n\ntail'),
+    ];
+    // c2's stub is on the surface (pruned); c1's result was compacted away.
     const route = bootHost({
-      sessionQuery: {
-        readSession: () => {
-          seq += 1;
-          return Promise.resolve({ events: [{ seq }] });
-        },
-        listEvents: () => Promise.resolve([{ seq: 99, surface: 'visible' }]),
+      ...agentWith(events, [4]),
+      skills: {
+        list: () => Promise.resolve([{ name: 'find-skills', description: 'd' }, { name: 'lark-im', description: 'd' }]),
+        get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c' }),
       },
     });
     const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
 
-    const payload = parsed as { degraded?: string[] };
-    expect(payload.degraded?.some((note) => note.includes('log moved while reading'))).toBe(true);
+    const payload = parsed as { skills: { name: string; state: string }[] };
+    expect(payload.skills.find((s) => s.name === 'find-skills')?.state).toBe('evicted');
+    expect(payload.skills.find((s) => s.name === 'lark-im')?.state).toBe('pruned');
   });
 
-  it('accepts the answer once two reads agree', async () => {
-    const route = bootHost({
-      sessionQuery: {
-        readSession: () => Promise.resolve({ events: [{ seq: 7 }] }),
-        listEvents: () => Promise.resolve([{ seq: 7, surface: 'visible' }]),
-      },
-    });
+  it('reads loaded when the paired result is on the surface intact', async () => {
+    const events = [skillCall(1, 'find-skills', 'c1'), skillResult(2, 'c1')];
+    const route = bootHost(agentWith(events, [2]));
     const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
 
-    const payload = parsed as { degraded?: string[] };
-    expect(payload.degraded?.some((note) => note.includes('log moved while reading'))).not.toBe(true);
+    const payload = parsed as { skills: { name: string; state: string }[] };
+    expect(payload.skills.find((s) => s.name === 'find-skills')?.state).toBe('loaded');
   });
 
-  it('treats a non-object readSession answer as an unreadable log', async () => {
+  it('stringifies a non-Error thrown by the live log read', async () => {
     const route = bootHost({
-      sessionQuery: {
-        readSession: () => Promise.resolve(null),
-        listEvents: () => Promise.resolve([]),
-      },
-    });
-    const { status, parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');
-
-    expect(status).toBe(200);
-    expect((parsed as { degraded?: string[] }).degraded?.length).toBeGreaterThan(0);
-  });
-
-  it('stringifies a non-Error thrown by the log reader', async () => {
-    const route = bootHost({
-      sessionQuery: {
-        // oxlint-disable-next-line typescript/prefer-promise-reject-errors
-        readSession: () => Promise.reject('log vanished'),
-        listEvents: () => Promise.resolve([]),
+      agents: {
+        get: () => ({
+          id: 'agent-1',
+          ctx: { get: () => undefined },
+          session: {
+            header: { cwd: '/tmp/session' },
+            snapshotEvents: () => {
+              throw 'log vanished';
+            },
+            surface: { nodes: [] },
+          },
+        }),
       },
     });
     const { parsed } = await getJson(route.handler, '/api/agent-toolkit?session=s1');

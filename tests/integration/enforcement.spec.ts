@@ -36,7 +36,11 @@ function bootHost(options: { schemas?: { name: string; description: string }[]; 
         ctx: {
           get: (name: string) => (name === 'tools' ? scopedTools : name === 'skills' ? scopedSkills : undefined),
         },
-        session: { header: { cwd: '/tmp/session' } },
+        session: {
+            header: { cwd: '/tmp/session' },
+            snapshotEvents: () => [],
+            surface: { nodes: [] },
+          },
       }),
     },
     skills: {
@@ -54,10 +58,6 @@ function bootHost(options: { schemas?: { name: string; description: string }[]; 
         guard = callback;
         return () => {};
       },
-    },
-    sessionQuery: {
-      readSession: () => Promise.resolve({ events: [] }),
-      listEvents: () => Promise.resolve([]),
     },
     on(event: string, listener: unknown) {
       listeners[event] = listener;

@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // Per-file DSH_HOME isolation for the append-only stats log (see the file).
+    setupFiles: ['tests/setup.ts'],
     coverage: {
       provider: 'v8',
       // Measure every source file, not only the ones some test happens to

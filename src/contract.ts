@@ -1,27 +1,34 @@
 /**
- * Skill load state, derived from the session log rather than a registry read.
+ * Skill load state, read off the LIVE session's in-memory surface rather than
+ * a registry read or a persisted-log fold.
  *
  * A skill being *available* and a skill being *in the context right now* are
  * different facts, and only the second one answers "why doesn't the agent know
- * this". Compaction is what separates them: it replaces a span of surface nodes
- * with one summary, so a skill loaded before that point is gone from the model's
- * view while its load record stays in the durable log forever.
+ * this". The live `Session` maintains its surface incrementally (each event
+ * carries its own `surfaceOp` marker), so membership in `session.surface.nodes`
+ * is exactly "the model sees this on the next request" — an O(1) read with no
+ * cloning, no replay validation, and no cross-read race retry.
  *
- * `dsh-session-query` classifies every event with the same one-pass surface fold
- * `readSurface()` runs, giving three buckets:
+ * Two mechanisms separate *loaded once* from *visible now*:
  *
- *   current    still on the surface — the model sees it
- *   shadowed   replaced by compaction — the model does NOT see it
- *   log-only   never on the surface (e.g. `compaction/summary` itself)
+ *   tool-result pruning   an over-long result is replaced by a head+marker+tail
+ *                         stub ON the surface — the model sees the skill
+ *                         partially (`pruned`)
+ *   compaction            a span of surface nodes is replaced by one summary —
+ *                         the skill's content is gone from the model's view
+ *                         while its load record stays in the log (`evicted`)
  *
- * That makes the state a determination, not a heuristic over timestamps.
+ * The original events always remain in the durable log; these states describe
+ * the model's CURRENT view, not the archive.
  */
 export type SkillLoadState =
   /** No load record anywhere in the log. */
   | 'unloaded'
-  /** Load record present and still on the surface. */
+  /** Load record present and its full content is on the surface. */
   | 'loaded'
-  /** Load record present but compaction shadowed it. */
+  /** On the surface, but middle-truncated by the tool-result pruner. */
+  | 'pruned'
+  /** Load record present but compaction shadowed it entirely. */
   | 'evicted';
 
 export interface SkillEntry {

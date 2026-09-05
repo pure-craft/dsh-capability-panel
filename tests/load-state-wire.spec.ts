@@ -125,23 +125,23 @@ describe('tool result pairing', () => {
 });
 
 describe('eviction keys on the paired result, not the call', () => {
-  it('marks a load evicted when its paired result folded shadowed', () => {
+  it('marks a load evicted when its paired result left the surface', () => {
     const load = { seq: 50, skillName: 'lark-shared', callId: 'c-ev' };
     const resultSeqs = new Map([['c-ev', 51]]);
-    const surfaces = new Map([[51, 'shadowed']]);
-    expect([...shadowedLoadSeqs([load], resultSeqs, surfaces)]).toEqual([50]);
+    const surface = new Set<number>();
+    expect([...shadowedLoadSeqs([load], resultSeqs, surface)]).toEqual([50]);
   });
 
   it('keeps a load current when its paired result is still on the surface', () => {
     const load = { seq: 52, skillName: 'find-skills', callId: 'c-cur' };
     const resultSeqs = new Map([['c-cur', 53]]);
-    const surfaces = new Map([[53, 'current']]);
-    expect([...shadowedLoadSeqs([load], resultSeqs, surfaces)]).toEqual([]);
+    const surface = new Set([53]);
+    expect([...shadowedLoadSeqs([load], resultSeqs, surface)]).toEqual([]);
   });
 
   it('treats an unpaired load as not shadowed, since the model is about to see it', () => {
     const load = { seq: 54, skillName: 'in-flight', callId: 'c-none' };
-    expect([...shadowedLoadSeqs([load], new Map(), new Map())]).toEqual([]);
+    expect([...shadowedLoadSeqs([load], new Map(), new Set())]).toEqual([]);
   });
 });
 
