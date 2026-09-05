@@ -41,6 +41,14 @@ This plugin turns both into one panel at the right of the composer.
 - **Lightweight.** Zero runtime dependencies, zero-copy reads, no background work — the panel only reads when open.
 - **Follows the UI language.** Panel copy switches between 中文 and English with the host.
 
+## Production-grade by default
+
+- **Thoroughly tested**: 390+ tests with typecheck, type-aware lint, and 100% coverage gates (statements/branches/functions/lines) enforced in CI on every push and PR.
+- **Honest failures**: when any one read fails (skill registry, session view, settings store), the panel shows partial data plus an explicit degraded note — a read failure never masquerades as an empty list.
+- **Race-free writes**: preset defaults and session switches share one serialized write queue, so two panels writing at once cannot clobber each other.
+- **Never a drag on the host**: the agent-created listener is fully failure-isolated — no plugin error can stop your session from starting.
+- **i18n-friendly**: panel copy follows the host's UI language (中文/English), and the docs are kept section-aligned across four languages.
+
 ## Install
 
 From the marketplace or straight from the repo:
