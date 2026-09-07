@@ -117,6 +117,7 @@ pnpm test       # run the tests
 pnpm typecheck  # typecheck
 pnpm lint       # oxlint, including its type-aware rules
 pnpm check      # typecheck + lint + test (100% coverage gates)
+pnpm scan:dead-code  # advisory dead-code report (never a gate)
 ```
 
 A change to the host half needs a dsh restart; the client half hot-swaps while `dsh web` and the watch build run together.

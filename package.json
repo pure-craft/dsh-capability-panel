@@ -31,7 +31,8 @@
     "lint:fix": "oxlint --type-aware --tsconfig tsconfig.test.json src tests --fix",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test",
     "clean": "rm -rf lib",
-    "prepublishOnly": "pnpm run check && pnpm run build"
+    "prepublishOnly": "pnpm run check && pnpm run build",
+    "scan:dead-code": "node scripts/dead-code-scan.mjs"
   },
   "dsh": {
     "bundle": {

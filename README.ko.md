@@ -113,6 +113,7 @@ pnpm test       # 테스트
 pnpm typecheck  # 타입 체크
 pnpm lint       # oxlint(type-aware 규칙 포함)
 pnpm check      # typecheck + lint + test(100% 커버리지 게이트)
+pnpm scan:dead-code  # 데드 코드 점검 보고서(권고용, 게이트 아님)
 ```
 
 호스트 측 변경은 dsh 재시작이 필요하고, 클라이언트 측은 `dsh web`과 watch 빌드가 함께 실행 중일 때 핫스왑됩니다.

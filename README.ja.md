@@ -113,6 +113,7 @@ pnpm test       # テスト
 pnpm typecheck  # 型チェック
 pnpm lint       # oxlint(type-aware ルール含む)
 pnpm check      # typecheck + lint + test(100% カバレッジゲート)
+pnpm scan:dead-code  # デッドコード巡回レポート(助言のみ、ゲートにしない)
 ```
 
 ホスト側の変更は dsh の再起動が必要です。クライアント側は `dsh web` と watch ビルドの併用でホットスワップします。

@@ -117,6 +117,7 @@ pnpm test       # 跑测试
 pnpm typecheck  # 类型检查
 pnpm lint       # oxlint(含 type-aware 规则)
 pnpm check      # typecheck + lint + test(100% 覆盖率门槛)
+pnpm scan:dead-code  # 死代码巡检报告(仅提示,不做门禁)
 ```
 
 改动 host 半需要重启 dsh;client 半在 `dsh web` 与 watch 构建同时运行时热替换。
