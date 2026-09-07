@@ -124,7 +124,7 @@ A change to the host half needs a dsh restart; the client half hot-swaps while `
 
 ## Support
 
-If this panel saved you a debugging session, a [star](https://github.com/pure-craft/dsh-capability-panel) helps others find it — and sharing it with someone else hacking on dsh helps too. Issues and PRs are welcome.
+If this panel saved you a debugging session, a [star](https://github.com/pure-craft/dsh-capability-panel) helps others find it — and sharing it with someone else hacking on dsh helps too. Issues and PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

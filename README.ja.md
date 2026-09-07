@@ -120,7 +120,7 @@ pnpm scan:dead-code  # デッドコード巡回レポート(助言のみ、ゲ�
 
 ## 応援
 
-このパネルがデバッグの時間を救ってくれたら、[star](https://github.com/pure-craft/dsh-capability-panel) をもらえると、必要としている他の人に見つけてもらえます。dsh をいじっている知人への共有も歓迎です。Issue と PR はいつでもどうぞ。
+このパネルがデバッグの時間を救ってくれたら、[star](https://github.com/pure-craft/dsh-capability-panel) をもらえると、必要としている他の人に見つけてもらえます。dsh をいじっている知人への共有も歓迎です。Issue と PR はいつでもどうぞ——[コントリビューションガイド](CONTRIBUTING.md)もご覧ください。
 
 ## ライセンス
 

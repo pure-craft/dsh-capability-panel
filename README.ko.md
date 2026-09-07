@@ -120,7 +120,7 @@ pnpm scan:dead-code  # 데드 코드 점검 보고서(권고용, 게이트 아�
 
 ## 응원하기
 
-이 패널이 디버깅 시간을 아껴줬다면, [star](https://github.com/pure-craft/dsh-capability-panel)를 눌러주세요——필요한 다른 사람들이 찾을 수 있게 됩니다. dsh를 만지는 지인에게 공유해주셔도 좋습니다. Issue와 PR은 언제나 환영합니다.
+이 패널이 디버깅 시간을 아껴줬다면, [star](https://github.com/pure-craft/dsh-capability-panel)를 눌러주세요——필요한 다른 사람들이 찾을 수 있게 됩니다. dsh를 만지는 지인에게 공유해주셔도 좋습니다. Issue와 PR은 언제나 환영합니다——[기여 가이드](CONTRIBUTING.md)를 참고하세요.
 
 ## 라이선스
 

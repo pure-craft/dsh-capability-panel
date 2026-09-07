@@ -124,7 +124,7 @@ pnpm scan:dead-code  # 死代码巡检报告(仅提示,不做门禁)
 
 ## 支持
 
-如果这个面板帮你省过一次排查，点个 [star](https://github.com/pure-craft/dsh-capability-panel) 让更多人能找到它；也欢迎顺手分享给同样在折腾 dsh 的朋友。Issue 和 PR 都欢迎。
+如果这个面板帮你省过一次排查，点个 [star](https://github.com/pure-craft/dsh-capability-panel) 让更多人能找到它；也欢迎顺手分享给同样在折腾 dsh 的朋友。Issue 和 PR 都欢迎——详见[贡献指南](CONTRIBUTING.zh.md)。
 
 ## 许可证
 
