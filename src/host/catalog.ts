@@ -15,7 +15,7 @@ export const EMPTY_STATE: SessionCapabilityState = {
   userToggled: new Set(),
 };
 
-export async function readAvailable(
+async function readAvailable(
   services: HostServices,
   sessionId: string,
   degraded: string[],
@@ -94,7 +94,7 @@ export async function readAvailable(
  * degrades honestly instead of paying for a cold-log read the panel never
  * asked for.
  */
-export function readLogFacts(
+function readLogFacts(
   services: HostServices,
   sessionId: string,
   degraded: string[],
@@ -131,7 +131,7 @@ export function readLogFacts(
   }
 }
 
-export function readMcp(
+function readMcp(
   services: HostServices,
   degraded: string[],
   disabledServers: ReadonlySet<string>,

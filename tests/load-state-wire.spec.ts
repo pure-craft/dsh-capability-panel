@@ -2,16 +2,14 @@
  * Field-contract tests over the exact event shapes the durable session log uses.
  *
  * These fixtures reproduce shapes read from real logs, not shapes a README
- * suggested. Two earlier versions of `load-state.ts` read `data.call.name` and
- * `data.surfaceOp`, found zero of what they looked for in sessions that had
- * five loads, and reported compacted sessions as never-compacted. Each `it`
+ * suggested. An earlier version of `load-state.ts` read `data.call.name`,
+ * found zero of what it looked for in sessions that had five loads. Each `it`
  * below pins one field position that mistake got wrong, so a future refactor
  * that reintroduces a nested read fails here instead of silently reading empty.
  */
 import { describe, expect, it } from 'vitest';
 import {
   collectLoadRecords,
-  collectReplacements,
   groupMcpTools,
   indexToolResultSeqs,
   shadowedLoadSeqs,
@@ -26,17 +24,15 @@ function skillCall(seq: number, skillName: string, callId: string): RawEvent {
   return {
     type: 'tool/call',
     seq,
-    surfaceOp: null,
     data: { name: 'skill', arguments: JSON.stringify({ name: skillName }), callId },
   };
 }
 
 /** A tool result: the pairing callId sits at `data.message.source.callId`. */
-function toolResult(seq: number, callId: string, surfaceOp: RawEvent['surfaceOp'] = 'append'): RawEvent {
+function toolResult(seq: number, callId: string): RawEvent {
   return {
     type: 'tool/result',
     seq,
-    surfaceOp,
     data: { message: { source: { callId } } },
   };
 }
@@ -78,27 +74,6 @@ describe('load record field positions', () => {
   });
 });
 
-describe('surfaceOp field position', () => {
-  it('reads surfaceOp at the top level, not under data', () => {
-    const topLevel = collectReplacements([
-      { type: 'tool/result', seq: 20, surfaceOp: { op: 'replace', start: 7, end: 16114 } },
-    ]);
-    expect(topLevel).toEqual([{ seq: 20, start: 7, end: 16114 }]);
-
-    const underData = collectReplacements([
-      { type: 'tool/result', seq: 20, data: { surfaceOp: { op: 'replace', start: 7, end: 16114 } } } as unknown as RawEvent,
-    ]);
-    expect(underData).toEqual([]);
-  });
-
-  it('treats the append string and null as non-replacements', () => {
-    expect(collectReplacements([
-      { seq: 21, surfaceOp: 'append' },
-      { seq: 22, surfaceOp: null },
-      { seq: 23 },
-    ])).toEqual([]);
-  });
-});
 
 describe('tool result pairing', () => {
   it('pairs on data.message.source.callId, which a tool/call carries at data.callId', () => {
@@ -110,11 +85,11 @@ describe('tool result pairing', () => {
 
   it('lets the last write win, so a pruner stub replaces the original result', () => {
     // The middle-pruner appends a stub tool/result carrying the SAME callId and
-    // a replace surfaceOp over the original's seq. The stub is the node whose
-    // fold verdict tracks the surface position, so it must win.
+    // a replace surfaceOp over the original's seq. The stub is the node the
+    // surface tracks, so it must win.
     const index = indexToolResultSeqs([
       toolResult(40, 'call-x'),
-      toolResult(99, 'call-x', { op: 'replace', start: 40, end: 40 }),
+      toolResult(99, 'call-x'),
     ]);
     expect(index.get('call-x')).toBe(99);
   });

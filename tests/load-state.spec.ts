@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   collectLoadRecords,
-  collectReplacements,
   decideStates,
   groupMcpTools,
   indexToolResultSeqs,
@@ -49,19 +48,6 @@ describe('collectLoadRecords', () => {
   });
 });
 
-describe('collectReplacements', () => {
-  // surfaceOp is TOP-LEVEL in real logs: "append" | { op:'replace', start, end } | null.
-  it('keeps only well-formed top-level replace surfaceOps', () => {
-    const events = [
-      { seq: 1, surfaceOp: { op: 'replace', start: 10, end: 20 } },
-      { seq: 2, surfaceOp: 'append' as const },
-      { seq: 3, surfaceOp: null },
-      { seq: 4, surfaceOp: { op: 'replace', start: 'x' as unknown as number, end: 2 } },
-      { seq: 5 },
-    ];
-    expect(collectReplacements(events)).toEqual([{ seq: 1, start: 10, end: 20 }]);
-  });
-});
 
 describe('indexToolResultSeqs', () => {
   it('maps message.source.callId to the result seq', () => {
@@ -266,32 +252,3 @@ describe('groupMcpTools', () => {
   });
 });
 
-describe('surfaceOp variants', () => {
-  it('ignores a surface op that is not a replace', () => {
-    // Only 'replace' shrinks the surface; other op kinds carry no range and
-    // must not be read as one.
-    const events = [
-      { seq: 1, surfaceOp: { op: 'truncate', start: 0, end: 5 } },
-      { seq: 2, surfaceOp: { op: 'replace', start: 0, end: 5 } },
-    ];
-    expect(collectReplacements(events as never)).toEqual([{ seq: 2, start: 0, end: 5 }]);
-  });
-
-  it('ignores append and absent ops', () => {
-    const events = [
-      { seq: 1, surfaceOp: 'append' },
-      { seq: 2, surfaceOp: null },
-      { seq: 3 },
-    ];
-    expect(collectReplacements(events as never)).toEqual([]);
-  });
-
-  it('ignores a replace whose range or seq is not numeric', () => {
-    const events = [
-      { seq: 1, surfaceOp: { op: 'replace', start: '0', end: 5 } },
-      { seq: 2, surfaceOp: { op: 'replace', start: 0, end: null } },
-      { seq: '3', surfaceOp: { op: 'replace', start: 0, end: 5 } },
-    ];
-    expect(collectReplacements(events as never)).toEqual([]);
-  });
-});

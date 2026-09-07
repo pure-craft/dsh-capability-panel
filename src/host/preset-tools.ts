@@ -13,13 +13,7 @@ import type {
   ToolkitSettings,
 } from './types.js';
 import type { ToolkitSettingsAccess } from './settings-scope.js';
-import { TOOLKIT_SETTINGS_NAMESPACE } from './settings-scope.js';
 import { groupMcpTools } from '../load-state.js';
-
-// Kept for the tests and any importer that names the settings row: the
-// namespace now lives with the shared scope accessor so the preset controller
-// and the session-override store cannot register divergent schemas.
-export { TOOLKIT_SETTINGS_NAMESPACE as PRESET_SETTINGS_NAMESPACE };
 import { RESERVED_TOOL } from './reserved.js';
 export { RESERVED_TOOL };
 

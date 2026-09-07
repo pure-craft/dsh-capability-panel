@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPresetToolController, PRESET_SETTINGS_NAMESPACE } from '../../src/host/preset-tools.js';
+import { createPresetToolController } from '../../src/host/preset-tools.js';
+import { TOOLKIT_SETTINGS_NAMESPACE } from '../../src/host/settings-scope.js';
 import { createToolkitSettingsAccess } from '../../src/host/settings-scope.js';
 import { HttpError } from '../../src/host/errors.js';
 
@@ -110,7 +111,7 @@ describe('preset tool settings', () => {
     // Registration is deferred to first use, so nothing is registered yet.
     expect(host.registrations).toHaveLength(0);
     const listed = host.controller.list();
-    expect(host.registrations[0]?.[0]).toBe(PRESET_SETTINGS_NAMESPACE);
+    expect(host.registrations[0]?.[0]).toBe(TOOLKIT_SETTINGS_NAMESPACE);
     expect(host.registrations[0]?.[2]).toEqual({ applies: 'live' });
     await expect(listed).resolves.toEqual({
       writable: true,

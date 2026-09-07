@@ -15,24 +15,18 @@ export interface SkillLoadRecord {
   readonly callId: string;
 }
 
-/** A positional surface replacement, i.e. one compaction or tool-result prune. */
-export interface SurfaceReplacement {
-  readonly seq: number;
-  readonly start: number;
-  readonly end: number;
-}
-
 /**
- * The raw event shape this package reads, verified against real logs:
- * `surfaceOp` is a TOP-LEVEL field — the string `"append"` for a
+ * The raw event shape this package reads, verified against real logs. Surface
+ * membership is never read from the events: the live session's
+ * `surface.nodes` is authoritative, so `surfaceOp` is deliberately absent
+ * here (it is a TOP-LEVEL field on real events — the string `"append"` for a
  * node that joined the surface tail, an object for a replacement, and `null`
- * on non-surface events like `tool/call`. Reading `data.surfaceOp` instead
- * finds nothing and misreports compacted sessions as never-compacted.
+ * on non-surface events like `tool/call`; anyone reintroducing a surfaceOp
+ * read should read that position, not `data.surfaceOp`).
  */
 export interface RawEvent {
   readonly type?: string;
   readonly seq?: number;
-  readonly surfaceOp?: 'append' | { readonly op?: string; readonly start?: number; readonly end?: number } | null;
   readonly data?: {
     readonly name?: string;
     readonly arguments?: string;
@@ -72,20 +66,6 @@ export function collectLoadRecords(events: readonly RawEvent[]): SkillLoadRecord
     const seq = event.seq;
     if (typeof seq !== 'number') continue;
     out.push({ seq, skillName, callId: event.data.callId ?? '' });
-  }
-  return out;
-}
-
-export function collectReplacements(events: readonly RawEvent[]): SurfaceReplacement[] {
-  const out: SurfaceReplacement[] = [];
-  for (const event of events) {
-    const op = event.surfaceOp;
-    if (op === null || op === undefined || op === 'append') continue;
-    if (op.op !== 'replace') continue;
-    const { start, end } = op;
-    const seq = event.seq;
-    if (typeof seq !== 'number' || typeof start !== 'number' || typeof end !== 'number') continue;
-    out.push({ seq, start, end });
   }
   return out;
 }
