@@ -118,6 +118,10 @@ pnpm scan:dead-code  # デッドコード巡回レポート(助言のみ、ゲ�
 
 ホスト側の変更は dsh の再起動が必要です。クライアント側は `dsh web` と watch ビルドの併用でホットスワップします。
 
+## 応援
+
+このパネルがデバッグの時間を救ってくれたら、[star](https://github.com/pure-craft/dsh-capability-panel) をもらえると、必要としている他の人に見つけてもらえます。dsh をいじっている知人への共有も歓迎です。Issue と PR はいつでもどうぞ。
+
 ## ライセンス
 
 [MIT](LICENSE)

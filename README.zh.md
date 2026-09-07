@@ -122,6 +122,10 @@ pnpm scan:dead-code  # 死代码巡检报告(仅提示,不做门禁)
 
 改动 host 半需要重启 dsh;client 半在 `dsh web` 与 watch 构建同时运行时热替换。
 
+## 支持
+
+如果这个面板帮你省过一次排查，点个 [star](https://github.com/pure-craft/dsh-capability-panel) 让更多人能找到它；也欢迎顺手分享给同样在折腾 dsh 的朋友。Issue 和 PR 都欢迎。
+
 ## 许可证
 
 [MIT](LICENSE)

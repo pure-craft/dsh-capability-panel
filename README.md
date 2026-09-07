@@ -122,6 +122,10 @@ pnpm scan:dead-code  # advisory dead-code report (never a gate)
 
 A change to the host half needs a dsh restart; the client half hot-swaps while `dsh web` and the watch build run together.
 
+## Support
+
+If this panel saved you a debugging session, a [star](https://github.com/pure-craft/dsh-capability-panel) helps others find it — and sharing it with someone else hacking on dsh helps too. Issues and PRs are welcome.
+
 ## License
 
 [MIT](LICENSE)

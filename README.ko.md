@@ -118,6 +118,10 @@ pnpm scan:dead-code  # 데드 코드 점검 보고서(권고용, 게이트 아�
 
 호스트 측 변경은 dsh 재시작이 필요하고, 클라이언트 측은 `dsh web`과 watch 빌드가 함께 실행 중일 때 핫스왑됩니다.
 
+## 응원하기
+
+이 패널이 디버깅 시간을 아껴줬다면, [star](https://github.com/pure-craft/dsh-capability-panel)를 눌러주세요——필요한 다른 사람들이 찾을 수 있게 됩니다. dsh를 만지는 지인에게 공유해주셔도 좋습니다. Issue와 PR은 언제나 환영합니다.
+
 ## 라이선스
 
 [MIT](LICENSE)
