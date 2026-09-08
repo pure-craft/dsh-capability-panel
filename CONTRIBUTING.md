@@ -36,3 +36,7 @@ Host-half changes need a dsh restart; the client half hot-swaps while `dsh web` 
 2. `pnpm check` and `pnpm test:coverage` green locally; CI runs the same gates.
 3. Explain the *why* in the PR description; screenshots for UI changes.
 4. One feature or fix per PR — split refactors from behavior changes.
+
+## Releases
+
+User-visible changes get one line in `CHANGELOG.md` under `Unreleased` as they land (user's wording, not the commit message). Releasing: cut the `Unreleased` section into `X.Y.Z - <date>`, bump `package.json`, `pnpm check`, `npm publish --access public --otp=<code>`, `git tag vX.Y.Z && git push --tags`, `gh release create vX.Y.Z`.

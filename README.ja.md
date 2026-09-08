@@ -122,6 +122,8 @@ pnpm scan:dead-code  # デッドコード巡回レポート(助言のみ、ゲ�
 
 このパネルがデバッグの時間を救ってくれたら、[star](https://github.com/pure-craft/dsh-capability-panel) をもらえると、必要としている他の人に見つけてもらえます。dsh をいじっている知人への共有も歓迎です。Issue と PR はいつでもどうぞ——[コントリビューションガイド](CONTRIBUTING.md)もご覧ください。
 
+変更履歴は [CHANGELOG.md](CHANGELOG.md) を参照。
+
 ## ライセンス
 
 [MIT](LICENSE)

@@ -36,3 +36,7 @@ host 半的改动需要重启 dsh;client 半在 `dsh web` 与 `pnpm dev` 同时�
 2. 本地 `pnpm check` 和 `pnpm test:coverage` 全绿;CI 跑的是同一套门禁。
 3. PR 描述里讲清**为什么**;UI 改动请附截图。
 4. 一个 PR 只做一件事——重构和行为变更请拆开。
+
+## 发版
+
+面向用户的改动落地时就在 `CHANGELOG.md` 的 `Unreleased` 段记一行(从用户视角写,不是复制 commit message)。发版:把 `Unreleased` 切成 `X.Y.Z - <日期>`,bump `package.json` 版本,`pnpm check`,`npm publish --access public --otp=<验证码>`,`git tag vX.Y.Z && git push --tags`,`gh release create vX.Y.Z`。
