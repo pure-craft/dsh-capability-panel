@@ -8,6 +8,8 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-09
+
 ### Added
 
 - **Source provenance everywhere**: Skills and MCP entries — in both the session panel and Settings → Capability Panel — group under labeled divider rules that say where they come from. Preset-bundled entries group under their preset's name (detected by matching the discovery directory against preset paths); every other group shows its real directory, abbreviated (`~`, session-cwd-relative) and middle-ellipsized when long. Hovering a group divider shows the full path and a folder icon; one click opens that source directory in the system file manager (macOS `open`, Windows `start`, freedesktop `xdg-open`) via the new loopback-only `POST /api/capability-panel/open-folder` route, which also resolves user/project/host/preset sources without a session. MCP servers report their configuration source too: `host` for the host composition, or the composing preset's name.
@@ -43,5 +45,6 @@ Initial public release.
 - One-click `/skill-name` composer fill, name/description/state filtering, MCP tools grouped by server.
 - Loopback-only data route `/api/capability-panel` (+ `/stats`, `/presets`); panel copy in 中文 and English.
 
-[Unreleased]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/pure-craft/dsh-capability-panel/releases/tag/v1.0.0
