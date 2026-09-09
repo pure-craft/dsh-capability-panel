@@ -173,9 +173,9 @@ describe('prunedLoadSeqs', () => {
 
 describe('decideStates', () => {
   const available = [
-    { name: 'alpha', description: 'A 技能' },
-    { name: 'beta' },
-    { name: 'gamma', description: 'G 技能' },
+    { name: 'alpha', description: 'A 技能', source: 'user-dsh', provider: 'builtin' },
+    { name: 'beta', source: 'bundled', provider: 'builtin' },
+    { name: 'gamma', description: 'G 技能', source: 'project-dsh', provider: 'filesystem' },
   ];
 
   it('marks skills with no load record as unloaded', () => {
@@ -202,6 +202,26 @@ describe('decideStates', () => {
     const states = decideStates(available, [], new Set());
     expect(states[0]?.description).toBe('A 技能');
     expect(states[1]).not.toHaveProperty('description');
+  });
+
+  it('passes the discovery path through and omits the key when absent', () => {
+    const states = decideStates(
+      [{ name: 'fs', source: 'custom', provider: 'filesystem', path: '/skills/custom' }, ...available],
+      [],
+      new Set(),
+    );
+    expect(states[0]?.path).toBe('/skills/custom');
+    expect(states[1]).not.toHaveProperty('path');
+  });
+
+  it('passes the display group through and omits the key when absent', () => {
+    const states = decideStates(
+      [{ name: 'ps', source: 'custom', provider: 'filesystem', group: 'preset:Cordis' }, ...available],
+      [],
+      new Set(),
+    );
+    expect(states[0]?.group).toBe('preset:Cordis');
+    expect(states[1]).not.toHaveProperty('group');
   });
 
   it('marks skills in the disabled set as not enabled, leaving state untouched', () => {

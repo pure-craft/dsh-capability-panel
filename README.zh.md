@@ -20,7 +20,7 @@
 | 是什么 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`)的 web 插件:一个面板,列出当前会话的技能、MCP 服务器、系统工具及其真实的在不在上下文状态,并能逐项开关 |
 | 什么时候用 | 回答"为什么 agent 不知道这个技能";看一个加载过的技能是否挺过了剪枝/压缩;只在当前会话里关掉某个工具或 MCP 服务器;为 preset 设置默认能力集合;统计关闭后被拦截的调用次数 |
 | 安装 | `dsh plugin --profile web add dsh-capability-panel`(然后重启 dsh) |
-| 要求 | dsh web profile,dsh ≥ 0.1.2-rc.1;`@deepseek-ai/*` peer 全部由宿主提供 |
+| 要求 | dsh web profile,dsh ≥ 0.1.2-alpha.4(更早版本可运行,但加载状态降级显示);`@deepseek-ai/*` peer 全部由宿主提供 |
 | 数据 | `$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间;统计在 `$DSH_HOME/capability-panel/stats.jsonl`;loopback API `/api/capability-panel` |
 | 包 | npm 上的 `dsh-capability-panel`;bundle id `capability-panel` |
 
@@ -38,6 +38,8 @@
 - **重启不丢的会话级开关。** 关掉当前会话里的一个技能、一个工具或一整个 MCP 服务器：从下一次提示组装生效，重启 dsh 后随该会话恢复，且绝不碰其他会话、绝不动对话历史。
 - **Preset 默认。** 设置 → 能力面板，为每个 agent preset 存一份默认能力集合；之后新建或恢复的会话继承它。与会话面板同一套筛选、分组和开关——preset 默认只是起点，会话里仍然可以覆盖。
 - **MCP 按服务器分组。** 两个服务器挂着两百个工具也能扫得过来：折叠成每服务器一行，一次开关整组。
+- **按来源分组。** 技能和 MCP 服务器在带标签的分隔线下聚类：preset 自带的条目标注它来自哪个 preset，其余显示真实目录（`~/.dsh/skills`、项目相对路径，过长时中间省略）——"这个技能是从哪来的"一眼即有答案。
+- **一键打开源文件夹。** 悬停分组分隔线会出现文件夹图标，点击即在系统文件管理器中打开该来源目录（macOS、Windows 和 freedesktop Linux）。
 - **拦截计数。** 模型在你关掉某项之后仍然尝试调用，面板会计数——这是"模型在凭记忆行动、开关需要更响亮的告知"的信号。
 - **一键填入命令。** 技能行上的纸飞机按钮把 `/skill-name` 放进输入框，等你自己的回车。
 - **快速筛选。** 按名称、描述或状态文案匹配（搜"已截断"或"truncated"都可以），命中时描述自动展开。
@@ -69,7 +71,7 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 
 安装后需要重启 dsh 才生效。
 
-要求 DeepSeek Harness 的 web profile(`dsh web`),dsh ≥ 0.1.2-rc.1。所有 `@deepseek-ai/*` 运行时件都由宿主以 peer 依赖形式提供——没有别的要装。
+要求 DeepSeek Harness 的 web profile(`dsh web`),dsh ≥ 0.1.2-alpha.4(加载状态经由该版本引入的 `session.snapshotEvents` 读取;更早版本面板仍可运行,加载状态降级显示并在 payload 中注明)。所有 `@deepseek-ai/*` 运行时件都由宿主以 peer 依赖形式提供——没有别的要装。
 
 **安装即用，不需要任何配置**——插件没有配置项。重启后你会在两个地方看到它：
 
@@ -86,6 +88,7 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 - 每行右侧的开关立即生效——不刷新、不重启
 - 点击行本身展开描述
 - 顶部筛选框匹配名称、描述或状态文案，下方有 `X / Y` 命中计数
+- 分隔线把每个分区按来源归类：preset 自带条目显示 preset 名，其余显示磁盘上的目录——悬停分隔线查看完整路径，点击即在文件管理器中打开该文件夹
 - 被关闭的行变暗，同时模型的系统提示里会被告知"用户关闭了这些能力"
 
 `run_code` 是保留的 Code Mode 传输通道——注册表禁止遮罩它，所以它的开关锁定为开。

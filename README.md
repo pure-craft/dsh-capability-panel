@@ -20,7 +20,7 @@ A panel for the live conversation's capability surface: every skill, MCP server,
 | What | A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) web plugin: a panel that lists the live session's skills, MCP servers, and system tools with their true in-context state, plus switches to toggle them |
 | Use it to | answer "why doesn't the agent know this skill"; see whether a loaded skill survived pruning/compaction; turn a tool or MCP server off for one session only; set per-preset default capabilities; count blocked tool calls after a disable |
 | Install | `dsh plugin --profile web add dsh-capability-panel` (then restart dsh) |
-| Requires | dsh web profile, dsh ≥ 0.1.2-rc.1; all `@deepseek-ai/*` peers provided by the host |
+| Requires | dsh web profile, dsh ≥ 0.1.2-alpha.4 (older versions run with load states degraded); all `@deepseek-ai/*` peers provided by the host |
 | Data | `$DSH_HOME/settings.yaml` namespace `capability-panel`; stats at `$DSH_HOME/capability-panel/stats.jsonl`; loopback API `/api/capability-panel` |
 | Package | `dsh-capability-panel` on npm; bundle id `capability-panel` |
 
@@ -38,6 +38,8 @@ This plugin turns both into one panel at the right of the composer.
 - **Per-session switches that survive restarts.** Turn a skill, tool, or whole MCP server off for the current conversation. The switch applies from the next prompt assembly, stays bound to that session across a dsh restart, and never touches another session or the conversation history.
 - **Preset defaults.** Settings → Capability Panel stores the default capability set per agent preset; sessions created or resumed afterward inherit it. Same filter, same grouping, same switches as the session panel — a preset default is a starting point the session can still override.
 - **MCP grouped by server.** Two hundred tools behind two servers stay scannable: collapse to one row per server, flip the whole server in one write.
+- **Grouped by source.** Skills and MCP servers cluster under labeled divider rules: preset-bundled entries name the preset they came from; everything else shows its real directory (`~/.dsh/skills`, project-relative paths, middle-ellipsized when long) — "where did this skill come from" is answered at a glance.
+- **One click to the source folder.** Hover a group divider and a folder icon appears; clicking it opens that source directory in the system file manager (macOS, Windows, and freedesktop Linux).
 - **Blocked-attempt counts.** If the model still calls a capability after you turned it off, the panel counts it — the signal that the model is acting from memory and the switch needs a louder story.
 - **One-click command fill.** A skill row's paper-plane button drops `/skill-name` into the composer, ready for your Enter.
 - **Fast filtering.** Match on name, description, or the visible state pill ("truncated" / "已截断" both work), with matching descriptions auto-expanded.
@@ -69,7 +71,7 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 
 Restart dsh for the install to take effect.
 
-Requires a DeepSeek Harness web profile (`dsh web`), dsh ≥ 0.1.2-rc.1. All `@deepseek-ai/*` runtime pieces are provided by the host as peer dependencies — there is nothing else to install.
+Requires a DeepSeek Harness web profile (`dsh web`), dsh ≥ 0.1.2-alpha.4 (load states read via `session.snapshotEvents`, introduced in that release; on older versions the panel runs with load states degraded and notes so in the payload). All `@deepseek-ai/*` runtime pieces are provided by the host as peer dependencies — there is nothing else to install.
 
 **Zero configuration** — the plugin has no settings of its own. After the restart you will find it in two places:
 
@@ -86,6 +88,7 @@ Open any conversation and click the context icon at the right of the composer; t
 - The switch at the right of each row takes effect immediately — no refresh, no restart
 - Click the row itself to expand its description
 - The filter box at the top matches name, description, or state label, with an `X / Y` matched count
+- Divider rules group each tab by source: a preset name for preset-bundled entries, otherwise the on-disk directory — hover a divider for the full path, click it to open that folder in the file manager
 - A disabled row renders dimmed, and the model is told in its system prompt that you turned the capability off
 
 `run_code` is the reserved Code Mode transport — the registry forbids masking it, so its switch is locked on.

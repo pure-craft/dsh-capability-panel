@@ -33,6 +33,8 @@ import { capabilitySwitch } from './switch.js';
 import { PresetToolSection } from './preset-section.js';
 import { resetPresetTools } from './preset-store.js';
 
+const ROUTE = '/api/capability-panel';
+
 // React comes through the module loader's `require`, which resolves the HOST's
 // copy — the runtime calls `apply(ctx, config)`, never `apply(ctx, react)`.
 // tsdown keeps this import external so no second React instance is bundled.
@@ -192,7 +194,125 @@ export function apply(ctx: SlotContext): void {
       const normalizedQuery = query.trim();
       const filtering = normalizedQuery !== '';
       const payload = snap.payload;
-      const view = payload === null ? null : filterPayload(payload, normalizedQuery, (skill) => t(`state.${skill.state}`));
+      const skillSourceLabel = (skill: SkillEntry): string => {
+        const key = `source.${skill.source}`;
+        const translated = t(key);
+        return translated === key ? skill.source : translated;
+      };
+      const openSourceFolder = (source: string) => {
+        if (sessionId === null) return;
+        void fetch(`${ROUTE}/open-folder`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId, source }),
+        }).then(async (response) => {
+          if (!response.ok) {
+            const detail = await response.text();
+            console.warn(`[capability-panel] cannot open source folder (${response.status}): ${detail}`);
+          }
+        }).catch((error: unknown) => {
+          console.warn('[capability-panel] open source folder request failed', error);
+        });
+      };
+      /**
+       * Middle ellipsis for long path labels: both ends carry the meaning
+       * (`~/…` context, the tail directory), the middle is the expendable
+       * part. The full path stays in the hover tooltip.
+       */
+      const ellipsizeMiddle = (text: string, max = 42): string => {
+        if (text.length <= max) return text;
+        const head = Math.ceil((max - 1) / 2);
+        const tail = Math.floor((max - 1) / 2);
+        return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+      };
+      /**
+       * Section header for a source group, rendered as a labeled rule:
+       * `── 📁 ~/.agents/skills (4) ────────────`. Label rule: preset-bundled
+       * entries name their preset; every other group shows its real directory
+       * (host-abbreviated `~`/cwd-relative, middle-ellipsized when long), and
+       * only groups without a filesystem location fall back to the translated
+       * source name. `groupKey` is the grouping identity; `rawSource` is what
+       * the open-folder route resolves by.
+       */
+      const sourceSectionHeader = (groupKey: string, rawSource: string, count: number, first: boolean, path?: string, openable = false) => {
+        const label = groupKey.startsWith('preset:')
+          ? groupKey.slice(7)
+          : path !== undefined
+            ? ellipsizeMiddle(path)
+            : groupKey === 'host' ? t('source.host') : skillSourceLabel({ source: groupKey } as SkillEntry);
+        const rule = (grow: boolean) => h('span', {
+          style: grow
+            ? { flex: '1', height: '1px', background: TOK.borderStrong }
+            : { flex: 'none', width: '16px', height: '1px', background: TOK.borderStrong },
+        });
+        return h(
+          'div',
+          {
+            key: `source:${groupKey}`,
+            className: 'ci-source-header',
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              margin: first ? '0 0 2px' : '10px 0 2px',
+            },
+          },
+          rule(false),
+          h(
+            'span',
+            {
+              style: {
+                flex: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontWeight: 500,
+                color: TOK.textTertiary,
+                fontVariantNumeric: 'tabular-nums',
+                cursor: openable ? 'pointer' : 'default',
+              },
+              title: openable ? t('source.openFolder', { source: path ?? label }) : undefined,
+              onClick: openable ? () => { openSourceFolder(rawSource); } : undefined,
+            },
+            openable
+              ? h(
+                  'span',
+                  {
+                    className: 'ci-folder-icon',
+                    style: {
+                      display: 'inline-grid',
+                      placeItems: 'center',
+                      opacity: 0,
+                      transition: 'opacity 0.15s',
+                    },
+                  },
+                  // Minimal folder SVG, 12×12.
+                  h(
+                    'svg',
+                    { width: '12', height: '12', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+                    h('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' }),
+                  ),
+                )
+              : null,
+            `${label} (${count})`,
+          ),
+          rule(true),
+        );
+      };
+      /** Group items by source, preserving order within each group. */
+      const groupBySource = <T>(items: readonly T[], getSource: (item: T) => string): [string, T[]][] => {
+        const groups = new Map<string, T[]>();
+        const order: string[] = [];
+        for (const item of items) {
+          const source = getSource(item);
+          const bucket = groups.get(source);
+          if (bucket) bucket.push(item);
+          else { groups.set(source, [item]); order.push(source); }
+        }
+        return order.map((source) => [source, groups.get(source)!]);
+      };
+      const view = payload === null ? null : filterPayload(payload, normalizedQuery, (skill) => t(`state.${skill.state}`), skillSourceLabel);
       const skills = view === null ? [] : sortSkills(view.skills);
       const mcp = view?.mcp ?? [];
       const systemTools = view?.systemTools ?? [];
@@ -300,7 +420,7 @@ export function apply(ctx: SlotContext): void {
           text,
         );
 
-      const nameText = (text: string) =>
+      const nameText = (text: string, sourceLabel?: string) =>
         h(
           'span',
           {
@@ -313,6 +433,20 @@ export function apply(ctx: SlotContext): void {
             },
           },
           text,
+          sourceLabel !== undefined
+            ? h(
+                'span',
+                {
+                  style: {
+                    color: TOK.textTertiary,
+                    fontWeight: 400,
+                    fontSize: '11px',
+                    marginLeft: '2px',
+                  },
+                },
+                `· ${sourceLabel}`,
+              )
+            : null,
         );
 
       /** The trigger's accessible name, localized with its subject. */
@@ -340,6 +474,7 @@ export function apply(ctx: SlotContext): void {
         description: string | undefined,
         actions: readonly unknown[],
         className = ROW_ROOT_CLASS,
+        sourceLabel?: string,
       ) => {
         const hasDescription = description !== undefined && description !== '';
         const disclosure = resolveDisclosure(expanded[key] === true, filtering);
@@ -356,7 +491,7 @@ export function apply(ctx: SlotContext): void {
               'div',
               { className: ROW_HEADER_CLASS },
               h('span', { style: { width: '18px', flex: 'none' } }),
-              nameText(label),
+              nameText(label, sourceLabel),
               ...actions,
             ),
           );
@@ -381,7 +516,7 @@ export function apply(ctx: SlotContext): void {
                 'aria-label': ariaLabel,
               },
               h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
-              nameText(label),
+              nameText(label, sourceLabel),
             ),
             ...actions,
           ),
@@ -440,7 +575,7 @@ export function apply(ctx: SlotContext): void {
           insertButton(skill.name),
           blockedChip(blocked[skill.name] ?? 0),
           switchControl('skill', skill.name, skill.enabled),
-        ]);
+        ], ROW_ROOT_CLASS);
 
       const mcpToolRow = (tool: McpServerEntry['tools'][number], serverEnabled: boolean) =>
         disclosureRow(`mcp-tool:${tool.name}`, tool.enabled, tool.label, tool.description, [
@@ -585,14 +720,20 @@ export function apply(ctx: SlotContext): void {
                 { value: 'skills' },
                 skills.length === 0 && payload !== null && !snap.loading
                   ? emptyNote(t('empty.skills'))
-                  : h('div', {}, ...skills.map(skillRow)),
+                  : h('div', {}, ...groupBySource(skills, (s) => s.group ?? s.source).flatMap(([groupKey, items], i) => [
+                      sourceSectionHeader(groupKey, items[0]!.source, items.length, i === 0, items.find((item) => item.path !== undefined)?.path, items.some((item) => item.path !== undefined)),
+                      ...items.map(skillRow),
+                    ])),
               ),
               h(
                 Tabs.Panel,
                 { value: 'mcp' },
                 mcp.length === 0 && payload !== null && !snap.loading
                   ? emptyNote(t('empty.mcp'))
-                  : h('div', {}, ...mcp.map(serverRow)),
+                  : h('div', {}, ...groupBySource(mcp, (s) => s.source === undefined || s.source === 'host' ? 'host' : `preset:${s.source}`).flatMap(([groupKey, items], i) => [
+                      sourceSectionHeader(groupKey, items[0]!.source ?? 'host', items.length, i === 0, items.find((item) => item.path !== undefined)?.path, true),
+                      ...items.map(serverRow),
+                    ])),
               ),
               h(
                 Tabs.Panel,
@@ -648,7 +789,7 @@ export function apply(ctx: SlotContext): void {
                 'aria-label': t('panel.aria'),
                 style: {
                   boxSizing: 'border-box',
-                  width: '360px',
+                  width: '480px',
                   maxHeight: 'min(60vh, var(--available-height, 60vh))',
                   overflowY: 'auto',
                   padding: '10px 12px',

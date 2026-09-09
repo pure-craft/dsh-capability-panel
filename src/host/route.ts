@@ -1,7 +1,8 @@
 import { isLoopback } from '../loopback.js';
-import { buildPayload, EMPTY_STATE } from './catalog.js';
+import { buildPayload, EMPTY_STATE, parentDir } from './catalog.js';
 import type { CapabilityController } from './capabilities.js';
 import { errorMessage, HttpError } from './errors.js';
+import { openFolder } from './open-folder.js';
 import type { PresetToolController } from './preset-tools.js';
 import type { SessionOverrideStore } from './session-overrides.js';
 import type { StatsStore } from './stats-store.js';
@@ -140,6 +141,91 @@ export function createRouteHandler(
         }
         const snapshot = stats.read();
         json(res, 200, { logFile: stats.file, blocked: blockedCounts, records: snapshot.records, ...(snapshot.warnings.length > 0 ? { warnings: snapshot.warnings } : {}) }, true);
+        return;
+      }
+      if (url.pathname === `${ROUTE}/open-folder`) {
+        if (req.method !== 'POST') {
+          res.writeHead(405, { allow: 'POST', 'content-type': 'text/plain; charset=utf-8' });
+          res.end('method not allowed');
+          return;
+        }
+        if (!validatePresetContentType(req, res)) return;
+        const body = await readRequestBody(req);
+        if (body === null || typeof body !== 'object') {
+          json(res, 400, { error: 'invalid request body' });
+          return;
+        }
+        const record = body as { sessionId?: unknown; source?: unknown };
+        if (typeof record.source !== 'string' || record.source === '') {
+          json(res, 400, { error: 'source is required' });
+          return;
+        }
+        const source = record.source;
+        const sessionId = typeof record.sessionId === 'string' ? record.sessionId : null;
+        let folderPath: string | undefined;
+        // Authoritative path first: re-list the session's skills and take the
+        // resourceBase directory of the first entry carrying this source. This
+        // covers every source the filesystem provider knows — including
+        // 'custom' (customSkillDirs) — without guessing paths.
+        if (sessionId !== null) {
+          try {
+            const skills = services.get('skills');
+            const agent = services.get('agents')?.get(sessionId);
+            if (skills !== undefined && agent !== undefined) {
+              const cwd = agent.session?.header?.cwd;
+              const list = await skills.list({ ...(cwd === undefined ? {} : { cwd }), scope: agent });
+              for (const item of list) {
+                if (item.source !== source) continue;
+                const base = item.resourceBase;
+                if (base !== null && typeof base === 'object' && (base as { kind?: unknown }).kind === 'directory') {
+                  const path = (base as { path?: unknown }).path;
+                  if (typeof path === 'string' && path !== '') {
+                    // resourceBase is the skill's own folder; the group folder
+                    // is its parent (the source root).
+                    folderPath = parentDir(path);
+                    break;
+                  }
+                }
+              }
+            }
+          } catch { /* listing failed — fall through to the heuristic */ }
+        }
+        // Heuristic fallbacks for sources with no live skill entry, and for
+        // MCP sources (which are preset names or 'host').
+        if (folderPath === undefined && (source === 'user-dsh' || source === 'user-agents')) {
+          const dshHome = process.env['DSH_HOME'] ?? (process.env['HOME'] !== undefined ? `${process.env['HOME']}/.dsh` : undefined);
+          if (dshHome !== undefined) {
+            folderPath = source === 'user-dsh' ? `${dshHome}/skills` : `${process.env['DSH_AGENTS_HOME'] ?? `${process.env['HOME']}/.agents`}/skills`;
+          }
+        } else if (folderPath === undefined && (source === 'project-dsh' || source === 'project-agents')) {
+          if (sessionId !== null) {
+            const agent = services.get('agents')?.get(sessionId);
+            const cwd = agent?.session?.header?.cwd;
+            if (cwd !== undefined) {
+              folderPath = source === 'project-dsh' ? `${cwd}/.dsh/skills` : `${cwd}/.agents/skills`;
+            }
+          }
+        } else if (folderPath === undefined && source === 'host') {
+          // Host composition entries live under DSH_HOME — open the home.
+          folderPath = process.env['DSH_HOME'] ?? (process.env['HOME'] !== undefined ? `${process.env['HOME']}/.dsh` : undefined);
+        } else if (folderPath === undefined && source !== 'bundled' && source !== 'runtime') {
+          // Anything else is a preset name — look up its path.
+          try {
+            const presets = await services.get('agentPresets')?.list();
+            const preset = presets?.find((p) => p.id === source || p.name === source);
+            if (preset !== undefined) folderPath = preset.path;
+          } catch { /* preset lookup failed — leave folderPath undefined */ }
+        }
+        if (folderPath === undefined) {
+          json(res, 404, { error: `cannot open folder for source "${source}"` });
+          return;
+        }
+        try {
+          await openFolder(folderPath);
+          json(res, 200, { ok: true });
+        } catch (error) {
+          json(res, 500, { error: `failed to open folder: ${errorMessage(error)}` });
+        }
         return;
       }
       // The catalogue answers the prefix itself, not everything beneath it.

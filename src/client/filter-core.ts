@@ -30,6 +30,8 @@ export interface MatchableSkill {
    * Optional so the settings panel (whose rows have no state) stays valid.
    */
   readonly stateLabel?: string;
+  /** Localized source label, for matching the origin chip text. */
+  readonly sourceLabel?: string;
 }
 
 /** The fields a tool row is matched on, for system tools and MCP tools alike. */
@@ -43,6 +45,8 @@ export interface MatchableTool {
 export interface MatchableServer<Tool extends MatchableTool> {
   readonly server: string;
   readonly tools: readonly Tool[];
+  /** Server source label, for matching the origin chip text. */
+  readonly source?: string;
 }
 
 export interface Capabilities<
@@ -84,9 +88,9 @@ export function filterCapabilities<
       total: source.skills.length + source.mcp.length + source.systemTools.length,
     };
   }
-  const skills = source.skills.filter((skill) => hit(query, [skill.name, skill.description, skill.stateLabel]));
+  const skills = source.skills.filter((skill) => hit(query, [skill.name, skill.description, skill.stateLabel, skill.sourceLabel]));
   const mcp = source.mcp.flatMap((server) => {
-    if (hit(query, [server.server])) return [server];
+    if (hit(query, [server.server, server.source])) return [server];
     const tools = server.tools.filter((tool) => hit(query, [tool.label, tool.name, tool.description]));
     return tools.length > 0 ? [{ ...server, tools }] : [];
   });

@@ -170,8 +170,11 @@ export function createCapabilityController(
       name: original.name,
       description: original.description,
       content: original.content,
-      source: 'custom',
-      provider: 'capability-panel',
+      // The shadow wins the listing outright (nearest layer), so it must
+      // carry the original's provenance — hardcoding 'custom' would mislabel
+      // every panel-disabled skill's source in the catalogue.
+      source: typeof original.source === 'string' ? original.source : 'custom',
+      provider: typeof original.provider === 'string' ? original.provider : 'capability-panel',
       ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
       invocation: { modelInvocable: false, userInvocable: true },
     }));
@@ -307,8 +310,11 @@ export function createCapabilityController(
             name: original.name,
             description: original.description,
             content: original.content,
-            source: 'custom',
-            provider: 'capability-panel',
+            // Same provenance rule as the panel's own switch: the shadow
+            // replaces the original in the listing, so it must inherit the
+            // original's source/provider.
+            source: typeof original.source === 'string' ? original.source : 'custom',
+            provider: typeof original.provider === 'string' ? original.provider : 'capability-panel',
             ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
             invocation: { modelInvocable: false, userInvocable: true },
           });

@@ -6,8 +6,8 @@ function payload(): InspectorPayload {
   return {
     sessionId: 's1',
     skills: [
-      { name: 'find-skills', state: 'loaded', enabled: true, loadCount: 1, description: '发现技能' },
-      { name: 'lark-doc', state: 'unloaded', enabled: true, loadCount: 0, description: '飞书云文档' },
+      { name: 'find-skills', state: 'loaded', enabled: true, loadCount: 1, description: '发现技能', source: 'user-dsh', provider: 'builtin' },
+      { name: 'lark-doc', state: 'unloaded', enabled: true, loadCount: 0, description: '飞书云文档', source: 'bundled', provider: 'builtin' },
     ],
     mcp: [
       {

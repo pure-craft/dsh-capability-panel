@@ -2,7 +2,7 @@
 # confirmed-consistent state. All languages carry equal authority; after editing
 # any side, bring the others along and re-record with:
 #   git hash-object README.md README.zh.md README.ja.md README.ko.md
-README.md: c269a77a330b343cfbc4f61f004e3b6e74042dbc
-README.zh.md: 1d763230862f7796e64d572ec3fcaedd0eebea30
-README.ja.md: 8b437176ad6ea982117d9215f5d4473b8c0772dc
-README.ko.md: 1c2aec2625a571a46b309528e5c1625dff24056a
+README.md: e1a261ac0ad462922156922cba1866835b882c50
+README.zh.md: 293a8d6612f3bf6659517544685220fe3f6e312e
+README.ja.md: 00bfe2fa3cc6fa484b35ebf93b536b3539a15282
+README.ko.md: 7182e1c0414091c87fc7461c28d659debc70fd14

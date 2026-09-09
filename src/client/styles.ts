@@ -3,6 +3,8 @@ export const TOK = {
   textSecondary: 'var(--dsw-alias-label-secondary, #61666b)',
   textTertiary: 'var(--dsw-alias-label-tertiary, #81858c)',
   border: 'var(--dsw-alias-border-l1, rgba(0,0,0,.04))',
+  /** Hairline rules that must stay visible (the host menu footer divider's token). */
+  borderStrong: 'var(--dsw-alias-border-l2, rgba(0,0,0,.1))',
   switchOn: 'var(--dsw-alias-state-business-primary, #4176e6)',
   switchOff: 'var(--dsw-alias-border-l2, rgba(0,0,0,.1))',
   switchThumb: 'var(--dsw-alias-bg-layer-1, #ffffff)',
@@ -87,5 +89,7 @@ export const PANEL_CSS = [
   '.ci-preset-kinds{margin:0 0 4px}',
   '.ci-preset-kinds .ci-tabs{display:inline-flex}',
   '.ci-preset-kinds .ci-tab{flex:0 0 auto;padding:0 12px}',
+  // Folder icon on source section headers: invisible until hover.
+  '.ci-source-header:hover .ci-folder-icon{opacity:1 !important}',
   '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',
 ].join('\n');

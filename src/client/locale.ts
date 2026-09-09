@@ -62,6 +62,16 @@ export const zh: Record<string, string> = {
   'preset.reserved': '{name} 是保留的传输通道，不能关闭。',
   'preset.broken': '这个 preset 无法组装会话：{reason}。修好它之后才能列出工具。',
   'degraded.item': '⚠ 部分读取失败：{note}',
+  'source.project-dsh': '项目 .dsh',
+  'source.project-agents': '项目 agent',
+  'source.runtime': '运行时',
+  'source.user-dsh': '用户 .dsh',
+  'source.user-agents': '用户 agent',
+  'source.custom': '自定义',
+  'source.bundled': '内置',
+  'source.host': '全局',
+  'source.preset': '预设',
+  'source.openFolder': '在文件管理器中打开 {source}',
 };
 
 export const en: Record<string, string> = {
@@ -113,6 +123,16 @@ export const en: Record<string, string> = {
   'preset.reserved': '{name} is a reserved transport and cannot be disabled.',
   'preset.broken': 'This preset cannot compose a session: {reason}. Fix it before its tools can be listed.',
   'degraded.item': '⚠ Partial read failed: {note}',
+  'source.project-dsh': 'project .dsh',
+  'source.project-agents': 'project agent',
+  'source.runtime': 'runtime',
+  'source.user-dsh': 'user .dsh',
+  'source.user-agents': 'user agent',
+  'source.custom': 'custom',
+  'source.bundled': 'bundled',
+  'source.host': 'global',
+  'source.preset': 'preset',
+  'source.openFolder': 'Open {source} in file manager',
 };
 
 /**

@@ -19,13 +19,20 @@ function parseSkillEntry(value: unknown): SkillEntry | null {
   const state = value['state'];
   if (state !== 'loaded' && state !== 'pruned' && state !== 'evicted' && state !== 'unloaded') return null;
   if (typeof value['enabled'] !== 'boolean' || typeof value['loadCount'] !== 'number') return null;
+  if (typeof value['source'] !== 'string' || typeof value['provider'] !== 'string') return null;
   const description = optString(value['description']);
+  const path = optString(value['path']);
+  const group = optString(value['group']);
   return {
     name: value['name'],
     state,
     enabled: value['enabled'],
     loadCount: value['loadCount'],
+    source: value['source'],
+    provider: value['provider'],
     ...(description === undefined ? {} : { description }),
+    ...(path === undefined ? {} : { path }),
+    ...(group === undefined ? {} : { group }),
   };
 }
 
@@ -55,7 +62,9 @@ function parseMcpServerEntry(value: unknown): McpServerEntry | null {
     if (parsed === null) return null;
     tools.push(parsed);
   }
-  return { server: value['server'], enabled: value['enabled'], tools };
+  const source = optString(value['source']);
+  const path = optString(value['path']);
+  return { server: value['server'], enabled: value['enabled'], tools, ...(source === undefined ? {} : { source }), ...(path === undefined ? {} : { path }) };
 }
 
 function parseBlocked(value: unknown): Record<string, number> | null {

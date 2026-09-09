@@ -300,6 +300,15 @@ describe('preset enforcement', () => {
     }
   });
 
+  it('inherits the original skill source and provider on the seeded shadow', async () => {
+    const fx = fixture({
+      ...defaults([], ['writing']),
+      skillGet: { name: 'writing', description: 'house style', content: 'body', source: 'user-agents', provider: 'filesystem' },
+    });
+    await fx.emitCreated();
+    expect(fx.registeredSkills[0]).toMatchObject({ source: 'user-agents', provider: 'filesystem' });
+  });
+
   it('seeds skills for an agent that reports no cwd', async () => {
     const fx = fixture({ ...defaults([], ['writing']), agentCwd: false });
     await fx.emitCreated();
@@ -401,6 +410,14 @@ describe('session overrides restored onto a fresh agent', () => {
     await fx.emitCreated();
 
     expect(fx.capabilities.state('session-1')).toBeUndefined();
+  });
+
+  it('inherits the original skill source and provider on the panel switch shadow', async () => {
+    const fx = fixture({
+      skillGet: { name: 'writing', description: 'house style', content: 'body', source: 'user-agents', provider: 'filesystem' },
+    });
+    await fx.capabilities.set('session-1', 'skill', 'writing', false);
+    expect(fx.registeredSkills[0]).toMatchObject({ source: 'user-agents', provider: 'filesystem' });
   });
 
   it('does not leak one session’s overrides into another session', async () => {

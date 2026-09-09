@@ -5,12 +5,13 @@ import { parseInspectorPayload } from '../src/wire.js';
 function validPayload(): InspectorPayload {
   return {
     sessionId: 's1',
-    skills: [{ name: 'find-skills', state: 'loaded', enabled: true, loadCount: 1, description: 'd' }],
+    skills: [{ name: 'find-skills', state: 'loaded', enabled: true, loadCount: 1, description: 'd', source: 'user-dsh', provider: 'builtin' }],
     mcp: [
       {
         server: 'yunxiao',
         enabled: false,
         tools: [{ name: 'mcp__yunxiao__list_pipelines', label: 'list_pipelines', enabled: false, description: 'd' }],
+        source: 'host',
       },
     ],
     systemTools: [{ name: 'bash', label: 'bash', enabled: true }],
@@ -144,7 +145,7 @@ describe('skill entry rejection', () => {
     // A state missing from this list (e.g. 'pruned' dropped from the wire
     // whitelist) would make the panel reject the whole real payload as an
     // error page — this is the positive pin for each known value.
-    const base = { name: 'x', enabled: true, loadCount: 1 };
+    const base = { name: 'x', enabled: true, loadCount: 1, source: 'bundled', provider: 'builtin' };
     for (const state of ['loaded', 'pruned', 'evicted', 'unloaded']) {
       const parsed = parseInspectorPayload(withSkill({ ...base, state }));
       expect(parsed?.skills[0]?.state).toBe(state);
@@ -152,15 +153,80 @@ describe('skill entry rejection', () => {
   });
 
   it('rejects a skill whose enabled flag or loadCount has the wrong type', () => {
-    const base = { name: 'x', state: 'loaded' };
+    const base = { name: 'x', state: 'loaded', source: 'bundled', provider: 'builtin' };
     expect(parseInspectorPayload(withSkill({ ...base, enabled: 'yes', loadCount: 1 }))).toBeNull();
     expect(parseInspectorPayload(withSkill({ ...base, enabled: true, loadCount: '1' }))).toBeNull();
   });
 
   it('treats a non-string description as absent rather than fatal', () => {
     const parsed = parseInspectorPayload(
-      withSkill({ name: 'x', state: 'unloaded', enabled: true, loadCount: 0, description: 42 }),
+      withSkill({ name: 'x', state: 'unloaded', enabled: true, loadCount: 0, description: 42, source: 'bundled', provider: 'builtin' }),
     );
     expect(parsed?.skills[0]?.description).toBeUndefined();
+  });
+
+  it('rejects a skill missing source or provider', () => {
+    const base = { name: 'x', state: 'unloaded', enabled: true, loadCount: 0, provider: 'builtin' };
+    expect(parseInspectorPayload(withSkill(base))).toBeNull();
+    const base2 = { name: 'x', state: 'unloaded', enabled: true, loadCount: 0, source: 'bundled' };
+    expect(parseInspectorPayload(withSkill(base2))).toBeNull();
+  });
+
+  it('carries source and provider through on a valid skill', () => {
+    const parsed = parseInspectorPayload(
+      withSkill({ name: 'x', state: 'loaded', enabled: true, loadCount: 1, source: 'project-dsh', provider: 'filesystem' }),
+    );
+    expect(parsed?.skills[0]?.source).toBe('project-dsh');
+    expect(parsed?.skills[0]?.provider).toBe('filesystem');
+  });
+
+  it('carries the discovery path through, treating a non-string path as absent', () => {
+    const withPath = parseInspectorPayload(
+      withSkill({ name: 'x', state: 'loaded', enabled: true, loadCount: 1, source: 'custom', provider: 'filesystem', path: '/skills/custom' }),
+    );
+    expect(withPath?.skills[0]?.path).toBe('/skills/custom');
+    const withoutPath = parseInspectorPayload(
+      withSkill({ name: 'x', state: 'loaded', enabled: true, loadCount: 1, source: 'custom', provider: 'filesystem', path: 42 }),
+    );
+    expect(withoutPath?.skills[0]?.path).toBeUndefined();
+  });
+
+  it('carries the display group through, treating a non-string group as absent', () => {
+    const withGroup = parseInspectorPayload(
+      withSkill({ name: 'x', state: 'loaded', enabled: true, loadCount: 1, source: 'custom', provider: 'filesystem', group: 'preset:Cordis' }),
+    );
+    expect(withGroup?.skills[0]?.group).toBe('preset:Cordis');
+    const withoutGroup = parseInspectorPayload(
+      withSkill({ name: 'x', state: 'loaded', enabled: true, loadCount: 1, source: 'custom', provider: 'filesystem', group: 42 }),
+    );
+    expect(withoutGroup?.skills[0]?.group).toBeUndefined();
+  });
+});
+
+describe('MCP server source', () => {
+  it('accepts a server with an optional source', () => {
+    const payload = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [], source: 'my-preset' }] };
+    const parsed = parseInspectorPayload(payload);
+    expect(parsed?.mcp[0]?.source).toBe('my-preset');
+  });
+
+  it('accepts a server without a source', () => {
+    const payload = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [] }] };
+    const parsed = parseInspectorPayload(payload);
+    expect(parsed?.mcp[0]?.source).toBeUndefined();
+  });
+
+  it('rejects a non-string source', () => {
+    const payload = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [], source: 42 }] };
+    // Non-string source is treated as absent (optString), not fatal.
+    const parsed = parseInspectorPayload(payload);
+    expect(parsed?.mcp[0]?.source).toBeUndefined();
+  });
+
+  it('carries the server path through, treating a non-string path as absent', () => {
+    const payload = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [], source: 'host', path: '~/.dsh' }] };
+    expect(parseInspectorPayload(payload)?.mcp[0]?.path).toBe('~/.dsh');
+    const noPath = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [], source: 'host', path: 7 }] };
+    expect(parseInspectorPayload(noPath)?.mcp[0]?.path).toBeUndefined();
   });
 });

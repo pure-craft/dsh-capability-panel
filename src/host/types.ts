@@ -24,6 +24,7 @@ export interface AgentsService {
 export interface AgentPresetLike {
   readonly id: string;
   readonly trust: 'system' | 'user';
+  readonly path?: string;
   readonly name?: string;
   readonly description?: string;
   readonly broken?: string;
@@ -181,13 +182,18 @@ export interface AgentLike {
 export interface SkillSummary {
   readonly name?: unknown;
   readonly description?: unknown;
+  readonly source?: unknown;
+  readonly provider?: unknown;
   readonly invocation?: { readonly modelInvocable?: unknown };
+  readonly resourceBase?: unknown;
 }
 
 export interface SkillDefinitionLike {
   readonly name?: unknown;
   readonly description?: unknown;
   readonly content?: unknown;
+  readonly source?: unknown;
+  readonly provider?: unknown;
   readonly resourceBase?: unknown;
 }
 

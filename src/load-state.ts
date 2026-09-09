@@ -199,7 +199,7 @@ export function prunedLoadSeqs(
  * `evicted`).
  */
 export function decideStates(
-  available: readonly { name: string; description?: string; masked?: boolean }[],
+  available: readonly { name: string; description?: string; masked?: boolean; source: string; provider: string; path?: string; group?: string }[],
   loads: readonly SkillLoadRecord[],
   shadowedSeqs: ReadonlySet<number>,
   disabledSkills: ReadonlySet<string> = new Set(),
@@ -212,7 +212,7 @@ export function decideStates(
     else bucket.push(record);
   }
 
-  return available.map(({ name, description, masked }) => {
+  return available.map(({ name, description, masked, source, provider, path, group }) => {
     const records = byName.get(name) ?? [];
     let state: SkillLoadState = 'unloaded';
     if (records.length > 0) {
@@ -231,6 +231,10 @@ export function decideStates(
       // withdrew model invocation -- a preset default, most often.
       enabled: !disabledSkills.has(name) && masked !== true,
       loadCount: records.length,
+      source,
+      provider,
+      ...(path === undefined ? {} : { path }),
+      ...(group === undefined ? {} : { group }),
     };
   });
 }

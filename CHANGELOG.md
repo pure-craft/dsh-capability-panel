@@ -8,6 +8,17 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+### Added
+
+- Source grouping in the Skills and MCP tabs: entries cluster under labeled divider rules — preset-bundled entries group under their preset's name (detected by matching the discovery directory against preset paths); every other group shows its real directory, abbreviated (`~`, session-cwd-relative) and middle-ellipsized when long.
+- One click to the source folder: hovering a group divider reveals a folder icon, and clicking it opens that source directory in the system file manager (macOS `open`, Windows `start`, freedesktop `xdg-open`) via a new loopback-only `POST /api/capability-panel/open-folder` route. The divider's hover tooltip shows the full path.
+- MCP server entries now report where the server is configured: `host` for the host composition, or the composing preset's name for preset-scoped servers.
+
+### Fixed
+
+- Panel-disabled skills no longer misreport their source as `custom`: the disable shadow now inherits the original skill's source and provider, so a disabled `~/.agents` skill still groups under its real source.
+- Peer dependency ranges now accept dsh 0.1.3/0.1.5 pre-releases (API compatibility verified through `0.1.5-alpha.1`), so installs against newer dsh builds stop warning.
+
 ### Internal
 
 - Removed dead code left over from the pre-surface read path (`collectReplacements`, `SurfaceReplacement`, the `RawEvent.surfaceOp` field, and a compat alias). No behavior change.

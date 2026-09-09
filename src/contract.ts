@@ -47,6 +47,26 @@ export interface SkillEntry {
    * reloaded after an eviction reads `loaded` with `loadCount > 1`.
    */
   readonly loadCount: number;
+  /**
+   * Where this skill was discovered: the SkillSource value from the skills
+   * service (e.g. `project-dsh`, `user-dsh`, `bundled`, `runtime`).
+   */
+  readonly source: string;
+  /** The provider that registered this skill (e.g. `builtin`, `plugin`). */
+  readonly provider: string;
+  /**
+   * The on-disk directory this skill was discovered under, when the skills
+   * service reports a directory resourceBase. The panel uses it to label
+   * `custom` groups and to open the folder — never sent back verbatim.
+   */
+  readonly path?: string;
+  /**
+   * Display grouping key, present only when it differs from `source`:
+   * `preset:<name>` for skills a preset bundles through customSkillDirs
+   * (the runtime reports those as `custom`). Grouping is display-only —
+   * `source` keeps the raw runtime value for folder resolution.
+   */
+  readonly group?: string;
 }
 
 /** One tool in a listing: full wire name, short display label, description. */
@@ -77,6 +97,17 @@ export interface McpServerEntry {
    * future-only, history-preserving semantics as SkillEntry.enabled.
    */
   readonly enabled: boolean;
+  /**
+   * Where this MCP server is configured: `"host"` for the host composition,
+   * or the preset name for a preset-scoped server.
+   */
+  readonly source?: string;
+  /**
+   * The configuration location, abbreviated for display (`~/.dsh` for host,
+   * the preset's directory for a preset source). Used as the group label and
+   * to open the folder.
+   */
+  readonly path?: string;
 }
 
 export interface InspectorPayload {

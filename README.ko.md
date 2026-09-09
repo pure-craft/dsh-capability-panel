@@ -20,7 +20,7 @@
 | 무엇 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`) 웹 플러그인: 현재 세션의 스킬·MCP 서버·시스템 도구와 그 실제 인컨텍스트 상태를 나열하고 개별 전환하는 패널 |
 | 용도 | "왜 에이전트가 이 스킬을 모르지?" 해결. 로드된 스킬이 프루닝/컴팩션에서 살아남았는지 확인. 특정 도구나 MCP 서버를 이 세션에서만 끄기. 프리셋별 기본 capability 세트 설정. 비활성화 후 차단된 호출 횟수 계측 |
 | 설치 | `dsh plugin --profile web add dsh-capability-panel`(설치 후 dsh 재시작) |
-| 요구 사항 | dsh web 프로필, dsh ≥ 0.1.2-rc.1. `@deepseek-ai/*` peer는 모두 호스트가 제공 |
+| 요구 사항 | dsh web 프로필, dsh ≥ 0.1.2-alpha.4(이전 버전에서도 실행되지만 로드 상태는 degraded 로 표시). `@deepseek-ai/*` peer는 모두 호스트가 제공 |
 | 데이터 | `$DSH_HOME/settings.yaml`의 `capability-panel` 네임스페이스. 통계는 `$DSH_HOME/capability-panel/stats.jsonl`. loopback API `/api/capability-panel` |
 | 패키지 | npm의 `dsh-capability-panel`. bundle id는 `capability-panel` |
 
@@ -36,6 +36,8 @@
 - **재시작해도 유지되는 세션 단위 스위치.** 현재 대화에서 스킬·도구·MCP 서버 전체를 끕니다. 다음 프롬프트 조립부터 적용되며, dsh 재시작 후에도 해당 세션에 바인딩된 채 복원됩니다. 다른 세션이나 대화 히스토리는 건드리지 않습니다.
 - **프리셋 기본값.** 설정 → capability 패널에서 에이전트 프리셋별 기본 capability 세트를 저장합니다. 이후 생성되거나 복원되는 세션이 이를 상속합니다. 프리셋 기본값은 시작점일 뿐, 세션에서 언제든 재정의할 수 있습니다.
 - **서버별 MCP 그룹화.** 두 서버에 200개의 도구가 있어도 한눈에 볼 수 있습니다. 서버당 한 행으로 접고, 한 번의 쓰기로 전체를 전환합니다.
+- **출처별 그룹화.** 스킬과 MCP 서버가 라벨이 붙은 구분선 아래로 모입니다: 프리셋에 포함된 항목은 출처 프리셋 이름을 표시하고, 나머지는 실제 디렉터리(`~/.dsh/skills`, 프로젝트 상대 경로, 길면 중간 생략)를 표시합니다——"이 스킬은 어디서 왔지?"에 한눈에 답할 수 있습니다.
+- **원클릭으로 소스 폴더 열기.** 그룹 구분선에 호버하면 폴더 아이콘이 나타나고, 클릭하면 해당 소스 디렉터리가 시스템 파일 관리자에서 열립니다(macOS, Windows, freedesktop Linux).
 - **차단 횟수.** 끈 후에도 모델이 해당 capability를 계속 호출하면 패널이 카운트합니다——모델이 기억에서 행동하고 있다는 신호입니다.
 - **원클릭 명령 입력.** 스킬 행의 종이비행기 버튼이 `/skill-name`을 입력창에 넣습니다. Enter만 누르면 됩니다.
 - **빠른 필터링.** 이름, 설명 또는 상태 라벨로 검색("truncated" / "已截断" 모두 가능). 일치하는 설명은 자동으로 펼쳐집니다.
@@ -65,7 +67,7 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 
 설치 후 dsh를 재시작해야 적용됩니다.
 
-DeepSeek Harness의 web 프로필(`dsh web`), dsh ≥ 0.1.2-rc.1이 필요합니다. `@deepseek-ai/*` peer는 모두 호스트가 제공하므로 추가로 설치할 것은 없습니다.
+DeepSeek Harness의 web 프로필(`dsh web`), dsh ≥ 0.1.2-alpha.4가 필요합니다(로드 상태는 해당 버전에서 도입된 `session.snapshotEvents`로 읽습니다. 이전 버전에서도 패널은 실행되지만 로드 상태는 degraded 로 표시되고 payload 에 명기됩니다). `@deepseek-ai/*` peer는 모두 호스트가 제공하므로 추가로 설치할 것은 없습니다.
 
 **설정 불필요**——이 플러그인에는 설정 항목이 없습니다. 재시작 후 두 곳에서 찾을 수 있습니다:
 
@@ -82,6 +84,7 @@ DeepSeek Harness의 web 프로필(`dsh web`), dsh ≥ 0.1.2-rc.1이 필요합니
 - 각 행 오른쪽의 스위치는 즉시 적용——새로고침도 재시작도 불필요
 - 행을 클릭하면 설명이 펼쳐집니다
 - 상단 필터는 이름, 설명, 상태 라벨을 검색
+- 구분선은 각 탭을 출처별로 그룹화합니다: 프리셋 포함 항목은 프리셋 이름, 나머지는 디스크상의 디렉터리——구분선에 호버하면 전체 경로를 보여주고, 클릭하면 해당 폴더가 파일 관리자에서 열립니다
 - 꺼진 행은 흐리게 표시되고, 모델의 시스템 프롬프트에도 "사용자가 끈 capability"가 명시됩니다
 
 `run_code`는 예약된 Code Mode 트랜스포트로, 레지스트리가 마스킹을 금지하므로 스위치가 켜진 채로 고정됩니다.

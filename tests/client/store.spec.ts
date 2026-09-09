@@ -155,7 +155,7 @@ describe('setCapability', () => {
     const store = await loadStore();
     const updated: InspectorPayload = {
       sessionId: 's',
-      skills: [{ name: 'find-skills', state: 'unloaded', enabled: false, loadCount: 0 }],
+      skills: [{ name: 'find-skills', state: 'unloaded', enabled: false, loadCount: 0, source: 'user-dsh', provider: 'builtin' }],
       mcp: [],
       systemTools: [],
       blocked: {},
