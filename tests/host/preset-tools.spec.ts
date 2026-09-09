@@ -17,6 +17,9 @@ interface FixtureOptions {
   skillsListThrows?: boolean;
   settingsRegisterThrows?: boolean;
   storedGetThrows?: boolean;
+  presetPath?: string;
+  presetMcpTool?: boolean;
+  richSkills?: boolean;
 }
 
 function fixture(options: FixtureOptions = {}) {
@@ -59,7 +62,7 @@ function fixture(options: FixtureOptions = {}) {
   }
   if (options.agentPresets !== false) {
     services.agentPresets = {
-      list: () => Promise.resolve([{ id: 'alpha', trust: 'system', ...(options.presetMetadata === false ? {} : { name: 'Alpha', description: 'primary' }), ...(options.broken ? { broken: 'bad yaml' } : {}) }]),
+      list: () => Promise.resolve([{ id: 'alpha', trust: 'system', ...(options.presetMetadata === false ? {} : { name: 'Alpha', description: 'primary' }), ...(options.broken ? { broken: 'bad yaml' } : {}), ...(options.presetPath === undefined ? {} : { path: options.presetPath }) }]),
       standingKeyFor: () => options.standingError === undefined
         ? Promise.resolve({ preset: 'alpha' })
         : Promise.reject(options.standingError instanceof Error ? options.standingError : new Error('offline')),
@@ -67,7 +70,7 @@ function fixture(options: FixtureOptions = {}) {
   }
   if (options.tools !== false) {
     services.tools = {
-      schemas: () => [
+      schemas: (scope?: unknown) => [
         { name: 'run_code' },
         { name: 'bash', description: 'shell' },
         { name: 'bash', description: 'duplicate ignored' },
@@ -75,6 +78,8 @@ function fixture(options: FixtureOptions = {}) {
         { name: 'mcp__search__image' },
         { name: '' },
         { name: 42 },
+        // A tool only the preset scope knows: marks its server preset-scoped.
+        ...(scope !== undefined && options.presetMcpTool === true ? [{ name: 'mcp__local__x', description: 'preset only' }] : []),
       ],
     };
   }
@@ -85,7 +90,15 @@ function fixture(options: FixtureOptions = {}) {
         : Promise.resolve(
         lookup.cwd !== undefined && options.projectSkill === true
           ? [{ name: 'writing', description: 'house style' }, { name: 'local-only' }]
-          : [{ name: 'writing', description: 'house style' }],
+          : options.richSkills === true
+            ? [
+                { name: 'writing', description: 'house style', source: 'user-agents', resourceBase: { kind: 'directory', path: '/agents/skills/writing' } },
+                { name: 'preset-skill', source: 'custom', resourceBase: { kind: 'directory', path: '/presets/alpha/skills/preset-skill' } },
+                { name: 'plain-custom', source: 'custom', resourceBase: { kind: 'directory', path: '/elsewhere/plain-custom' } },
+                { name: 'url-skill', source: 'runtime', resourceBase: { kind: 'url', url: 'https://x' } },
+                { name: 'empty-path', source: 'custom', resourceBase: { kind: 'directory', path: '' } },
+              ]
+            : [{ name: 'writing', description: 'house style' }],
       ),
     };
   }
@@ -124,6 +137,8 @@ describe('preset tool settings', () => {
         mcp: [{
           server: 'search',
           enabled: true,
+          source: 'host',
+          path: process.env['DSH_HOME']!,
           tools: [
             { name: 'mcp__search__image', label: 'image', enabled: true },
             { name: 'mcp__search__web', label: 'web', description: 'lookup', enabled: true },
@@ -209,6 +224,8 @@ describe('preset tool settings', () => {
         mcp: [{
           server: 'search',
           enabled: true,
+          source: 'host',
+          path: process.env['DSH_HOME']!,
           tools: [
             { name: 'mcp__search__image', label: 'image', enabled: true },
             { name: 'mcp__search__web', label: 'web', description: 'lookup', enabled: true },
@@ -360,5 +377,47 @@ describe('preset tool settings', () => {
     const payload = await host.controller.list();
     const row = payload.presets[0]?.systemTools.find((tool) => tool.name === 'run_code');
     expect(row).toMatchObject({ reserved: true, enabled: true });
+  });
+
+  it('reports skill provenance and groups preset-bundled skills', async () => {
+    const host = fixture({ presetPath: '/presets/alpha', richSkills: true });
+    const listed = await host.controller.list();
+    const skills = listed.presets[0]!.skills;
+    const byName = new Map(skills.map((skill) => [skill.name, skill]));
+    // A directory resourceBase yields the abbreviated discovery root.
+    expect(byName.get('writing')).toMatchObject({ source: 'user-agents', path: '/agents/skills' });
+    expect(byName.get('writing')).not.toHaveProperty('group');
+    // A custom dir inside the preset's own directory groups under the preset.
+    expect(byName.get('preset-skill')).toMatchObject({ source: 'custom', group: 'preset:Alpha', path: '/presets/alpha/skills' });
+    // A custom dir outside every preset keeps the plain custom grouping.
+    expect(byName.get('plain-custom')).toMatchObject({ source: 'custom', path: '/elsewhere' });
+    expect(byName.get('plain-custom')).not.toHaveProperty('group');
+    // Non-directory resourceBase and empty paths carry no path at all.
+    expect(byName.get('url-skill')).not.toHaveProperty('path');
+    expect(byName.get('empty-path')).not.toHaveProperty('path');
+    expect(byName.get('empty-path')).not.toHaveProperty('group');
+  });
+
+  it('marks preset-scoped MCP servers with the preset name and path', async () => {
+    const host = fixture({ presetPath: '/presets/alpha', presetMcpTool: true });
+    const listed = await host.controller.list();
+    const mcp = listed.presets[0]!.mcp;
+    const byServer = new Map(mcp.map((server) => [server.server, server]));
+    expect(byServer.get('search')).toMatchObject({ source: 'host', path: process.env['DSH_HOME']! });
+    expect(byServer.get('local')).toMatchObject({ source: 'Alpha', path: '/presets/alpha' });
+  });
+
+  it('groups a preset-dir skill under the preset id when the preset has no name', async () => {
+    const host = fixture({ presetMetadata: false, presetPath: '/presets/alpha', richSkills: true });
+    const listed = await host.controller.list();
+    expect(listed.presets[0]!.skills.find((skill) => skill.name === 'preset-skill')?.group).toBe('preset:alpha');
+  });
+
+  it('marks a preset-scoped server by id and omits the path when the preset has none', async () => {
+    const host = fixture({ presetMetadata: false, presetMcpTool: true });
+    const listed = await host.controller.list();
+    const local = listed.presets[0]!.mcp.find((server) => server.server === 'local');
+    expect(local).toMatchObject({ source: 'alpha' });
+    expect(local).not.toHaveProperty('path');
   });
 });

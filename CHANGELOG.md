@@ -10,9 +10,11 @@ All notable changes to this project will be documented here. The format follows 
 
 ### Added
 
-- Source grouping in the Skills and MCP tabs: entries cluster under labeled divider rules — preset-bundled entries group under their preset's name (detected by matching the discovery directory against preset paths); every other group shows its real directory, abbreviated (`~`, session-cwd-relative) and middle-ellipsized when long.
-- One click to the source folder: hovering a group divider reveals a folder icon, and clicking it opens that source directory in the system file manager (macOS `open`, Windows `start`, freedesktop `xdg-open`) via a new loopback-only `POST /api/capability-panel/open-folder` route. The divider's hover tooltip shows the full path.
-- MCP server entries now report where the server is configured: `host` for the host composition, or the composing preset's name for preset-scoped servers.
+- **Source provenance everywhere**: Skills and MCP entries — in both the session panel and Settings → Capability Panel — group under labeled divider rules that say where they come from. Preset-bundled entries group under their preset's name (detected by matching the discovery directory against preset paths); every other group shows its real directory, abbreviated (`~`, session-cwd-relative) and middle-ellipsized when long. Hovering a group divider shows the full path and a folder icon; one click opens that source directory in the system file manager (macOS `open`, Windows `start`, freedesktop `xdg-open`) via the new loopback-only `POST /api/capability-panel/open-folder` route, which also resolves user/project/host/preset sources without a session. MCP servers report their configuration source too: `host` for the host composition, or the composing preset's name.
+
+### Changed
+
+- **UI 升级**: Settings → Capability Panel now speaks the session panel's visual language — compact rounded rows with a hover background instead of per-row hairlines, section titles restyled as real headings (primary, semibold) instead of uppercase micro-labels, and ruled source dividers with cleaner spacing that replace the stacked separator lines.
 
 ### Fixed
 

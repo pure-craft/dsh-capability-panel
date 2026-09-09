@@ -39,15 +39,21 @@ function parseSkills(raw: readonly unknown[]): PresetSkillRow[] | null {
   const skills: PresetSkillRow[] = [];
   for (const rawSkill of raw) {
     if (!isRecord(rawSkill)) return null;
-    const { name, description, enabled, project } = rawSkill;
+    const { name, description, enabled, project, source, path, group } = rawSkill;
     if (typeof name !== 'string' || typeof enabled !== 'boolean') return null;
     if (description !== undefined && typeof description !== 'string') return null;
     if (project !== undefined && typeof project !== 'boolean') return null;
+    if (source !== undefined && typeof source !== 'string') return null;
+    if (path !== undefined && typeof path !== 'string') return null;
+    if (group !== undefined && typeof group !== 'string') return null;
     skills.push({
       name,
       ...(description === undefined ? {} : { description }),
       enabled,
       ...(project === undefined ? {} : { project }),
+      ...(source === undefined ? {} : { source }),
+      ...(path === undefined ? {} : { path }),
+      ...(group === undefined ? {} : { group }),
     });
   }
   return skills;
@@ -73,11 +79,13 @@ export function parsePresetToolPayload(value: unknown): PresetToolPayload | null
     const mcp: PresetMcpServer[] = [];
     for (const rawServer of rawMcp) {
       if (!isRecord(rawServer)) return null;
-      const { server, tools: rawTools, enabled } = rawServer;
+      const { server, tools: rawTools, enabled, source, path } = rawServer;
       if (typeof server !== 'string' || typeof enabled !== 'boolean' || !Array.isArray(rawTools)) return null;
+      if (source !== undefined && typeof source !== 'string') return null;
+      if (path !== undefined && typeof path !== 'string') return null;
       const tools = parseTools(rawTools);
       if (tools === null) return null;
-      mcp.push({ server, tools, enabled });
+      mcp.push({ server, tools, enabled, ...(source === undefined ? {} : { source }), ...(path === undefined ? {} : { path }) });
     }
     presets.push({
       id,

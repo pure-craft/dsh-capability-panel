@@ -25,6 +25,27 @@ export interface PresetToolSectionProps {
   readonly getLocaleSnapshot: () => { readonly active: string; readonly revision: number };
 }
 
+/** Middle ellipsis for long path labels; the full path stays in the tooltip. */
+const ellipsizeMiddle = (text: string, max = 56): string => {
+  if (text.length <= max) return text;
+  const head = Math.ceil((max - 1) / 2);
+  const tail = Math.floor((max - 1) / 2);
+  return `${text.slice(0, head)}…${text.slice(text.length - tail)}`;
+};
+
+/** Group items by a key, preserving first-seen order. */
+function groupBy<T>(items: readonly T[], keyOf: (item: T) => string): [string, T[]][] {
+  const groups = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const item of items) {
+    const key = keyOf(item);
+    const bucket = groups.get(key);
+    if (bucket !== undefined) bucket.push(item);
+    else { groups.set(key, [item]); order.push(key); }
+  }
+  return order.map((key) => [key, groups.get(key)!]);
+}
+
 /**
  * Settings-side twin of the composer panel. It reuses that panel's vocabulary
  * and interaction — an always-visible filter, MCP tools collapsed under their
@@ -64,6 +85,98 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
       label,
       onCheckedChange: onChange,
     });
+
+  /**
+   * Open a source folder from the settings page. The route resolves
+   * user/project/host/preset sources without a session (project sources
+   * against the dsh process's own cwd, matching how this page lists them).
+   */
+  const openSourceFolder = (source: string): void => {
+    void fetch('/api/capability-panel/open-folder', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source }),
+    }).then((response) => {
+      if (!response.ok) console.warn(`[capability-panel] cannot open source folder (${response.status})`);
+    }).catch((error: unknown) => {
+      console.warn('[capability-panel] open source folder request failed', error);
+    });
+  };
+
+  /** Sources the open-folder route can resolve without a session. */
+  const SESSIONLESS_OPENABLE = new Set(['user-dsh', 'user-agents', 'project-dsh', 'project-agents', 'host']);
+
+  /**
+   * A ruled source divider inside a settings list — the same visual language
+   * as the session panel's group headers (`── label (count) ────`). Preset
+   * groups name their preset; other groups show the directory (ellipsized);
+   * openable groups offer the hover folder icon and a click-through.
+   */
+  const sourceDivider = (
+    groupKey: string,
+    items: readonly { path?: string }[],
+    first: boolean,
+  ): React.ReactElement => {
+    const presetName = groupKey.startsWith('preset:') ? groupKey.slice(7) : undefined;
+    const path = items.find((item) => item.path !== undefined)?.path;
+    // Unknown or untranslated group keys display as-is, never the raw
+    // `source.*` locale key (the session panel falls back the same way).
+    const translated = t(`source.${groupKey}`);
+    const fallbackLabel = translated === `source.${groupKey}` ? groupKey : translated;
+    const label = presetName ?? (path !== undefined ? ellipsizeMiddle(path) : groupKey === 'host' ? t('source.host') : fallbackLabel);
+    const openSource = presetName ?? groupKey;
+    const openable = presetName !== undefined || SESSIONLESS_OPENABLE.has(groupKey);
+    const rule = (grow: boolean): React.ReactElement =>
+      React.createElement('span', {
+        style: grow
+          ? { flex: '1', height: '1px', background: TOK.borderStrong }
+          : { flex: 'none', width: '16px', height: '1px', background: TOK.borderStrong },
+      });
+    return React.createElement(
+      'li',
+      { key: `source:${groupKey}`, className: 'ci-source-divider' },
+      React.createElement(
+        'div',
+        {
+          className: 'ci-source-header',
+          style: { display: 'flex', alignItems: 'center', gap: '8px', margin: first ? '6px 0 2px' : '18px 0 2px' },
+        },
+        rule(false),
+        React.createElement(
+          'span',
+          {
+            style: {
+              flex: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '12px',
+              fontWeight: 500,
+              color: TOK.textTertiary,
+              fontVariantNumeric: 'tabular-nums',
+              cursor: openable ? 'pointer' : 'default',
+            },
+            title: openable ? t('source.openFolder', { source: path ?? label }) : undefined,
+            onClick: openable ? () => { openSourceFolder(openSource); } : undefined,
+          },
+          openable
+            ? React.createElement(
+                'span',
+                { className: 'ci-folder-icon', style: { display: 'inline-grid', placeItems: 'center', opacity: 0, transition: 'opacity 0.15s' } },
+                React.createElement(
+                  'svg',
+                  { width: '12', height: '12', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+                  React.createElement('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' }),
+                ),
+              )
+            : null,
+          `${label} (${items.length})`,
+        ),
+        rule(true),
+      ),
+    );
+  };
 
   const toggle = (tool: PresetToolView, presetId: string): React.ReactElement =>
     switchFor(
@@ -187,10 +300,13 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     group(
       'skills',
       t('group.skills', { shown: view.skills.length, total: totals.skills }),
-      view.skills.map((skill) => skillRow(skill, selected.id)),
+      groupBy(view.skills, (skill) => skill.group ?? skill.source ?? 'unknown').flatMap(([groupKey, items], i) => [
+        sourceDivider(groupKey, items, i === 0),
+        ...items.map((skill) => skillRow(skill, selected.id)),
+      ]),
     );
 
-    const serverRows = view.mcp.map((server) => {
+    const serverRow = (server: (typeof view.mcp)[number]): React.ReactElement => {
       const key = `mcp:${server.server}`;
       const disclosure = resolveDisclosure(expanded[key] === true, filtering);
       return React.createElement(
@@ -243,9 +359,16 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
           ),
         ),
       );
-    });
+    };
 
-    group('mcp', t('group.mcp', { shown: view.mcp.length, total: totals.mcp }), serverRows);
+    group(
+      'mcp',
+      t('group.mcp', { shown: view.mcp.length, total: totals.mcp }),
+      groupBy(view.mcp, (server) => server.source === undefined || server.source === 'host' ? 'host' : `preset:${server.source}`).flatMap(([groupKey, items], i) => [
+        sourceDivider(groupKey, items, i === 0),
+        ...items.map((server) => serverRow(server)),
+      ]),
+    );
     group(
       'system',
       t('group.system', { shown: view.systemTools.length, total: totals.systemTools }),

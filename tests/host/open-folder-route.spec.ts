@@ -237,9 +237,12 @@ describe('open-folder route', () => {
     expect(openFolderMock).toHaveBeenCalledWith('/ws/.agents/skills');
   });
 
-  it('returns 404 for project sources without a session id', async () => {
+  it('resolves project sources from the process cwd without a session id', async () => {
+    // The settings page lists project rows against the dsh process's own
+    // workspace, so the sessionless fallback opens that same root.
     const result = await call(fixture(), { source: 'project-dsh' });
-    expect(result.status).toBe(404);
+    expect(result.status).toBe(200);
+    expect(openFolderMock).toHaveBeenCalledWith(`${process.cwd()}/.dsh/skills`);
   });
 
   it('returns 404 for project sources when the agent is unknown', async () => {

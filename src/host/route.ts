@@ -198,12 +198,12 @@ export function createRouteHandler(
             folderPath = source === 'user-dsh' ? `${dshHome}/skills` : `${process.env['DSH_AGENTS_HOME'] ?? `${process.env['HOME']}/.agents`}/skills`;
           }
         } else if (folderPath === undefined && (source === 'project-dsh' || source === 'project-agents')) {
-          if (sessionId !== null) {
-            const agent = services.get('agents')?.get(sessionId);
-            const cwd = agent?.session?.header?.cwd;
-            if (cwd !== undefined) {
-              folderPath = source === 'project-dsh' ? `${cwd}/.dsh/skills` : `${cwd}/.agents/skills`;
-            }
+          // Sessionless callers (the settings page) report project rows
+          // against the dsh process's own cwd — resolve those the same way.
+          const agent = sessionId === null ? undefined : services.get('agents')?.get(sessionId);
+          const cwd = agent?.session?.header?.cwd ?? (sessionId === null ? process.cwd() : undefined);
+          if (cwd !== undefined) {
+            folderPath = source === 'project-dsh' ? `${cwd}/.dsh/skills` : `${cwd}/.agents/skills`;
           }
         } else if (folderPath === undefined && source === 'host') {
           // Host composition entries live under DSH_HOME — open the home.

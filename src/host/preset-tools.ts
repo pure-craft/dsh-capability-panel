@@ -1,4 +1,5 @@
 import { errorMessage, HttpError } from './errors.js';
+import { displayPath, dshHome, parentDir } from './catalog.js';
 import type {
   AgentPresetLike,
   AgentPresetsService,
@@ -47,23 +48,45 @@ function toolSummaries(tools: ToolsService, scope: unknown): ToolSummary[] {
  * workspace would contribute. A project skill is marked rather than dropped:
  * hiding it would silently shorten the list, while marking it says plainly
  * that a session opened elsewhere will not see the row.
+ *
+ * Each row also carries the same provenance the session payload reports:
+ * the raw runtime source, the discovery root (parent of the skill's own
+ * directory, abbreviated for display), and a `preset:<name>` group when the
+ * root sits inside a preset's directory.
  */
 async function presetSkillRows(
   skills: SkillsService,
   scope: unknown,
   disabled: ReadonlySet<string>,
   cwd: string,
+  presetDirs: readonly { key: string; path: string }[] = [],
 ): Promise<PresetSkillRow[]> {
   const seen = new Map<string, PresetSkillRow>();
-  const add = (summaries: readonly { name?: unknown; description?: unknown }[], project: boolean): void => {
+  const add = (summaries: readonly { name?: unknown; description?: unknown; source?: unknown; resourceBase?: unknown }[], project: boolean): void => {
     for (const summary of summaries) {
       if (typeof summary.name !== 'string' || summary.name === '' || seen.has(summary.name)) continue;
       const description = typeof summary.description === 'string' ? summary.description : undefined;
+      const source = typeof summary.source === 'string' ? summary.source : undefined;
+      const base = summary.resourceBase;
+      const rawPath = base !== null && typeof base === 'object' && (base as { kind?: unknown }).kind === 'directory'
+        ? (base as { path?: unknown }).path
+        : undefined;
+      const rawRoot = typeof rawPath === 'string' && rawPath !== '' ? parentDir(rawPath) : '';
+      const path = rawRoot === '' ? undefined : displayPath(rawRoot, cwd);
+      // A custom dir that lives inside a preset's own directory is that
+      // preset's bundled skills — the settings page groups them under the
+      // preset's name, exactly like the session panel.
+      const owner = source === 'custom' && rawRoot !== ''
+        ? presetDirs.find((p) => rawRoot === p.path || rawRoot.startsWith(`${p.path}/`))
+        : undefined;
       seen.set(summary.name, {
         name: summary.name,
         ...(description === undefined ? {} : { description }),
         enabled: !disabled.has(summary.name),
         ...(project ? { project: true } : {}),
+        ...(source === undefined ? {} : { source }),
+        ...(path === undefined ? {} : { path }),
+        ...(owner === undefined ? {} : { group: `preset:${owner.key}` }),
       });
     }
   };
@@ -123,6 +146,15 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
     // the only project root it can honestly report against.
     const cwd = process.cwd();
     const presets = await agentPresets.list();
+    const presetDirs = presets
+      .filter((p) => typeof p.path === 'string' && p.path !== '')
+      .map((p) => ({ key: p.name ?? p.id, path: p.path as string }));
+    // Global tool names tell a host-composition MCP server from a
+    // preset-scoped one, the same test the session payload uses.
+    const globalNames = new Set<string>();
+    for (const schema of tools.schemas()) {
+      if (typeof schema.name === 'string' && schema.name.startsWith('mcp__')) globalNames.add(schema.name);
+    }
     const entries: PresetToolEntry[] = await Promise.all(presets.map(async (preset) => {
       let entries: ToolSummary[] = [];
       let skillRows: PresetSkillRow[] = [];
@@ -137,7 +169,7 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
         if (skills !== undefined) {
           const disabledSkills = new Set(stored.presetSkills[preset.id] ?? []);
           try {
-            skillRows = await presetSkillRows(skills, scope, disabledSkills, cwd);
+            skillRows = await presetSkillRows(skills, scope, disabledSkills, cwd, presetDirs);
           } catch (error) {
             throw new HttpError(503, `preset "${preset.id}" skills are unavailable: ${errorMessage(error)}`);
           }
@@ -163,9 +195,18 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
       };
       // Same split the session panel uses, from the same helper: MCP tools
       // collapse under their server, everything else is a system tool.
+      const presetName = preset.name ?? preset.id;
       const mcp: PresetMcpServer[] = groupMcpTools(entries.map((entry) => entry.name)).map((group) => {
         const tools = group.tools.map((tool) => row(`mcp__${group.server}__${tool}`, tool));
-        return { server: group.server, tools, enabled: tools.some((tool) => tool.enabled) };
+        const allGlobal = group.tools.every((tool) => globalNames.has(`mcp__${group.server}__${tool}`));
+        const rawPath = allGlobal ? dshHome() : preset.path;
+        return {
+          server: group.server,
+          tools,
+          enabled: tools.some((tool) => tool.enabled),
+          source: allGlobal ? 'host' : presetName,
+          ...(rawPath === undefined ? {} : { path: displayPath(rawPath) }),
+        };
       });
       const systemTools = entries
         .filter((entry) => !entry.name.startsWith('mcp__'))

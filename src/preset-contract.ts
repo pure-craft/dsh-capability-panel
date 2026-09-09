@@ -22,6 +22,16 @@ export interface PresetMcpServer {
   readonly tools: readonly PresetToolRow[];
   /** False only when every tool this server exposes is disabled. */
   readonly enabled: boolean;
+  /**
+   * Where this MCP server is configured: `"host"` for the host composition,
+   * or the preset's own name for a preset-scoped server.
+   */
+  readonly source?: string;
+  /**
+   * The configuration location, abbreviated for display (`~/.dsh` for host,
+   * the preset's directory otherwise). Shown in the group divider's tooltip.
+   */
+  readonly path?: string;
 }
 
 /**
@@ -38,6 +48,18 @@ export interface PresetSkillRow {
    * not see it -- so the UI marks it instead of hiding it.
    */
   readonly project?: boolean;
+  /** The runtime SkillSource (e.g. `user-dsh`, `custom`), same as the session payload. */
+  readonly source?: string;
+  /**
+   * The discovery root directory, abbreviated for display (`~`, cwd-relative).
+   * Drives the group label and the open-folder affordance.
+   */
+  readonly path?: string;
+  /**
+   * Display grouping key, present only when it differs from `source`:
+   * `preset:<name>` for skills a preset bundles through customSkillDirs.
+   */
+  readonly group?: string;
 }
 
 export interface PresetToolEntry {

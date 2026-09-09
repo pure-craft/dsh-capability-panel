@@ -60,27 +60,27 @@ export const PANEL_CSS = [
   '.ci-preset-filter{flex:1 1 220px;min-width:180px;height:34px;box-sizing:border-box;padding:0 10px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:8px;background-color:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#0f1115);font:inherit;font-weight:400}',
   '.ci-preset-part{margin:18px 0 0}',
   '.ci-preset-part:first-of-type{margin-top:10px}',
-  '.ci-preset-part-title{margin:0;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--dsw-alias-label-tertiary,#81858c)}',
+  // Section titles read as real headings (primary, 14px semibold) so they
+  // stand clearly above the subtle ruled source dividers beneath them.
+  '.ci-preset-part-title{margin:0;font-size:14px;font-weight:600;line-height:22px;color:var(--dsw-alias-label-primary,#0f1115)}',
   '.ci-preset-badge{display:inline-block;margin-left:6px;padding:1px 6px;line-height:1.5;border-radius:999px;font-size:11px;font-weight:500;vertical-align:middle;background-color:var(--dsw-alias-bg-fill-2,rgba(0,0,0,.05));color:var(--dsw-alias-label-tertiary,#81858c)}',
   '.ci-preset-group{padding:0}',
   '.ci-preset-server-trigger{display:flex;align-items:center;gap:8px;flex:1;min-width:0;background:none;border:none;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer}',
   '.ci-preset-server-trigger:disabled{cursor:default}',
-  '.ci-preset-group .ci-preset-tool-list{margin:0;padding-left:26px;border-top:none}',
-  '.ci-preset-group .ci-preset-tool-row:last-child{border-bottom:none}',
+  '.ci-preset-group .ci-preset-tool-list{margin:0;padding-left:26px}',
   '.ci-preset-picker-label{display:grid;gap:6px;color:var(--dsw-alias-label-primary,#0f1115);font-weight:600}',
   '.ci-preset-picker{height:34px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:8px;background-color:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#0f1115);font:inherit;font-weight:400}',
   '.ci-preset-picker:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px}',
   '.ci-settings-subtitle{margin:0 0 6px;color:var(--dsw-alias-label-primary,#0f1115);font-size:14px;line-height:22px}',
-  '.ci-preset-tool-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.04))}',
-  '.ci-preset-tool-row{display:flex;align-items:center;gap:16px;padding:10px 0;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.04))}',
+  // Settings rows speak the composer panel's row language: compact padding,
+  // a rounded hover background (`.ci-row-head` supplies both), and NO
+  // hairline per row — groups separate through the source dividers alone.
+  '.ci-preset-tool-list{list-style:none;margin:0;padding:0}',
+  '.ci-preset-tool-row{display:flex;align-items:center;gap:16px}',
   '.ci-preset-tool-copy{display:grid;min-width:0;flex:1}',
   '.ci-preset-tool-name{color:var(--dsw-alias-label-primary,#0f1115);font-weight:600;overflow-wrap:anywhere}',
   '.ci-preset-tool-description{color:var(--dsw-alias-label-tertiary,#81858c);line-height:18px;overflow-wrap:anywhere}',
-  // A row is now a disclosure: the border lives on the row wrapper so that an
-  // expanded description sits inside the same visual row rather than below it.
-  '.ci-preset-item{list-style:none;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.04))}',
-  '.ci-preset-item:last-child{border-bottom:none}',
-  '.ci-preset-item .ci-preset-tool-row{border-bottom:none}',
+  '.ci-preset-item{list-style:none}',
   '.ci-preset-disclosure{display:block}',
   // Matches the chevron column so a row without a description still lines up
   // with the rows that have one.
@@ -91,5 +91,7 @@ export const PANEL_CSS = [
   '.ci-preset-kinds .ci-tab{flex:0 0 auto;padding:0 12px}',
   // Folder icon on source section headers: invisible until hover.
   '.ci-source-header:hover .ci-folder-icon{opacity:1 !important}',
+  // Source divider rows inside a settings list: labels, not data rows.
+  '.ci-source-divider{list-style:none}',
   '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',
 ].join('\n');
