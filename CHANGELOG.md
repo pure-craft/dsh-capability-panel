@@ -8,6 +8,10 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings → Capability Panel no longer 503s the whole preset list when one preset fails to mount (e.g. a host upgrade tightened a plugin's config schema, as dsh 0.1.5 did for the persona row): the failing preset is listed as broken with the mount error, and every other preset lists and toggles normally.
+
 ## [1.1.0] - 2026-09-09
 
 ### Added

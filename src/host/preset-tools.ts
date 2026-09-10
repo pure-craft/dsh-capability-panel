@@ -158,21 +158,22 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
     const entries: PresetToolEntry[] = await Promise.all(presets.map(async (preset) => {
       let entries: ToolSummary[] = [];
       let skillRows: PresetSkillRow[] = [];
+      // A preset that fails to MOUNT (valid yaml, but a row's config no longer
+      // satisfies a plugin's schema after a host upgrade) must not take the
+      // whole listing down with it: report it like a broken preset, with the
+      // mount error as the reason, and let the others list normally.
+      let mountError: string | undefined;
       if (preset.broken === undefined) {
         let scope: unknown;
         try {
           scope = await agentPresets.standingKeyFor(preset.id);
           entries = toolSummaries(tools, scope);
-        } catch (error) {
-          throw new HttpError(503, `preset "${preset.id}" tools are unavailable: ${errorMessage(error)}`);
-        }
-        if (skills !== undefined) {
-          const disabledSkills = new Set(stored.presetSkills[preset.id] ?? []);
-          try {
+          if (skills !== undefined) {
+            const disabledSkills = new Set(stored.presetSkills[preset.id] ?? []);
             skillRows = await presetSkillRows(skills, scope, disabledSkills, cwd, presetDirs);
-          } catch (error) {
-            throw new HttpError(503, `preset "${preset.id}" skills are unavailable: ${errorMessage(error)}`);
           }
+        } catch (error) {
+          mountError = errorMessage(error);
         }
       }
       const disabled = new Set(configured[preset.id] ?? []);
@@ -216,7 +217,11 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
         name: preset.name ?? preset.id,
         trust: preset.trust,
         ...(preset.description === undefined ? {} : { description: preset.description }),
-        ...(preset.broken === undefined ? {} : { broken: preset.broken }),
+        ...(preset.broken !== undefined
+          ? { broken: preset.broken }
+          : mountError === undefined
+            ? {}
+            : { broken: `failed to mount: ${mountError}` }),
         skills: skillRows,
         mcp,
         systemTools,

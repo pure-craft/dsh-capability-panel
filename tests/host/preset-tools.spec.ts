@@ -256,7 +256,6 @@ describe('preset tool settings', () => {
       [fixture().controller.set('alpha', 'missing', false), 404, 'tool "missing" is not available in preset "alpha"'],
       [fixture().controller.set('alpha', 'run_code', false), 409, 'run_code is the reserved Code Mode transport and cannot be restricted'],
       [fixture({ broken: true }).controller.set('alpha', 'bash', false), 409, 'preset "alpha" is broken: bad yaml'],
-      [fixture({ standingError: new Error('offline') }).controller.list(), 503, 'preset "alpha" tools are unavailable: offline'],
       [fixture({ standingError: new Error('offline') }).controller.set('alpha', 'bash', false), 503, 'preset "alpha" tools are unavailable: offline'],
     ];
     for (const [pending, status, message] of cases) {
@@ -304,10 +303,20 @@ describe('preset tool settings', () => {
       .rejects.toSatisfy((error) => { expectHttp(error, 503, 'preset "alpha" skills are unavailable: offline'); return true; });
   });
 
-  it('reports a preset whose skills cannot be read instead of listing it as empty', async () => {
-    const failing = fixture({ skillsListThrows: true });
-    await expect(failing.controller.list())
-      .rejects.toSatisfy((error) => { expectHttp(error, 503, 'preset "alpha" skills are unavailable: no reader'); return true; });
+  it('marks a preset that fails to mount as broken instead of failing the listing', async () => {
+    // A valid-yaml preset can still fail to mount at runtime (e.g. a host
+    // upgrade tightened a row's config schema). The listing must survive.
+    await expect(fixture({ standingError: new Error('offline') }).controller.list()).resolves.toEqual({
+      writable: true,
+      presets: [{ id: 'alpha', name: 'Alpha', description: 'primary', trust: 'system', broken: 'failed to mount: offline', skills: [], mcp: [], systemTools: [] }],
+    });
+  });
+
+  it('marks a preset whose skills cannot be read as broken instead of listing it as empty', async () => {
+    const listed = await fixture({ skillsListThrows: true }).controller.list();
+    expect(listed.presets[0]).toMatchObject({ id: 'alpha', broken: 'failed to mount: no reader', skills: [] });
+    // The tool read succeeded before the skill read failed — tools still list.
+    expect(listed.presets[0]!.systemTools.length).toBeGreaterThan(0);
   });
 
   it('omits skills entirely when the service is absent', async () => {
