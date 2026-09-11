@@ -42,7 +42,7 @@ function fixture(options: FixtureOptions = {}) {
   const payload = { presets: [], writable: true };
   const handler = createRouteHandler(
     services as never,
-    { states: new Map(), state: () => undefined, set: () => Promise.resolve(), seed: () => Promise.resolve(), restore: () => Promise.resolve() },
+    { states: new Map(), state: () => undefined, set: () => Promise.resolve(), seed: () => Promise.resolve(), restore: () => Promise.resolve(), reseed: () => Promise.resolve() },
     { file: '/tmp/stats', read: () => ({ blocked: {}, records: [], warnings: [] }) } as never,
     {},
     { list: () => Promise.resolve(payload), set: () => Promise.resolve(payload), setServer: () => Promise.resolve(payload), setSkill: () => Promise.resolve(payload), defaultsFor: () => undefined },

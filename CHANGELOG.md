@@ -10,6 +10,8 @@ All notable changes to this project will be documented here. The format follows 
 
 ### Fixed
 
+- Preset defaults now apply when a session's agent preset is switched after creation (the picker recomposes a blank session): seeded masks from the original composition survive the scope rebind, so the session's capability state is torn down and re-seeded from the newly selected preset, with the session's own recorded switches replayed on top. Previously the switch left the original preset's defaults in place and never applied the new ones.
+
 - The composer's insert-command button no longer replaces an in-progress draft: newer hosts dropped the slot's `input` snapshot prop, which read as an empty draft and overwrote it. The panel now reads the live draft through the `useInput` selector prop and appends the slash command as before.
 
 - Settings → Capability Panel no longer 503s the whole preset list when one preset fails to mount (e.g. a host upgrade tightened a plugin's config schema, as dsh 0.1.5 did for the persona row): the failing preset is listed as broken with the mount error, and every other preset lists and toggles normally.

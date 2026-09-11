@@ -62,6 +62,7 @@ function fixture(options: FixtureOptions = {}) {
   };
 
   const listeners: ((payload: { agent: unknown }) => unknown)[] = [];
+  const selectedListeners: ((sessionId: unknown, presetId: unknown) => unknown)[] = [];
   const teardowns: (() => void)[] = [];
   const ctx = {
     get(name: string): unknown {
@@ -96,8 +97,9 @@ function fixture(options: FixtureOptions = {}) {
       }
       return undefined;
     },
-    on(event: string, listener: (payload: { agent: unknown }) => unknown) {
+    on(event: string, listener: (...args: unknown[]) => unknown) {
       if (event === 'agent/created') listeners.push(listener);
+      if (event === 'agent-preset/selected') selectedListeners.push(listener);
     },
     effect(callback: () => (() => void) | void) {
       const dispose = callback();
@@ -107,10 +109,11 @@ function fixture(options: FixtureOptions = {}) {
   };
 
   const capabilities = createCapabilityController(ctx as never, () => {}, {});
+  let currentDefaults = options.defaults;
   const presetTools = {
     defaultsFor: () => {
       if (options.defaultsThrow === true) throw new Error('settings gone');
-      return options.defaults;
+      return currentDefaults;
     },
   };
 
@@ -126,6 +129,9 @@ function fixture(options: FixtureOptions = {}) {
   return {
     capabilities,
     agent,
+    setDefaults(next: { tools: string[]; skills: string[] } | undefined) {
+      currentDefaults = next;
+    },
     restrict,
     restrictDisposers,
     registerSkill,
@@ -136,6 +142,9 @@ function fixture(options: FixtureOptions = {}) {
     noteDispose,
     async emitCreated() {
       await Promise.all(listeners.map((listener) => listener({ agent })));
+    },
+    async emitSelected(sessionId: unknown, presetId: unknown) {
+      await Promise.all(selectedListeners.map((listener) => listener(sessionId, presetId)));
     },
     emitCreatedSync() {
       return listeners.map((listener) => listener({ agent }));
@@ -333,6 +342,73 @@ describe('preset enforcement', () => {
     await fx.emitCreated();
     expect([...fx.capabilities.state('session-1')!.systemTools.keys()]).toEqual(['bash']);
     expect([...fx.capabilities.state('session-1')!.skills.keys()]).toEqual(['writing']);
+  });
+});
+
+describe('preset switch re-seeds the session', () => {
+  it('applies the new preset defaults after a switch', async () => {
+    const fx = fixture(defaults(['bash'], ['writing']));
+    await fx.emitCreated();
+    await fx.emitSelected('session-1', 'cordis');
+
+    const state = fx.capabilities.state('session-1')!;
+    expect([...state.systemTools.keys()]).toEqual(['bash']);
+    expect([...state.skills.keys()]).toEqual(['writing']);
+  });
+
+  it('disposes the masks the old composition seeded before re-seeding', async () => {
+    const fx = fixture(defaults(['bash'], ['writing']));
+    await fx.emitCreated();
+    const firstTool = fx.restrictDisposers[0]!;
+    const firstSkill = fx.skillDisposers[0]!;
+
+    await fx.emitSelected('session-1', 'cordis');
+
+    // The original masks are gone (disposed), replaced by fresh ones.
+    expect(firstTool).toHaveBeenCalled();
+    expect(firstSkill).toHaveBeenCalled();
+    expect(fx.restrictDisposers).toHaveLength(2);
+    expect(fx.skillDisposers).toHaveLength(2);
+    expect(fx.restrictDisposers[1]).not.toHaveBeenCalled();
+    expect(fx.skillDisposers[1]).not.toHaveBeenCalled();
+  });
+
+  it('clears the state entirely when the new preset carries no defaults', async () => {
+    const fx = fixture(defaults(['bash'], ['writing']));
+    await fx.emitCreated();
+    fx.setDefaults(undefined);
+    await fx.emitSelected('session-1', 'minimal');
+
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+  });
+
+  it('seeds cleanly on a switch when the session has no prior state', async () => {
+    const fx = fixture();
+    await fx.emitCreated();
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+    fx.setDefaults({ tools: ['bash'], skills: [] });
+    await fx.emitSelected('session-1', 'cordis');
+    expect([...fx.capabilities.state('session-1')!.systemTools.keys()]).toEqual(['bash']);
+  });
+
+  it('replays the session overrides after the reseed', async () => {
+    const fx = fixture({
+      ...defaults([], []),
+      overrides: { skills: { writing: false }, mcpServers: {}, mcpTools: {}, systemTools: {} },
+    });
+    await fx.emitCreated();
+    await fx.emitSelected('session-1', 'cordis');
+
+    expect([...fx.capabilities.state('session-1')!.skills.keys()]).toEqual(['writing']);
+  });
+
+  it('ignores malformed event args and contains a settings failure', async () => {
+    const fx = fixture({ defaultsThrow: true });
+    await fx.emitCreated();
+    await expect(fx.emitSelected(42, null)).resolves.toBeUndefined();
+    // A settings read that explodes mid-switch leaves the session as composed.
+    await expect(fx.emitSelected('session-1', 'cordis')).resolves.toBeUndefined();
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
   });
 });
 

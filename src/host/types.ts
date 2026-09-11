@@ -126,6 +126,11 @@ export interface HostServices {
      */
     listener: (payload: AgentCreatedPayload) => void | Promise<void>,
   ): void;
+  /** Fired when a blank session's preset switch commits (never at creation). */
+  on(
+    event: 'agent-preset/selected',
+    listener: (sessionId: unknown, presetId: unknown) => void | Promise<void>,
+  ): void;
   on(
     event: 'tools/result',
     listener: (

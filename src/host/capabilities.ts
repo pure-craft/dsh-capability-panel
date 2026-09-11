@@ -42,6 +42,14 @@ export interface CapabilityController {
    * toggle actually happened here.
    */
   restore(sessionId: string, overrides: SessionOverrideState): Promise<void>;
+  /**
+   * Re-derive a session's masks after its preset changed mid-life (the user
+   * switched the agent preset before the first turn). Seeded masks live in
+   * the agent's own scope layer and survive the rebind, so the state is torn
+   * down wholesale before the new preset's defaults and the session's stored
+   * overrides land again.
+   */
+  reseed(sessionId: string, defaults: PresetDefaults, overrides: SessionOverrideState | undefined): Promise<void>;
 }
 
 function renderDisabledNote(state: SessionCapabilityState): string {
@@ -338,10 +346,34 @@ export function createCapabilityController(
     if (maskedAny) ensurePromptNote(agent, ensureState());
   };
 
-  return {
+  const controller: CapabilityController = {
     states,
     state: (sessionId) => states.get(sessionId),
     seed,
+    /**
+     * Re-derive a session's masks after its preset changed: every existing
+     * mask was seeded for the OLD composition and survives the scope rebind
+     * (scoped masks live in the agent's own layer), so the session state is
+     * torn down wholesale before the new preset's defaults and the session's
+     * own stored overrides land again. `userToggled` clears with the masks —
+     * its entries guarded in-flight restore races against masks that no
+     * longer exist, and the durable override record is what restore replays.
+     */
+    async reseed(sessionId, defaults, overrides) {
+      const st = states.get(sessionId);
+      if (st !== undefined) {
+        for (const map of [st.systemTools, st.mcpServers, st.mcpTools, st.skills]) {
+          for (const dispose of map.values()) dispose();
+          map.clear();
+        }
+        st.noteDispose?.();
+        delete st.noteDispose;
+        st.userToggled.clear();
+        states.delete(sessionId);
+      }
+      if (defaults.tools.length > 0 || defaults.skills.length > 0) await seed(sessionId, defaults);
+      if (overrides !== undefined) await controller.restore(sessionId, overrides);
+    },
     async restore(sessionId, overrides) {
       const groups: readonly (readonly [CapabilityKind, Readonly<Record<string, boolean>>])[] = [
         ['skill', overrides.skills],
@@ -383,4 +415,5 @@ export function createCapabilityController(
       appendStats({ ts: new Date().toISOString(), sessionId, kind: enabled ? 'enable' : 'disable', name: `${kind}:${name}` });
     },
   };
+  return controller;
 }

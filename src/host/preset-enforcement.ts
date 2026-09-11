@@ -58,4 +58,23 @@ export function registerPresetEnforcement(
       return undefined;
     }
   });
+
+  /**
+   * A preset switch lands AFTER creation (the session header records the
+   * composing preset at creation, and the picker's select() recomposes the
+   * blank session later): the first agent/created seeded the ORIGINAL
+   * preset's defaults, so the new preset's defaults must re-seed on top of a
+   * clean slate. Session overrides replay last — the user's own switches in
+   * this session outrank either preset's defaults.
+   */
+  ctx.on('agent-preset/selected', (sessionId: unknown, presetId: unknown) => {
+    try {
+      if (typeof sessionId !== 'string' || typeof presetId !== 'string') return undefined;
+      const defaults = presetTools.defaultsFor(presetId) ?? { tools: [], skills: [] };
+      const overrides = sessionOverrides.overridesFor(sessionId);
+      return capabilities.reseed(sessionId, defaults, overrides);
+    } catch {
+      return undefined;
+    }
+  });
 }
