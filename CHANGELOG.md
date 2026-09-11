@@ -8,13 +8,15 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-11
+
+Bugfix release for the preset-defaults lifecycle and two 0.1.5 host changes.
+
 ### Fixed
 
-- Capability mutations are serialized per session: seeding, restore, re-seed, and panel toggles all interleave skill I/O with the re-seed teardown, so a preset switch landing mid-seed could pile old-preset masks into the fresh state. One queue per session makes every mutation see a coherent state; cross-session work stays parallel.
 - Preset defaults now apply when a session's agent preset is switched after creation (the picker recomposes a blank session): seeded masks from the original composition survive the scope rebind, so the session's capability state is torn down and re-seeded from the newly selected preset, with the session's own recorded switches replayed on top. Previously the switch left the original preset's defaults in place and never applied the new ones.
-
+- Capability mutations are serialized per session: seeding, restore, re-seed, and panel toggles all interleave skill I/O with the re-seed teardown, so a preset switch landing mid-seed could pile old-preset masks into the fresh state. One queue per session makes every mutation see a coherent state; cross-session work stays parallel.
 - The composer's insert-command button no longer replaces an in-progress draft: newer hosts dropped the slot's `input` snapshot prop, which read as an empty draft and overwrote it. The panel now reads the live draft through the `useInput` selector prop and appends the slash command as before.
-
 - Settings → Capability Panel no longer 503s the whole preset list when one preset fails to mount (e.g. a host upgrade tightened a plugin's config schema, as dsh 0.1.5 did for the persona row): the failing preset is listed as broken with the mount error, and every other preset lists and toggles normally.
 
 ## [1.1.0] - 2026-09-09
@@ -54,6 +56,7 @@ Initial public release.
 - One-click `/skill-name` composer fill, name/description/state filtering, MCP tools grouped by server.
 - Loopback-only data route `/api/capability-panel` (+ `/stats`, `/presets`); panel copy in 中文 and English.
 
-[Unreleased]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/pure-craft/dsh-capability-panel/releases/tag/v1.0.0
