@@ -10,6 +10,8 @@ All notable changes to this project will be documented here. The format follows 
 
 ### Fixed
 
+- The composer's insert-command button no longer replaces an in-progress draft: newer hosts dropped the slot's `input` snapshot prop, which read as an empty draft and overwrote it. The panel now reads the live draft through the `useInput` selector prop and appends the slash command as before.
+
 - Settings → Capability Panel no longer 503s the whole preset list when one preset fails to mount (e.g. a host upgrade tightened a plugin's config schema, as dsh 0.1.5 did for the persona row): the failing preset is listed as broken with the mount error, and every other preset lists and toggles normally.
 
 ## [1.1.0] - 2026-09-09

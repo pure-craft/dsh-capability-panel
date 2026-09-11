@@ -77,6 +77,13 @@ interface DockProps {
   /** InputZone owner prop: the live input snapshot (we only read the draft). */
   readonly input?: { readonly draft?: string };
   /**
+   * Standard prop published by ui-conversation's input kit: a selector hook
+   * over the live input state. Reading `draft` through it subscribes this
+   * component — cheap here because the composer cannot be focused while the
+   * popover is open, so the draft is still when the read matters.
+   */
+  readonly useInput?: <T>(selector: (state: { readonly draft: string }) => T) => T;
+  /**
    * Standard prop published by ui-conversation's input kit. The panel only
    * fills the draft — submitting stays with the user (Enter / send button).
    */
@@ -533,11 +540,16 @@ export function apply(ctx: SlotContext): void {
        * whether to send is the user's call (Enter). A non-empty draft is
        * appended to, never replaced. Works for disabled skills too: the
        * disable shadow keeps userInvocable: true by design.
+       *
+       * The draft comes from the live input-state selector: the old
+       * `props.input` snapshot is gone in newer hosts, and reading a stale
+       * snapshot would REPLACE the user's draft instead of appending.
        */
+      const composerDraft = props.useInput === undefined ? (props.input?.draft ?? '') : props.useInput((state) => state.draft);
       const insertCommand = (name: string) => {
         const actions = props.inputActions;
         if (actions === undefined) return;
-        const draft = props.input?.draft ?? '';
+        const draft = composerDraft;
         actions.setDraft(draft.trim() === '' ? `/${name} ` : `${draft} /${name} `);
         close();
       };
