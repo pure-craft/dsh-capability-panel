@@ -23,6 +23,7 @@ interface FixtureOptions {
   skillGetUndefined?: boolean;
   skillGet?: unknown;
   agentCwd?: boolean;
+  deferSkillGet?: boolean;
 }
 
 function fixture(options: FixtureOptions = {}) {
@@ -64,6 +65,10 @@ function fixture(options: FixtureOptions = {}) {
   const listeners: ((payload: { agent: unknown }) => unknown)[] = [];
   const selectedListeners: ((sessionId: unknown, presetId: unknown) => unknown)[] = [];
   const teardowns: (() => void)[] = [];
+  // A gateable skill read models I/O still in flight when a preset switch
+  // lands: the mutation queue must hold the reseed behind the pending seed.
+  let skillGetGate: (() => void) | undefined;
+  const skillGetGated = (): void => { skillGetGate?.(); };
   const ctx = {
     get(name: string): unknown {
       if (name === 'agentPresets') return { composedPreset: () => (options.presetId === undefined && !('presetId' in options) ? 'alpha' : options.presetId) };
@@ -73,6 +78,7 @@ function fixture(options: FixtureOptions = {}) {
           schemas: (scope?: unknown) => [
             { name: 'run_code', description: 'transport' },
             { name: 'bash', description: 'shell' },
+            { name: 'fetch', description: 'network' },
             { name: 'mcp__search__web', description: 'lookup' },
             // Registry noise the seed must skip, and a tool only the global
             // catalog knows (a preset cannot scope to what an agent lacks).
@@ -84,15 +90,21 @@ function fixture(options: FixtureOptions = {}) {
       }
       if (name === 'skills') {
         return {
-          get: () => options.skillGetThrows === true
-            ? Promise.reject(new Error('unreadable'))
-            : options.skillGetUndefined === true
-              ? Promise.resolve(undefined)
-              : Promise.resolve(
-                  options.skillGet === undefined
-                    ? { name: 'writing', description: 'house style', content: 'body', resourceBase: '/r' }
-                    : options.skillGet,
-                ),
+          get: () => {
+            const resolved = options.skillGetThrows === true
+              ? Promise.reject(new Error('unreadable'))
+              : options.skillGetUndefined === true
+                ? Promise.resolve(undefined)
+                : Promise.resolve(
+                    options.skillGet === undefined
+                      ? { name: 'writing', description: 'house style', content: 'body', resourceBase: '/r' }
+                      : options.skillGet,
+                  );
+            if (options.deferSkillGet !== true) return resolved;
+            return new Promise((resolve, reject) => {
+              skillGetGate = () => { resolved.then(resolve, reject); };
+            });
+          },
         };
       }
       return undefined;
@@ -132,6 +144,8 @@ function fixture(options: FixtureOptions = {}) {
     setDefaults(next: { tools: string[]; skills: string[] } | undefined) {
       currentDefaults = next;
     },
+    releaseSkillGet: skillGetGated,
+    skillGetArmed: () => skillGetGate !== undefined,
     restrict,
     restrictDisposers,
     registerSkill,
@@ -400,6 +414,73 @@ describe('preset switch re-seeds the session', () => {
     await fx.emitSelected('session-1', 'cordis');
 
     expect([...fx.capabilities.state('session-1')!.skills.keys()]).toEqual(['writing']);
+  });
+
+  it('keeps a session re-enable winning over the new preset defaults', async () => {
+    // The ordering pin: seed-before-restore inside reseed is what lets the
+    // session's recorded re-enable outrank the switched-to preset's default.
+    const fx = fixture({
+      ...defaults([], ['writing']),
+      overrides: { skills: { writing: true }, mcpServers: {}, mcpTools: {}, systemTools: {} },
+    });
+    await fx.emitCreated();
+    // The creation path already proves it: seed masks, restore's re-enable
+    // disposes it, and the emptied state is dropped.
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+    await fx.emitSelected('session-1', 'cordis');
+    // Restore replays writing=true: the seeded default mask is disposed.
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+    expect(fx.skillDisposers.at(-1)).toHaveBeenCalled();
+  });
+
+  it('replaces the old preset masks wholesale when the two presets differ', async () => {
+    // The pile-up regression pin: bash was seeded for the original preset;
+    // after the switch only fetch may be masked, and bash's mask is disposed.
+    const fx = fixture(defaults(['bash'], []));
+    await fx.emitCreated();
+    const bashDisposer = fx.restrictDisposers[0]!;
+    fx.setDefaults({ tools: ['fetch'], skills: [] });
+    await fx.emitSelected('session-1', 'cordis');
+    expect(bashDisposer).toHaveBeenCalled();
+    expect([...fx.capabilities.state('session-1')!.systemTools.keys()]).toEqual(['fetch']);
+  });
+
+  it('is idempotent when the same preset is re-selected', async () => {
+    const fx = fixture(defaults(['bash'], ['writing']));
+    await fx.emitCreated();
+    await fx.emitSelected('session-1', 'alpha');
+    expect(fx.restrictDisposers[0]).toHaveBeenCalledOnce();
+    expect(fx.skillDisposers[0]).toHaveBeenCalledOnce();
+    expect(fx.restrictDisposers).toHaveLength(2);
+    expect(fx.skillDisposers).toHaveLength(2);
+    expect(fx.restrictDisposers[1]).not.toHaveBeenCalled();
+    expect(fx.skillDisposers[1]).not.toHaveBeenCalled();
+    const state = fx.capabilities.state('session-1')!;
+    expect([...state.systemTools.keys()]).toEqual(['bash']);
+    expect([...state.skills.keys()]).toEqual(['writing']);
+  });
+
+  it('serializes a switch behind a seed whose skill reads are still in flight', async () => {
+    // The review's race window: created-seed awaits skill I/O while the user
+    // switches preset. The queue must hold the reseed behind the pending
+    // seed; afterwards only the new preset's defaults may stand.
+    const fx = fixture({ ...defaults([], ['writing']), deferSkillGet: true });
+    const created = fx.emitCreated();
+    fx.setDefaults({ tools: ['bash'], skills: [] });
+    const selected = fx.emitSelected('session-1', 'cordis');
+    // The enqueue chain runs in microtasks: wait until the pending seed has
+    // actually issued its skill read before releasing the gate.
+    while (!fx.skillGetArmed()) await Promise.resolve();
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+    fx.releaseSkillGet();
+    await created;
+    await selected;
+    expect([...fx.capabilities.state('session-1')!.systemTools.keys()]).toEqual(['bash']);
+    expect(fx.capabilities.state('session-1')!.skills.size).toBe(0);
+    // The in-flight shadow registered before the teardown: it landed, then
+    // the reseed disposed it — no orphan survives the switch.
+    expect(fx.skillDisposers).toHaveLength(1);
+    expect(fx.skillDisposers[0]).toHaveBeenCalledOnce();
   });
 
   it('ignores malformed event args and contains a settings failure', async () => {

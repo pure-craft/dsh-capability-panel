@@ -346,10 +346,60 @@ export function createCapabilityController(
     if (maskedAny) ensurePromptNote(agent, ensureState());
   };
 
+  // Per-session mutation queue. seed/restore/reseed/set all interleave await
+  // points (skill I/O) with each other, and reseed's synchronous teardown
+  // would otherwise land mid-seed: a pending created-time seed would write
+  // old-preset masks into the fresh post-reseed state, and a panel toggle
+  // mid-switch would write into a detached state object. Serializing per
+  // session makes every mutation see a coherent state; cross-session work
+  // stays parallel.
+  const mutationQueues = new Map<string, Promise<unknown>>();
+  const enqueue = <T>(sessionId: string, op: () => Promise<T>): Promise<T> => {
+    const next = (mutationQueues.get(sessionId) ?? Promise.resolve()).then(op, op);
+    // The stored link never rejects: a failed mutation must not jam the queue.
+    mutationQueues.set(sessionId, next.then(() => undefined, () => undefined));
+    return next;
+  };
+
+  const restoreImpl = async (sessionId: string, overrides: SessionOverrideState): Promise<void> => {
+    const groups: readonly (readonly [CapabilityKind, Readonly<Record<string, boolean>>])[] = [
+      ['skill', overrides.skills],
+      ['mcp-server', overrides.mcpServers],
+      ['mcp-tool', overrides.mcpTools],
+      ['system-tool', overrides.systemTools],
+    ];
+    for (const [kind, positions] of groups) {
+      for (const [name, enabled] of Object.entries(positions)) {
+        // A panel toggle landing mid-restore (restore awaits skill I/O per
+        // entry) is newer than the record on disk; re-applying the stored
+        // position would silently diverge memory from it.
+        if (states.get(sessionId)?.userToggled.has(`${kind}:${name}`) === true) continue;
+        try {
+          if (kind === 'skill') await setSkill(sessionId, name, enabled);
+          else if (kind === 'mcp-server') setServer(sessionId, name, enabled);
+          else setTool(sessionId, name, enabled, kind === 'system-tool');
+        } catch {
+          // A stored position that can no longer apply is dropped, not
+          // escalated -- same rule as seeding a stale preset default.
+        }
+      }
+    }
+    // Positions that all dropped (or all re-enabled neutral) must not leave
+    // an empty state entry behind: "no state" is the panel's "nothing is
+    // off" signal, and stale entries would only ever accumulate.
+    const st = states.get(sessionId);
+    if (st !== undefined && st.userToggled.size === 0 && st.skills.size === 0 && st.mcpServers.size === 0 && st.mcpTools.size === 0 && st.systemTools.size === 0) {
+      st.noteDispose?.();
+      delete st.noteDispose;
+      states.delete(sessionId);
+    }
+  };
+
   const controller: CapabilityController = {
     states,
     state: (sessionId) => states.get(sessionId),
-    seed,
+    seed: (sessionId, defaults) => enqueue(sessionId, () => seed(sessionId, defaults)),
+    restore: (sessionId, overrides) => enqueue(sessionId, () => restoreImpl(sessionId, overrides)),
     /**
      * Re-derive a session's masks after its preset changed: every existing
      * mask was seeded for the OLD composition and survives the scope rebind
@@ -359,7 +409,7 @@ export function createCapabilityController(
      * its entries guarded in-flight restore races against masks that no
      * longer exist, and the durable override record is what restore replays.
      */
-    async reseed(sessionId, defaults, overrides) {
+    reseed: (sessionId, defaults, overrides) => enqueue(sessionId, async () => {
       const st = states.get(sessionId);
       if (st !== undefined) {
         for (const map of [st.systemTools, st.mcpServers, st.mcpTools, st.skills]) {
@@ -371,49 +421,18 @@ export function createCapabilityController(
         st.userToggled.clear();
         states.delete(sessionId);
       }
+      // Inside the queue: call the impls directly — enqueuing here would
+      // deadlock the session's own queue.
       if (defaults.tools.length > 0 || defaults.skills.length > 0) await seed(sessionId, defaults);
-      if (overrides !== undefined) await controller.restore(sessionId, overrides);
-    },
-    async restore(sessionId, overrides) {
-      const groups: readonly (readonly [CapabilityKind, Readonly<Record<string, boolean>>])[] = [
-        ['skill', overrides.skills],
-        ['mcp-server', overrides.mcpServers],
-        ['mcp-tool', overrides.mcpTools],
-        ['system-tool', overrides.systemTools],
-      ];
-      for (const [kind, positions] of groups) {
-        for (const [name, enabled] of Object.entries(positions)) {
-          // A panel toggle landing mid-restore (restore awaits skill I/O per
-          // entry) is newer than the record on disk; re-applying the stored
-          // position would silently diverge memory from it.
-          if (states.get(sessionId)?.userToggled.has(`${kind}:${name}`) === true) continue;
-          try {
-            if (kind === 'skill') await setSkill(sessionId, name, enabled);
-            else if (kind === 'mcp-server') setServer(sessionId, name, enabled);
-            else setTool(sessionId, name, enabled, kind === 'system-tool');
-          } catch {
-            // A stored position that can no longer apply is dropped, not
-            // escalated -- same rule as seeding a stale preset default.
-          }
-        }
-      }
-      // Positions that all dropped (or all re-enabled neutral) must not leave
-      // an empty state entry behind: "no state" is the panel's "nothing is
-      // off" signal, and stale entries would only ever accumulate.
-      const st = states.get(sessionId);
-      if (st !== undefined && st.userToggled.size === 0 && st.skills.size === 0 && st.mcpServers.size === 0 && st.mcpTools.size === 0 && st.systemTools.size === 0) {
-        st.noteDispose?.();
-        delete st.noteDispose;
-        states.delete(sessionId);
-      }
-    },
-    async set(sessionId, kind, name, enabled) {
+      if (overrides !== undefined) await restoreImpl(sessionId, overrides);
+    }),
+    set: (sessionId, kind, name, enabled) => enqueue(sessionId, async () => {
       stateFor(sessionId).userToggled.add(`${kind}:${name}`);
       if (kind === 'skill') await setSkill(sessionId, name, enabled);
       else if (kind === 'mcp-server') setServer(sessionId, name, enabled);
       else setTool(sessionId, name, enabled, kind === 'system-tool');
       appendStats({ ts: new Date().toISOString(), sessionId, kind: enabled ? 'enable' : 'disable', name: `${kind}:${name}` });
-    },
+    }),
   };
   return controller;
 }
