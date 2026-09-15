@@ -91,6 +91,11 @@ export const PANEL_CSS = [
   '.ci-preset-kinds .ci-tab{flex:0 0 auto;padding:0 12px}',
   // Folder icon on source section headers: invisible until hover.
   '.ci-source-header:hover .ci-folder-icon{opacity:1 !important}',
+  // The reconnect affordance for a declared-but-offline MCP server.
+  '.ci-preset-reconnect{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));background:transparent;color:var(--dsw-alias-label-secondary,#61666b);border-radius:6px;padding:2px 8px;font-size:12px;line-height:1.5;cursor:pointer;font-family:inherit}',
+  '.ci-preset-reconnect:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
+  '.ci-preset-reconnect:disabled{opacity:.6;cursor:progress}',
+  '.ci-preset-reconnect:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px}',
   // Source divider rows inside a settings list: labels, not data rows.
   '.ci-source-divider{list-style:none}',
   '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',

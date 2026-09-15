@@ -108,6 +108,15 @@ export interface McpServerEntry {
    * to open the folder.
    */
   readonly path?: string;
+  /**
+   * True when the host composition declares this server but it exposes no
+   * tools right now (an on-demand local service nobody started). The row
+   * exists so stored positions stay visible and the reconnect affordance
+   * stays reachable while the server is down.
+   */
+  readonly unavailable?: boolean;
+  /** True when a host loader entry backs this server, so the panel can restart the connection on demand. */
+  readonly reconnectable?: boolean;
 }
 
 export interface InspectorPayload {

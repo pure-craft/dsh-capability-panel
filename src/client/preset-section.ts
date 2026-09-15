@@ -9,6 +9,7 @@ import { filterPreset } from './preset-filter.js';
 import {
   getPresetToolsSnapshot,
   loadPresetTools,
+  reconnectPresetServer,
   selectPreset,
   setPresetServer,
   setPresetSkill,
@@ -332,21 +333,47 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                 'span',
                 { className: 'ci-preset-tool-copy' },
                 React.createElement('span', { className: 'ci-preset-tool-name' }, server.server),
-                React.createElement(
-                  'span',
-                  { className: 'ci-preset-tool-description' },
-                  server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length }),
-                ),
+                // Nothing is registered, so a tool count would be a lie: the
+                // listed rows are this preset's stored default, not a roster.
+                server.unavailable === true
+                  ? null
+                  : React.createElement(
+                    'span',
+                    { className: 'ci-preset-tool-description' },
+                    server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length }),
+                  ),
               ),
             ),
-            // One write for the whole server: the reason a 200-tool preset is
-            // tractable at all.
-            switchFor(
-              server.enabled,
-              false,
-              t(server.enabled ? 'action.disable' : 'action.enable', { name: server.server }),
-              (checked) => { void setPresetServer(selected.id, server.server, checked); },
-            ),
+            // While the server is down there is no name to store a toggle
+            // for: report the state and offer the one action that can still
+            // change it. Reconnectable servers get a manual pull-up that does
+            // not wait out the client's reconnect backoff.
+            server.unavailable === true
+              ? React.createElement(
+                'span',
+                { className: 'ci-preset-badge', title: t('server.unavailableHint') },
+                t('server.unavailable'),
+              )
+              : switchFor(
+                server.enabled,
+                false,
+                t(server.enabled ? 'action.disable' : 'action.enable', { name: server.server }),
+                (checked) => { void setPresetServer(selected.id, server.server, checked); },
+              ),
+            server.unavailable === true && server.reconnectable === true
+              ? React.createElement(
+                'button',
+                {
+                  type: 'button',
+                  className: 'ci-preset-reconnect',
+                  disabled: state.loading,
+                  title: t('action.reconnect', { name: server.server }),
+                  'aria-label': t('action.reconnect', { name: server.server }),
+                  onClick: () => { void reconnectPresetServer(server.server); },
+                },
+                t('action.reconnect.label'),
+              )
+              : null,
           ),
           React.createElement(
             Collapsible.Panel,

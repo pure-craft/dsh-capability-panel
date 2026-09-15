@@ -223,6 +223,16 @@ describe('MCP server source', () => {
     expect(parsed?.mcp[0]?.source).toBeUndefined();
   });
 
+  it('carries unavailable and reconnectable through, omitting them when absent', () => {
+    const payload = { ...validPayload(), mcp: [{ server: 'x', enabled: false, tools: [], unavailable: true, reconnectable: true }] };
+    expect(parseInspectorPayload(payload)?.mcp[0]).toMatchObject({ unavailable: true, reconnectable: true });
+    const plain = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [] }] };
+    expect(parseInspectorPayload(plain)?.mcp[0]).not.toHaveProperty('unavailable');
+    expect(parseInspectorPayload(plain)?.mcp[0]).not.toHaveProperty('reconnectable');
+    const wrong = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [], unavailable: 'yes' }] };
+    expect(parseInspectorPayload(wrong)?.mcp[0]).not.toHaveProperty('unavailable');
+  });
+
   it('carries the server path through, treating a non-string path as absent', () => {
     const payload = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [], source: 'host', path: '~/.dsh' }] };
     expect(parseInspectorPayload(payload)?.mcp[0]?.path).toBe('~/.dsh');

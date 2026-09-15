@@ -47,6 +47,7 @@ import {
   IconContextInjectionOutline16,
   IconSendOutline14,
   IconSearchOutline16,
+  IconRefreshOutline14,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 // Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
@@ -159,6 +160,9 @@ export function apply(ctx: SlotContext): void {
    *  ready for the user's own Enter. */
   const insertIcon = (size: number) => h(IconSendOutline14, { size });
 
+  /** Circular arrows: pull a declared-but-offline server's connection up now. */
+  const reconnectIcon = (size: number) => h(IconRefreshOutline14, { size });
+
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
       { name: 'settings.section', id: 'capability-panel', order: 25, label: () => t('preset.nav') },
@@ -220,6 +224,28 @@ export function apply(ctx: SlotContext): void {
           }
         }).catch((error: unknown) => {
           console.warn('[capability-panel] open source folder request failed', error);
+        });
+      };
+      /**
+       * Pull a declared-but-offline server's connection up, then refresh:
+       * registration lands asynchronously, and the registry's tools/change
+       * broadcast is what re-applies this session's stored positions.
+       */
+      const reconnectServer = (server: string) => {
+        if (sessionId === null) return;
+        void fetch(`${ROUTE}/reconnect`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ server }),
+        }).then(async (response) => {
+          if (!response.ok) {
+            const detail = await response.text();
+            console.warn(`[capability-panel] reconnect failed (${response.status}): ${detail}`);
+          }
+          await refresh(sessionId);
+        }).catch((error: unknown) => {
+          console.warn('[capability-panel] reconnect request failed', error);
         });
       };
       /**
@@ -637,9 +663,50 @@ export function apply(ctx: SlotContext): void {
               h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
             ),
             nameText(server.server),
-            metaText(server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length })),
+            server.unavailable === true
+              ? // Nothing is registered, so a tool count would be a lie: the
+                // listed rows are this session's stored positions, not a
+                // roster. Report the state and offer the one action that can
+                // still change it.
+                h(
+                  'span',
+                  {
+                    className: 'ci-preset-badge',
+                    title: t('server.unavailableHint'),
+                    style: { flex: 'none' },
+                  },
+                  t('server.unavailable'),
+                )
+              : metaText(server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length })),
             blockedChip(serverBlocked),
-            switchControl('mcp-server', server.server, server.enabled),
+            server.unavailable === true && server.reconnectable === true
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'ci-iconbtn ci-send',
+                    'aria-label': t('action.reconnect', { name: server.server }),
+                    title: t('action.reconnect', { name: server.server }),
+                    style: {
+                      display: 'grid',
+                      placeItems: 'center',
+                      width: '20px',
+                      height: '20px',
+                      padding: 0,
+                      border: 'none',
+                      borderRadius: '999px',
+                      background: 'transparent',
+                      color: TOK.textTertiary,
+                      cursor: 'pointer',
+                      flex: 'none',
+                      font: 'inherit',
+                    },
+                    onClick: () => { reconnectServer(server.server); },
+                  },
+                  reconnectIcon(12),
+                )
+              : null,
+            server.unavailable === true ? null : switchControl('mcp-server', server.server, server.enabled),
           ),
           h(
             Collapsible.Panel,

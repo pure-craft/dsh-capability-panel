@@ -47,6 +47,56 @@ async function loadStore() {
 beforeEach(() => { vi.restoreAllMocks(); });
 afterEach(() => { vi.unstubAllGlobals(); });
 
+describe('preset server reconnect', () => {
+  it('posts the reconnect and refreshes the payload', async () => {
+    const store = await loadStore();
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) => {
+      const isReconnect = _url.endsWith('/reconnect');
+      return Promise.resolve(response(isReconnect ? { ok: true, server: 'mock-late' } : payload()));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await store.reconnectPresetServer('mock-late');
+
+    const reconnectCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith('/reconnect'));
+    expect(JSON.parse(reconnectCall?.[1]?.body as string)).toEqual({ server: 'mock-late' });
+    expect(store.getPresetToolsSnapshot().payload?.presets[0]?.id).toBe('standard');
+    expect(store.getPresetToolsSnapshot().error).toBeNull();
+  });
+
+  it('surfaces an HTTP error with its JSON detail', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ error: 'MCP server "ghost" is not configured' }, 404))));
+    await store.reconnectPresetServer('ghost');
+    expect(store.getPresetToolsSnapshot().error).toBe('HTTP 404: MCP server "ghost" is not configured');
+  });
+
+  it('tolerates a non-JSON error body and a network failure', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.reject(new Error('not json')) } as Response)));
+    await store.reconnectPresetServer('bare');
+    expect(store.getPresetToolsSnapshot().error).toBe('HTTP 500');
+
+    const store2 = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('socket gone'))));
+    await store2.reconnectPresetServer('bare');
+    expect(store2.getPresetToolsSnapshot().error).toBe('socket gone');
+  });
+
+  it('stringifies non-Error failures and ignores a non-string error field', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ error: 42 }, 409))));
+    await store.reconnectPresetServer('bare');
+    expect(store.getPresetToolsSnapshot().error).toBe('HTTP 409');
+
+    const store2 = await loadStore();
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject('plain failure')));
+    await store2.reconnectPresetServer('bare');
+    expect(store2.getPresetToolsSnapshot().error).toBe('plain failure');
+  });
+});
+
 describe('preset tool store', () => {
   it('loads, validates and selects the first preset', async () => {
     const store = await loadStore();

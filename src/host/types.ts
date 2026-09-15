@@ -13,6 +13,26 @@ export interface ServerMask {
   readonly names: readonly string[];
 }
 
+/**
+ * Structural view of one cordis loader entry: enough to read an MCP client's
+ * declared configuration and to restart its plugin instance. `_dispose` +
+ * `refresh` are the loader's own public hot-swap pair — the same two calls an
+ * HMR reload makes — so a restart reproduces exactly a reload: teardown,
+ * re-init, fresh connection.
+ */
+export interface LoaderEntryLike {
+  /** The plugin package name (e.g. '@deepseek-ai/dsh-mcp-client'). */
+  readonly name?: unknown;
+  readonly disabled?: unknown;
+  readonly options?: { readonly id?: unknown; readonly config?: unknown };
+  _dispose(): Promise<void>;
+  refresh(): Promise<void>;
+}
+
+export interface LoaderLike {
+  entries(): Iterable<LoaderEntryLike>;
+}
+
 export interface SessionCapabilityState {
   readonly skills: Map<string, () => void>;
   readonly mcpServers: Map<string, ServerMask>;
@@ -124,7 +144,9 @@ export interface HostServices {
       handler: (req: IncomingLike, res: ServerResponseLike) => Promise<void> | void;
     }): () => void;
   };
-  get(name: 'agents'): AgentsService | undefined;
+  /** The cordis loader mixin every host context carries (entry inventory + hot-swap). */
+  readonly loader?: LoaderLike;
+get(name: 'agents'): AgentsService | undefined;
   get(name: 'agentPresets'): AgentPresetsService | undefined;
   get(name: 'settings'): SettingsService | undefined;
   get(name: 'skills'): SkillsService | undefined;

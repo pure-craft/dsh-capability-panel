@@ -3,6 +3,7 @@ import { collectLoadRecords, decideStates, groupMcpTools, indexToolResultSeqs, p
 import type { RawEvent } from '../load-state.js';
 import type { AgentLike, HostServices, SessionCapabilityState } from './types.js';
 import { RESERVED_TOOL } from './reserved.js';
+import { readConfiguredMcpServers } from './mcp-connections.js';
 
 /** Coerce a skill summary field to a string, falling back when the runtime shape is wrong. */
 export function coerceString(value: unknown, fallback: string): string {
@@ -206,6 +207,7 @@ export function readMcp(
   agent?: AgentLike,
   presetName?: string,
   presetPath?: string,
+  maskedServerNames?: ReadonlyMap<string, readonly string[]>,
 ): McpServerEntry[] {
   const tools = services.get('tools');
   if (tools === undefined) {
@@ -230,7 +232,8 @@ export function readMcp(
     for (const schema of tools.schemas()) {
       if (typeof schema.name === 'string' && schema.name.startsWith('mcp__')) globalNames.add(schema.name);
     }
-    return groupMcpTools(names).map((group) => {
+    const configuredServers = readConfiguredMcpServers(services);
+    const groups: McpServerEntry[] = groupMcpTools(names).map((group) => {
       const enabled = !disabledServers.has(group.server);
       const entries: McpToolEntry[] = group.tools.map((tool) => {
         const name = `mcp__${group.server}__${tool}`;
@@ -245,8 +248,30 @@ export function readMcp(
       const allGlobal = group.tools.every((tool) => globalNames.has(`mcp__${group.server}__${tool}`));
       const source = allGlobal ? 'host' : (presetName ?? 'preset');
       const rawPath = allGlobal ? dshHome() : presetPath;
-      return { server: group.server, tools: entries, enabled, source, ...(rawPath === undefined ? {} : { path: displayPath(rawPath) }) };
+      return { server: group.server, tools: entries, enabled, ...(configuredServers.has(group.server) ? { reconnectable: true } : {}), source, ...(rawPath === undefined ? {} : { path: displayPath(rawPath) }) };
     });
+    // A declared server that registered nothing (its local process is down)
+    // would vanish with every mask the session holds for it. The row stays:
+    // marked unavailable, listing exactly the names this session already
+    // stores off (the server mask's recorded roster first, then per-tool
+    // names) — the only honest roster while it is down.
+    const hostPath = dshHome();
+    for (const server of configuredServers) {
+      if (groups.some((group) => group.server === server)) continue;
+      const prefix = `mcp__${server}__`;
+      const roster = maskedServerNames?.get(server) ?? [...disabledTools].filter((name) => name.startsWith(prefix)).sort();
+      groups.push({
+        server,
+        tools: roster.map((name) => ({ name, label: name.slice(prefix.length), enabled: false })),
+        enabled: false,
+        unavailable: true,
+        reconnectable: true,
+        source: 'host',
+        ...(hostPath === undefined ? {} : { path: displayPath(hostPath) }),
+      });
+    }
+    groups.sort((a, b) => a.server.localeCompare(b.server));
+    return groups;
   } catch (error) {
     degraded.push(`tool read failed: ${error instanceof Error ? error.message : String(error)}`);
     return [];
@@ -349,7 +374,16 @@ export async function buildPayload(
   return {
     sessionId,
     skills,
-    mcp: readMcp(services, degraded, disabledServers, disabledTools, agent, presetName, presetPath),
+    mcp: readMcp(
+      services,
+      degraded,
+      disabledServers,
+      disabledTools,
+      agent,
+      presetName,
+      presetPath,
+      new Map([...capabilityState.mcpServers].map(([server, mask]) => [server, mask.names])),
+    ),
     systemTools: readSystemTools(services, degraded, disabledSystem, agent),
     blocked,
     ...(degraded.length > 0 ? { degraded } : {}),
