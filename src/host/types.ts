@@ -2,9 +2,20 @@ import type { IncomingLike as BaseIncomingLike } from '../loopback.js';
 
 export type CapabilityKind = 'skill' | 'mcp-server' | 'mcp-tool' | 'system-tool';
 
+/**
+ * A server-level MCP mask and the exact tool names its deny list carries.
+ * The roster matters on re-mask: a server whose tool list GROWS while masked
+ * (a reconnect registering a new generation) needs its mask re-created with
+ * the fresh roster — the old deny list cannot cover names that did not exist.
+ */
+export interface ServerMask {
+  readonly dispose: () => void;
+  readonly names: readonly string[];
+}
+
 export interface SessionCapabilityState {
   readonly skills: Map<string, () => void>;
-  readonly mcpServers: Map<string, () => void>;
+  readonly mcpServers: Map<string, ServerMask>;
   readonly mcpTools: Map<string, () => void>;
   readonly systemTools: Map<string, () => void>;
   /**
@@ -19,6 +30,8 @@ export interface SessionCapabilityState {
 
 export interface AgentsService {
   get(sessionId: string): AgentLike | undefined;
+  /** All live agents, in registration order. */
+  list(): AgentLike[];
 }
 
 export interface AgentPresetLike {
@@ -131,6 +144,11 @@ export interface HostServices {
     event: 'agent-preset/selected',
     listener: (sessionId: unknown, presetId: unknown) => void | Promise<void>,
   ): void;
+  /** Fired when the tool registry changes (registration, restriction, teardown). */
+  on(
+    event: 'tools/change',
+    listener: () => void | Promise<void>,
+  ): void;
   on(
     event: 'tools/result',
     listener: (
@@ -170,6 +188,8 @@ export interface ScopedToolsRegistry {
 }
 
 export interface AgentLike {
+  /** The shared agent/session id. */
+  readonly id?: string;
   readonly session?: {
     readonly header?: { readonly cwd?: string };
     /**
