@@ -8,6 +8,10 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP server defaults seeded by a preset now display correctly in the session panel: a stored default that covers every tool a server exposes registers as a server-level mask (what the server row reads), while a partial default stays per-tool. Previously the per-tool restricts did deny the calls, but the server row read the server-level map and showed the server on.
+
 ## [1.1.1] - 2026-09-11
 
 Bugfix release for the preset-defaults lifecycle and two 0.1.5 host changes.

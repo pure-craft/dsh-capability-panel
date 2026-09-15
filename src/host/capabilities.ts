@@ -1,5 +1,6 @@
 import { classifyBlockedCall, GUARD_DENIAL_PREFIX } from '../stats.js';
 import type { StatsRecord } from '../stats.js';
+import { groupMcpTools } from '../load-state.js';
 import { HttpError } from './errors.js';
 import { RESERVED_TOOL } from './reserved.js';
 import type {
@@ -283,12 +284,8 @@ export function createCapabilityController(
       }
       for (const name of defaults.tools) {
         if (!globalNames.has(name)) continue;
-        if (name.startsWith('mcp__')) {
-          if (state?.mcpTools.has(name) === true) continue;
-          ensureState().mcpTools.set(name, scopedTools.restrict({ deny: [name] }));
-          maskedAny = true;
-          continue;
-        }
+        // MCP defaults are grouped and applied below, one level per server.
+        if (name.startsWith('mcp__')) continue;
         // The reserved transport stays reachable no matter what was stored.
         if (name === RESERVED_TOOL || state?.systemTools.has(name) === true) continue;
         // A default for a tool this agent cannot see is simply not applied.
@@ -296,6 +293,30 @@ export function createCapabilityController(
         ensureState().systemTools.set(name, scopedTools.restrict({ deny: [name] }));
         ensureGuard();
         maskedAny = true;
+      }
+      // MCP defaults restore at the granularity they were recorded with: a
+      // default covering every tool a server exposes is a SERVER-level mask
+      // (one restrict, and the panel's server row reads `mcpServers`, so a
+      // full default must land there to display as off); a partial default
+      // keeps per-tool entries.
+      const mcpDefaults = defaults.tools.filter((name) => globalNames.has(name));
+      const fullByServer = new Map(groupMcpTools([...globalNames]).map((group) => [group.server, group.tools]));
+      for (const group of groupMcpTools(mcpDefaults)) {
+        // mcpDefaults ⊆ globalNames, so the full server roster always exists.
+        const full = fullByServer.get(group.server)!;
+        const coversAll = full.every((tool) => group.tools.includes(tool));
+        if (coversAll) {
+          if (state?.mcpServers.has(group.server) === true) continue;
+          ensureState().mcpServers.set(group.server, scopedTools.restrict({ deny: full.map((tool) => `mcp__${group.server}__${tool}`) }));
+          maskedAny = true;
+          continue;
+        }
+        for (const tool of group.tools) {
+          const name = `mcp__${group.server}__${tool}`;
+          if (state?.mcpTools.has(name) === true) continue;
+          ensureState().mcpTools.set(name, scopedTools.restrict({ deny: [name] }));
+          maskedAny = true;
+        }
       }
     }
 

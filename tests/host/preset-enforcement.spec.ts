@@ -80,6 +80,7 @@ function fixture(options: FixtureOptions = {}) {
             { name: 'bash', description: 'shell' },
             { name: 'fetch', description: 'network' },
             { name: 'mcp__search__web', description: 'lookup' },
+            { name: 'mcp__search__image', description: 'images' },
             // Registry noise the seed must skip, and a tool only the global
             // catalog knows (a preset cannot scope to what an agent lacks).
             { name: 42 },
@@ -173,18 +174,40 @@ const defaults = (tools: string[] = [], skills: string[] = []): { defaults: { to
 
 describe('preset enforcement', () => {
   it('seeds stored tool and skill defaults into the session state', async () => {
-    const fx = fixture(defaults(['bash', 'mcp__search__web'], ['writing']));
+    const fx = fixture(defaults(['bash', 'mcp__search__web', 'mcp__search__image'], ['writing']));
     await fx.emitCreated();
 
     const state = fx.capabilities.state('session-1');
     expect([...state!.systemTools.keys()]).toEqual(['bash']);
-    expect([...state!.mcpTools.keys()]).toEqual(['mcp__search__web']);
+    expect([...state!.mcpTools.keys()]).toEqual([]);
+    expect([...state!.mcpServers.keys()]).toEqual(['search']);
     expect([...state!.skills.keys()]).toEqual(['writing']);
     expect(fx.registeredSkills[0]).toMatchObject({
       name: 'writing',
       invocation: { modelInvocable: false, userInvocable: true },
       resourceBase: '/r',
     });
+  });
+
+  it('skips re-seeding a server mask that already stands', async () => {
+    const fx = fixture(defaults(['mcp__search__web', 'mcp__search__image'], []));
+    await fx.emitCreated();
+    await fx.emitCreated();
+    const state = fx.capabilities.state('session-1')!;
+    expect([...state.mcpServers.keys()]).toEqual(['search']);
+    // One restrict call per server, not per seed pass.
+    expect(fx.restrictDisposers).toHaveLength(1);
+  });
+
+  it('keeps a partial server default at per-tool granularity', async () => {
+    // Only one of the server's two tools is stored off: the mask must land in
+    // mcpTools, not mcpServers — a server-level mask would deny the tool the
+    // user never touched.
+    const fx = fixture(defaults(['mcp__search__web'], []));
+    await fx.emitCreated();
+    const state = fx.capabilities.state('session-1')!;
+    expect([...state.mcpTools.keys()]).toEqual(['mcp__search__web']);
+    expect([...state.mcpServers.keys()]).toEqual([]);
   });
 
   // The user's rule: a preset default is the starting point, and the session
