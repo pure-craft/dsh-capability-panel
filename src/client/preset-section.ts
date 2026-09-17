@@ -9,6 +9,7 @@ import { filterPreset } from './preset-filter.js';
 import {
   getPresetToolsSnapshot,
   loadPresetTools,
+  reconnectPresetServer,
   selectPreset,
   setPresetServer,
   setPresetSkill,
@@ -64,6 +65,8 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
   // exclusive tabs because it is a 360px popover; this panel is wide enough to
   // show all three at once, so "all" is the default and the tabs narrow it.
   const [kind, setKind] = React.useState<'all' | 'skills' | 'mcp' | 'system'>('all');
+  /** The MCP server whose reconnect is in flight, if any. */
+  const [reconnecting, setReconnecting] = React.useState<string | null>(null);
 
   const selected = state.payload?.presets.find((preset) => preset.id === state.selectedId);
   const filtering = query.trim() !== '';
@@ -178,10 +181,10 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     );
   };
 
-  const toggle = (tool: PresetToolView, presetId: string): React.ReactElement =>
+  const toggle = (tool: PresetToolView, presetId: string, frozen = false): React.ReactElement =>
     switchFor(
       tool.enabled,
-      tool.reserved === true,
+      frozen || tool.reserved === true,
       tool.reserved === true
         ? t('preset.reserved', { name: tool.label })
         : t(tool.enabled ? 'action.disable' : 'action.enable', { name: tool.label }),
@@ -236,7 +239,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     );
   };
 
-  const toolRow = (tool: PresetToolView, presetId: string, nested: boolean): React.ReactElement => {
+  const toolRow = (tool: PresetToolView, presetId: string, nested: boolean, frozen = false): React.ReactElement => {
     const rowKey = `tool:${tool.name}`;
     return React.createElement(
       'li',
@@ -251,7 +254,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
         headerClassName: 'ci-row-head ci-preset-tool-row',
         spacerClassName: 'ci-preset-spacer',
         heading: React.createElement('span', { className: 'ci-preset-tool-name' }, tool.label),
-        actions: [toggle(tool, presetId)],
+        actions: [toggle(tool, presetId, frozen)],
         ...(tool.description === undefined
           ? {}
           : { detail: React.createElement('div', { className: 'ci-preset-detail' }, tool.description) }),
@@ -309,9 +312,13 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     const serverRow = (server: (typeof view.mcp)[number]): React.ReactElement => {
       const key = `mcp:${server.server}`;
       const disclosure = resolveDisclosure(expanded[key] === true, filtering);
+      // Declared by the host but exposing nothing right now: the row stays so
+      // its stored default and its reconnect stay reachable.
+      const offline = server.unavailable === true;
+      const busy = reconnecting === server.server;
       return React.createElement(
         'li',
-        { key, className: 'ci-preset-group' },
+        { key, className: offline ? 'ci-preset-group ci-preset-group-offline' : 'ci-preset-group' },
         React.createElement(
           Collapsible.Root,
           {
@@ -332,20 +339,61 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                 'span',
                 { className: 'ci-preset-tool-copy' },
                 React.createElement('span', { className: 'ci-preset-tool-name' }, server.server),
-                React.createElement(
-                  'span',
-                  { className: 'ci-preset-tool-description' },
-                  server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length }),
-                ),
+                // A tool count would be a lie while nothing is registered:
+                // the listed rows are the preset's stored default, not a
+                // server roster.
+                offline
+                  ? null
+                  : React.createElement(
+                    'span',
+                    { className: 'ci-preset-tool-description' },
+                    server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length }),
+                  ),
               ),
             ),
-            // One write for the whole server: the reason a 200-tool preset is
-            // tractable at all.
-            switchFor(
-              server.enabled,
-              false,
-              t(server.enabled ? 'action.disable' : 'action.enable', { name: server.server }),
-              (checked) => { void setPresetServer(selected.id, server.server, checked); },
+            React.createElement(
+              'div',
+              { className: 'ci-preset-server-actions' },
+              // Nothing is registered, so there is no name to store a toggle
+              // for; the host would refuse the write. Report the state and
+              // offer the one action that can still change it.
+              offline
+                ? React.createElement(
+                  'span',
+                  { className: 'ci-preset-unavailable', title: t('server.unavailableHint') },
+                  t('server.unavailable'),
+                )
+                // One write for the whole server: the reason a 200-tool preset
+                // is tractable at all.
+                : switchFor(
+                  server.enabled,
+                  false,
+                  t(server.enabled ? 'action.disable' : 'action.enable', { name: server.server }),
+                  (checked) => { void setPresetServer(selected.id, server.server, checked); },
+                ),
+              // Restarting the connection is what an on-demand server needs:
+              // waiting out the reconnect backoff is the alternative.
+              server.reconnectable === true
+                ? React.createElement(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'ci-preset-reconnect',
+                    disabled: busy || !writable,
+                    title: t('action.reconnect', { name: server.server }),
+                    'aria-label': t('action.reconnect', { name: server.server }),
+                    onClick: () => {
+                      setReconnecting(server.server);
+                      void reconnectPresetServer(server.server)
+                        .catch(() => undefined)
+                        .finally(() => {
+                          setReconnecting((current) => (current === server.server ? null : current));
+                        });
+                    },
+                  },
+                  busy ? t('action.reconnecting') : t('action.reconnect.label'),
+                )
+                : null,
             ),
           ),
           React.createElement(
@@ -354,7 +402,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
             React.createElement(
               'ul',
               { className: 'ci-preset-tool-list' },
-              ...server.tools.map((tool) => toolRow(tool, selected.id, true)),
+              ...server.tools.map((tool) => toolRow(tool, selected.id, true, offline)),
             ),
           ),
         ),

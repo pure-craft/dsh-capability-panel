@@ -20,6 +20,9 @@ interface FixtureOptions {
   presetPath?: string;
   presetMcpTool?: boolean;
   richSkills?: boolean;
+  /** Loader entries the host composition declares, MCP or otherwise. */
+  loaderEntries?: unknown[];
+  loaderThrows?: boolean;
 }
 
 function fixture(options: FixtureOptions = {}) {
@@ -82,6 +85,11 @@ function fixture(options: FixtureOptions = {}) {
         ...(scope !== undefined && options.presetMcpTool === true ? [{ name: 'mcp__local__x', description: 'preset only' }] : []),
       ],
     };
+  }
+  if (options.loaderThrows === true) {
+    services.loader = { entries: () => { throw new Error('tree is mid-reload'); } };
+  } else if (options.loaderEntries !== undefined) {
+    services.loader = { entries: () => options.loaderEntries };
   }
   if (options.skills !== false) {
     services.skills = {
@@ -428,5 +436,78 @@ describe('preset tool settings', () => {
     const local = listed.presets[0]!.mcp.find((server) => server.server === 'local');
     expect(local).toMatchObject({ source: 'alpha' });
     expect(local).not.toHaveProperty('path');
+  });
+});
+
+describe('declared but unregistered MCP servers', () => {
+  const mcpEntry = (server: string) => ({
+    options: { id: `mcp-client-${server}`, name: '@deepseek-ai/dsh-mcp-client', config: { serverName: server } },
+  });
+
+  it('lists a declared server that exposes nothing, keeping its stored default', async () => {
+    const host = fixture({ loaderEntries: [mcpEntry('ida'), mcpEntry('search')] });
+    host.values.presets['alpha'] = ['bash', 'mcp__ida__list', 'mcp__ida__attach'];
+
+    const listed = await host.controller.list();
+    const byServer = new Map(listed.presets[0]!.mcp.map((server) => [server.server, server]));
+
+    expect(byServer.get('ida')).toEqual({
+      server: 'ida',
+      enabled: false,
+      unavailable: true,
+      reconnectable: true,
+      source: 'host',
+      path: process.env['DSH_HOME']!,
+      tools: [
+        { name: 'mcp__ida__attach', label: 'attach', enabled: false },
+        { name: 'mcp__ida__list', label: 'list', enabled: false },
+      ],
+    });
+    // The rows are an inventory of what a preset can configure, not of what is
+    // up, so a declared server sorts in among the connected ones.
+    expect([...byServer.keys()]).toEqual(['ida', 'search']);
+    // A connected server is not unavailable, but it is still restartable
+    // because the host declares it.
+    expect(byServer.get('search')).toMatchObject({ reconnectable: true });
+    expect(byServer.get('search')).not.toHaveProperty('unavailable');
+  });
+
+  it('lists a declared server with no stored default as an empty row', async () => {
+    const host = fixture({ loaderEntries: [mcpEntry('dnspy')] });
+    const listed = await host.controller.list();
+    expect(listed.presets[0]!.mcp.find((server) => server.server === 'dnspy')).toMatchObject({
+      unavailable: true,
+      reconnectable: true,
+      tools: [],
+    });
+  });
+
+  it('omits the host path when the environment names no home', async () => {
+    const dshHome = process.env['DSH_HOME'];
+    const userHome = process.env['HOME'];
+    delete process.env['DSH_HOME'];
+    delete process.env['HOME'];
+    try {
+      const host = fixture({ loaderEntries: [mcpEntry('ida')] });
+      const listed = await host.controller.list();
+      const ida = listed.presets[0]!.mcp.find((server) => server.server === 'ida');
+      expect(ida).toMatchObject({ server: 'ida', unavailable: true });
+      expect(ida).not.toHaveProperty('path');
+    } finally {
+      if (dshHome !== undefined) process.env['DSH_HOME'] = dshHome;
+      if (userHome !== undefined) process.env['HOME'] = userHome;
+    }
+  });
+
+  it('keeps listing when the loader tree cannot be walked', async () => {
+    const host = fixture({ loaderThrows: true });
+    const listed = await host.controller.list();
+    expect(listed.presets[0]!.mcp.map((server) => server.server)).toEqual(['search']);
+  });
+
+  it('does not read another plugin serverName as an MCP server', async () => {
+    const host = fixture({ loaderEntries: [{ options: { name: 'some-other-plugin', config: { serverName: 'wat' } } }] });
+    const listed = await host.controller.list();
+    expect(listed.presets[0]!.mcp.map((server) => server.server)).toEqual(['search']);
   });
 });

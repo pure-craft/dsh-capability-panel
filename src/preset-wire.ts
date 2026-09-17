@@ -79,13 +79,23 @@ export function parsePresetToolPayload(value: unknown): PresetToolPayload | null
     const mcp: PresetMcpServer[] = [];
     for (const rawServer of rawMcp) {
       if (!isRecord(rawServer)) return null;
-      const { server, tools: rawTools, enabled, source, path } = rawServer;
+      const { server, tools: rawTools, enabled, source, path, unavailable, reconnectable } = rawServer;
       if (typeof server !== 'string' || typeof enabled !== 'boolean' || !Array.isArray(rawTools)) return null;
       if (source !== undefined && typeof source !== 'string') return null;
       if (path !== undefined && typeof path !== 'string') return null;
+      if (unavailable !== undefined && typeof unavailable !== 'boolean') return null;
+      if (reconnectable !== undefined && typeof reconnectable !== 'boolean') return null;
       const tools = parseTools(rawTools);
       if (tools === null) return null;
-      mcp.push({ server, tools, enabled, ...(source === undefined ? {} : { source }), ...(path === undefined ? {} : { path }) });
+      mcp.push({
+        server,
+        tools,
+        enabled,
+        ...(source === undefined ? {} : { source }),
+        ...(path === undefined ? {} : { path }),
+        ...(unavailable === undefined ? {} : { unavailable }),
+        ...(reconnectable === undefined ? {} : { reconnectable }),
+      });
     }
     presets.push({
       id,

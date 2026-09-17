@@ -15,6 +15,7 @@ import type {
 } from './types.js';
 import type { ToolkitSettingsAccess } from './settings-scope.js';
 import { groupMcpTools } from '../load-state.js';
+import { readConfiguredMcpServers, readRegisteredMcpServers } from './mcp-connections.js';
 import { RESERVED_TOOL } from './reserved.js';
 export { RESERVED_TOOL };
 
@@ -155,6 +156,13 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
     for (const schema of tools.schemas()) {
       if (typeof schema.name === 'string' && schema.name.startsWith('mcp__')) globalNames.add(schema.name);
     }
+    // A server whose local service is not running has no tools in the registry
+    // at all, so nothing below can see it. Its host composition entry is the
+    // only evidence it exists, and that is enough for a row: an on-demand
+    // server must stay visible (and restartable) while it is down, or the
+    // stored default for it disappears from the page with no explanation.
+    const configuredServers = readConfiguredMcpServers(ctx);
+    const registeredServers = readRegisteredMcpServers(ctx);
     const entries: PresetToolEntry[] = await Promise.all(presets.map(async (preset) => {
       let entries: ToolSummary[] = [];
       let skillRows: PresetSkillRow[] = [];
@@ -198,17 +206,41 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
       // collapse under their server, everything else is a system tool.
       const presetName = preset.name ?? preset.id;
       const mcp: PresetMcpServer[] = groupMcpTools(entries.map((entry) => entry.name)).map((group) => {
-        const tools = group.tools.map((tool) => row(`mcp__${group.server}__${tool}`, tool));
+        const groupTools = group.tools.map((tool) => row(`mcp__${group.server}__${tool}`, tool));
         const allGlobal = group.tools.every((tool) => globalNames.has(`mcp__${group.server}__${tool}`));
         const rawPath = allGlobal ? dshHome() : preset.path;
         return {
           server: group.server,
-          tools,
-          enabled: tools.some((tool) => tool.enabled),
+          tools: groupTools,
+          enabled: groupTools.some((tool) => tool.enabled),
+          ...(configuredServers.has(group.server) ? { reconnectable: true } : {}),
           source: allGlobal ? 'host' : presetName,
           ...(rawPath === undefined ? {} : { path: displayPath(rawPath) }),
         };
       });
+      const hostPath = dshHome();
+      for (const server of configuredServers.keys()) {
+        if (registeredServers.has(server)) continue;
+        const prefix = `mcp__${server}__`;
+        mcp.push({
+          server,
+          // While the server is down the registry cannot say which tools it
+          // exposes, so the only honest list is what this preset already stores
+          // for it -- which is precisely the default that must not vanish.
+          tools: [...disabled]
+            .filter((name) => name.startsWith(prefix))
+            .sort()
+            .map((name) => row(name, name.slice(prefix.length))),
+          enabled: false,
+          unavailable: true,
+          reconnectable: true,
+          source: 'host',
+          ...(hostPath === undefined ? {} : { path: displayPath(hostPath) }),
+        });
+      }
+      // Declared servers sort in among the connected ones: the list is an
+      // inventory of what this preset can configure, not of what is up.
+      mcp.sort((a, b) => a.server.localeCompare(b.server));
       const systemTools = entries
         .filter((entry) => !entry.name.startsWith('mcp__'))
         .map((entry) => row(entry.name, entry.name));

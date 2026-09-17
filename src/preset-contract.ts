@@ -32,6 +32,19 @@ export interface PresetMcpServer {
    * the preset's directory otherwise). Shown in the group divider's tooltip.
    */
   readonly path?: string;
+  /**
+   * True when the host composition declares this server but it exposes no
+   * tools right now (an on-demand local service nobody started yet). The row
+   * exists so the stored default stays visible and the reconnect affordance
+   * stays reachable while the server is down; `tools` then lists whatever the
+   * preset currently disables for it, so the default is not silently lost.
+   */
+  readonly unavailable?: boolean;
+  /**
+   * True when a host loader entry backs this server, so the panel can restart
+   * the connection on demand instead of waiting out a reconnect backoff.
+   */
+  readonly reconnectable?: boolean;
 }
 
 /**

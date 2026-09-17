@@ -93,5 +93,14 @@ export const PANEL_CSS = [
   '.ci-source-header:hover .ci-folder-icon{opacity:1 !important}',
   // Source divider rows inside a settings list: labels, not data rows.
   '.ci-source-divider{list-style:none}',
+  // A server the host declares but that exposes nothing right now (its local
+  // service is not running): the row stays, dimmed, with the reconnect
+  // affordance standing where the switch would be.
+  '.ci-preset-group-offline .ci-preset-tool-name{color:var(--dsw-alias-label-tertiary,#81858c)}',
+  '.ci-preset-server-actions{display:flex;align-items:center;gap:8px;margin-left:auto}',
+  '.ci-preset-unavailable{display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;font-weight:500;background-color:var(--dsw-alias-bg-fill-2,rgba(0,0,0,.05));color:var(--dsw-alias-label-tertiary,#81858c)}',
+  '.ci-preset-reconnect{border:1px solid var(--dsw-alias-border-secondary,rgba(0,0,0,.12));background:transparent;color:var(--dsw-alias-label-secondary,#4a4f57);border-radius:6px;padding:2px 8px;font-size:12px;line-height:1.5;cursor:pointer}',
+  '.ci-preset-reconnect:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
+  '.ci-preset-reconnect:disabled{opacity:.6;cursor:progress}',
   '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',
 ].join('\n');

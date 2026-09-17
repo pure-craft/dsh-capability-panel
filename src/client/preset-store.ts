@@ -111,6 +111,48 @@ export function setPresetServer(presetId: string, server: string, enabled: boole
   return mutate({ presetId, kind: 'mcp-server', name: server, enabled });
 }
 
+/**
+ * Restart one MCP server's connection and take the payload the host reports
+ * afterwards. Serialized behind the same queue as the toggles: a restart
+ * re-registers every tool of that server, and a toggle landing mid-restart would
+ * be answered by a payload the restart then invalidates.
+ *
+ * The caller needs only success or failure — the refreshed payload is already in
+ * the store — so a rejection is the whole result surface.
+ */
+export function reconnectPresetServer(server: string): Promise<void> {
+  const requestEpoch = begin();
+  const run = async (): Promise<void> => {
+    try {
+      const response = await fetch('/api/capability-panel/reconnect', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ server }),
+      });
+      if (!response.ok) {
+        let detail = '';
+        try {
+          const body = await response.json() as { error?: unknown };
+          if (typeof body.error === 'string') detail = `: ${body.error}`;
+        } catch {}
+        throw new Error(`HTTP ${response.status}${detail}`);
+      }
+      const payload = parsePresetToolPayload(await response.json());
+      if (payload === null) throw new Error('unexpected preset payload shape (host/client version skew?)');
+      finish(requestEpoch, { payload, error: null });
+    } catch (error) {
+      finish(requestEpoch, { error: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  };
+  const result = queue.then(run);
+  // Unlike a toggle this one rejects to its caller, so the shared queue must
+  // absorb the rejection or every later write would be skipped.
+  queue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
 export function resetPresetTools(): void {
   epoch += 1;
   requests = 0;

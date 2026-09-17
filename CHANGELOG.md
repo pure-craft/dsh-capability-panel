@@ -8,6 +8,11 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Capability Panel now lists MCP servers the host declares but that expose no tools right now — an on-demand local service (IDA, dnSpy, msfrpcd) that is not running yet. The row is marked `not connected`, still shows the preset's stored default for it, and its switches are frozen (nothing is registered to write a toggle for). Previously such a server was absent from the page entirely, so a stored default looked like it had been lost.
+- Every MCP server row has a **Reconnect** button: it disposes and refreshes that server's host loader entry (the pair the loader itself uses for an HMR reload), so an on-demand server that has just been started connects immediately instead of waiting out the MCP client's reconnect backoff.
+
 ### Fixed
 
 - MCP server defaults seeded by a preset now display correctly in the session panel: a stored default that covers every tool a server exposes registers as a server-level mask (what the server row reads), while a partial default stays per-tool. Previously the per-tool restricts did deny the calls, but the server row read the server-level map and showed the server on.

@@ -57,3 +57,17 @@ describe('preset MCP server source fields', () => {
     expect(parsePresetToolPayload(withServer({ ...base, path: 42 }))).toBeNull();
   });
 });
+
+describe('preset MCP server availability fields', () => {
+  const base = { server: 'ida', enabled: false, tools: [] };
+
+  it('carries unavailable and reconnectable when present', () => {
+    const parsed = parsePresetToolPayload(withServer({ ...base, unavailable: true, reconnectable: true }));
+    expect(parsed?.presets[0]?.mcp[0]).toMatchObject({ unavailable: true, reconnectable: true });
+  });
+
+  it('rejects non-boolean availability fields', () => {
+    expect(parsePresetToolPayload(withServer({ ...base, unavailable: 'yes' }))).toBeNull();
+    expect(parsePresetToolPayload(withServer({ ...base, reconnectable: 'yes' }))).toBeNull();
+  });
+});

@@ -2,6 +2,27 @@ import type { IncomingLike as BaseIncomingLike } from '../loopback.js';
 
 export type CapabilityKind = 'skill' | 'mcp-server' | 'mcp-tool' | 'system-tool';
 
+/**
+ * Structural view of one cordis loader entry: enough to read an MCP server's
+ * declared configuration and to restart its plugin instance.
+ *
+ * `_dispose` + `refresh` are the loader's own hot-swap pair — the same two
+ * calls the loader makes when it replaces an entry — so a restart reproduces
+ * exactly what an HMR reload does, including the new connection and its full
+ * tool re-sync.
+ */
+export interface LoaderEntryLike {
+  readonly options?: { readonly id?: unknown; readonly name?: unknown; readonly config?: unknown };
+  /** Effective disabled state; a `!!js` expression may back it. */
+  readonly disabled?: unknown;
+  _dispose(): Promise<void>;
+  refresh(): Promise<void>;
+}
+
+export interface LoaderLike {
+  entries(): Iterable<LoaderEntryLike>;
+}
+
 export interface SessionCapabilityState {
   readonly skills: Map<string, () => void>;
   readonly mcpServers: Map<string, () => void>;
@@ -116,6 +137,12 @@ export interface HostServices {
   get(name: 'settings'): SettingsService | undefined;
   get(name: 'skills'): SkillsService | undefined;
   get(name: 'tools'): ToolsService | undefined;
+  /**
+   * The loader owns the host composition, so it is where every configured MCP
+   * server is declared — including the ones whose local service is not running
+   * and therefore has no tools in the registry at all.
+   */
+  get(name: 'loader'): LoaderLike | undefined;
   on(
     event: 'agent/created',
     /**

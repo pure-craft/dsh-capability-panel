@@ -234,4 +234,53 @@ describe('preset tool store', () => {
     await store.setPresetTool('standard', 'bash', false);
     expect(store.getPresetToolsSnapshot().error).toBe('offline');
   });
+
+  it('restarts a server over the reconnect route and adopts the fresh payload', async () => {
+    const store = await loadStore();
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      void init;
+      return Promise.resolve(response({ ...payload('restarted'), server: 'ida', tools: 3 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await store.reconnectPresetServer('ida');
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/capability-panel/reconnect');
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ server: 'ida' });
+    expect(store.getPresetToolsSnapshot()).toMatchObject({ error: null, loading: false });
+    expect(store.getPresetToolsSnapshot().payload?.presets[0]?.id).toBe('restarted');
+  });
+
+  it('surfaces a reconnect failure without wedging the shared write queue', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ error: 'not configured' }, 404))));
+    await expect(store.reconnectPresetServer('ghost')).rejects.toThrow('HTTP 404: not configured');
+    expect(store.getPresetToolsSnapshot().error).toBe('HTTP 404: not configured');
+
+    // The queue absorbed the rejection, so the next write still runs.
+    const fetchMock = vi.fn(() => Promise.resolve(response(payload())));
+    vi.stubGlobal('fetch', fetchMock);
+    await store.setPresetTool('standard', 'bash', false);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(store.getPresetToolsSnapshot().error).toBeNull();
+  });
+
+  it('rejects a malformed reconnect answer and a failure without a JSON body', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ writable: true, presets: 'nope' }))));
+    await expect(store.reconnectPresetServer('ida')).rejects.toThrow('unexpected preset payload shape');
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response({ error: 42 }, 422))));
+    await expect(store.reconnectPresetServer('ida')).rejects.toThrow('HTTP 422');
+
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.reject(new Error('html')) })));
+    await expect(store.reconnectPresetServer('ida')).rejects.toThrow('HTTP 500');
+
+    // The browser can reject fetch with a non-Error value; the reconnect path
+    // normalizes it the same way the load path does, and rethrows it untouched.
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject('offline')));
+    await expect(store.reconnectPresetServer('ida')).rejects.toBe('offline');
+    expect(store.getPresetToolsSnapshot().error).toBe('offline');
+  });
 });
