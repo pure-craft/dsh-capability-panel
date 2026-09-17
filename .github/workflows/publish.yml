@@ -1,0 +1,42 @@
+name: publish
+
+# A GitHub Release is the single trigger: the release's tag carries the version,
+# and the release only exists after main is green, so this never publishes
+# unverified code. Publishing from `npm publish` locally stays possible as a
+# fallback.
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          # Public npm; NODE_AUTH_TOKEN (repo secret) authenticates. Use an
+          # npm "automation" granular token so CI publishes skip the OTP prompt.
+          registry-url: https://registry.npmjs.org/
+      - run: pnpm install --frozen-lockfile
+      # The tag must match package.json, or the registry and the repo disagree
+      # about what version this release is.
+      - name: Tag must match package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag $GITHUB_REF_NAME != package.json $PKG" >&2
+            exit 1
+          fi
+      # prepublishOnly runs check + build; run them explicitly so a red gate
+      # fails THIS job with readable logs, not inside publish's lifecycle hook.
+      - run: pnpm run check
+      - run: pnpm run test:coverage
+      - run: pnpm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
