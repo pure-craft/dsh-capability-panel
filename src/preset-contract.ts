@@ -33,13 +33,15 @@ export interface PresetMcpServer {
    */
   readonly path?: string;
   /**
-   * True when the host composition declares this server but it exposes no
-   * tools right now (an on-demand local service nobody started). The row
-   * exists so the stored default stays visible; `tools` then lists the names
-   * already stored off for it, the only honest roster while it is down.
+   * True when the host composition declares this server but it currently
+   * registers no tools, so the row would otherwise vanish with its stored
+   * default. This is a PROVEN fact (declared + zero registered names), NOT a
+   * connection verdict: the panel cannot observe whether the service is down,
+   * mid-reconnect, or simply tool-less — dsh's MCP client keeps that in a
+   * closure. `tools` lists the names already stored off for it.
    */
   readonly unavailable?: boolean;
-  /** True when a host loader entry backs this server, so the panel can restart the connection on demand. */
+  /** True when a host loader entry backs this server, so the panel can reload its plugin instance on demand. */
   readonly reconnectable?: boolean;
 }
 

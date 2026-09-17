@@ -150,10 +150,24 @@ describe('MCP source detection', () => {
   });
 });
 
+describe('displayPath home abbreviation boundary', () => {
+  it('does not abbreviate a sibling that merely shares the home prefix', () => {
+    const real = process.env['HOME'];
+    try {
+      process.env['HOME'] = '/home/user';
+      expect(displayPath('/home/user/skills/x')).toBe('~/skills/x');
+      expect(displayPath('/home/user2/skills/x')).toBe('/home/user2/skills/x');
+      expect(displayPath('/home/user')).toBe('~');
+    } finally {
+      if (real === undefined) delete process.env['HOME'];
+      else process.env['HOME'] = real;
+    }
+  });
+});
+
 describe('readMcp offline declared servers', () => {
   const mcpClientEntry = (serverName: string) => ({
-    name: '@deepseek-ai/dsh-mcp-client',
-    options: { config: { serverName } },
+    options: { name: '@deepseek-ai/dsh-mcp-client', config: { serverName } },
   });
 
   it('keeps a declared-but-unregistered server as an unavailable row', () => {

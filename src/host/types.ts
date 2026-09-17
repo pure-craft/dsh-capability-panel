@@ -21,10 +21,9 @@ export interface ServerMask {
  * re-init, fresh connection.
  */
 export interface LoaderEntryLike {
-  /** The plugin package name (e.g. '@deepseek-ai/dsh-mcp-client'). */
-  readonly name?: unknown;
   readonly disabled?: unknown;
-  readonly options?: { readonly id?: unknown; readonly config?: unknown };
+  /** The loader keeps the plugin package name and its config on `options`. */
+  readonly options?: { readonly id?: unknown; readonly name?: unknown; readonly config?: unknown };
   _dispose(): Promise<void>;
   refresh(): Promise<void>;
 }
@@ -146,7 +145,7 @@ export interface HostServices {
   };
   /** The cordis loader mixin every host context carries (entry inventory + hot-swap). */
   readonly loader?: LoaderLike;
-get(name: 'agents'): AgentsService | undefined;
+  get(name: 'agents'): AgentsService | undefined;
   get(name: 'agentPresets'): AgentPresetsService | undefined;
   get(name: 'settings'): SettingsService | undefined;
   get(name: 'skills'): SkillsService | undefined;

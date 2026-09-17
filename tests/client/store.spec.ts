@@ -50,6 +50,23 @@ beforeEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('reportActionError', () => {
+  it('sets the error slot without touching payload or loading', async () => {
+    const store = await loadStore();
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse(payloadOf('s-1')))));
+    await store.refresh('s-1');
+    const before = store.getSnapshot();
+    expect(before.error).toBeNull();
+
+    store.reportActionError('重载 mock-late 失败：HTTP 409');
+
+    const after = store.getSnapshot();
+    expect(after.error).toBe('重载 mock-late 失败：HTTP 409');
+    expect(after.payload).toBe(before.payload);
+    expect(after.loading).toBe(before.loading);
+  });
+});
+
 describe('toggle / close / subscribe', () => {
   it('toggles open both ways; close is a no-op when already closed', async () => {
     const store = await loadStore();

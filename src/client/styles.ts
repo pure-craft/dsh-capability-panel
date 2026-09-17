@@ -69,8 +69,14 @@ export const PANEL_CSS = [
   '.ci-preset-server-trigger:disabled{cursor:default}',
   '.ci-preset-group .ci-preset-tool-list{margin:0;padding-left:26px}',
   '.ci-preset-picker-label{display:grid;gap:6px;color:var(--dsw-alias-label-primary,#0f1115);font-weight:600}',
-  '.ci-preset-picker{height:34px;padding:0 10px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:8px;background-color:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#0f1115);font:inherit;font-weight:400}',
-  '.ci-preset-picker:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px}',
+  // The preset picker's trigger follows the host model selector exactly: a
+  // borderless pill, secondary label, soft hover fill, ring on keyboard focus.
+  '.ci-preset-picker-trigger{height:28px;display:flex;align-items:center;gap:4px;padding:0 4px 0 8px;border:none;border-radius:24px;background:transparent;color:var(--dsw-alias-label-secondary,#61666b);font-size:13px;font-weight:500;line-height:20px;cursor:pointer;outline:none;max-width:280px}',
+  '.ci-preset-picker-trigger:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
+  '.ci-preset-picker-trigger:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l3,rgba(0,0,0,.16))}',
+  '.ci-preset-picker-name{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}',
+  '.ci-preset-picker-chevron{color:var(--dsw-alias-label-caption,#81858c);flex:none;display:inline-grid;place-items:center;transition:transform .12s}',
+  '.ci-preset-picker-chevron-open{transform:rotate(180deg)}',
   '.ci-settings-subtitle{margin:0 0 6px;color:var(--dsw-alias-label-primary,#0f1115);font-size:14px;line-height:22px}',
   // Settings rows speak the composer panel's row language: compact padding,
   // a rounded hover background (`.ci-row-head` supplies both), and NO
@@ -91,12 +97,23 @@ export const PANEL_CSS = [
   '.ci-preset-kinds .ci-tab{flex:0 0 auto;padding:0 12px}',
   // Folder icon on source section headers: invisible until hover.
   '.ci-source-header:hover .ci-folder-icon{opacity:1 !important}',
-  // The reconnect affordance for a declared-but-offline MCP server.
-  '.ci-preset-reconnect{border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));background:transparent;color:var(--dsw-alias-label-secondary,#61666b);border-radius:6px;padding:2px 8px;font-size:12px;line-height:1.5;cursor:pointer;font-family:inherit}',
-  '.ci-preset-reconnect:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
-  '.ci-preset-reconnect:disabled{opacity:.6;cursor:progress}',
-  '.ci-preset-reconnect:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px}',
+  // The reconnect affordance for a declared-but-offline MCP server: a
+  // persistent bordered control (never hover-only), with a spinning glyph
+  // while the restart is in flight so the click visibly "does something".
+  '.ci-reconnect{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.14));background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-secondary,#61666b);border-radius:8px;padding:3px 9px;font-size:12px;line-height:1.4;cursor:pointer;font-family:inherit;flex:none}',
+  '.ci-reconnect:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06));color:var(--dsw-alias-label-primary,#0f1115)}',
+  '.ci-reconnect:disabled{opacity:.7;cursor:default}',
+  '.ci-reconnect:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:1px}',
+  '.ci-reconnect-glyph{display:inline-grid;place-items:center;width:12px;height:12px}',
+  '.ci-reconnect-busy .ci-reconnect-glyph{animation:ci-reconnect-spin .8s linear infinite}',
+  '@keyframes ci-reconnect-spin{to{transform:rotate(360deg)}}',
+  '@media (prefers-reduced-motion: reduce){.ci-reconnect-busy .ci-reconnect-glyph{animation:none}}',
   // Source divider rows inside a settings list: labels, not data rows.
   '.ci-source-divider{list-style:none}',
+  // Panel foot feedback link: quiet tertiary text, primary on hover/focus.
+  '.ci-feedback-link{display:inline-flex;align-items:center;gap:4px;color:var(--dsw-alias-label-tertiary,#8a8f98);font-size:12px;line-height:18px;text-decoration:none;cursor:pointer}',
+  '.ci-feedback-link:hover{color:var(--dsw-alias-label-primary,#0f1115);text-decoration:underline}',
+  '.ci-feedback-link:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:2px;border-radius:3px}',
+  '.ci-feedback-icon{display:inline-grid;place-items:center;flex:none}',
   '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',
 ].join('\n');

@@ -109,13 +109,15 @@ export interface McpServerEntry {
    */
   readonly path?: string;
   /**
-   * True when the host composition declares this server but it exposes no
-   * tools right now (an on-demand local service nobody started). The row
-   * exists so stored positions stay visible and the reconnect affordance
-   * stays reachable while the server is down.
+   * True when the host composition declares this server but it currently
+   * registers no tools. A PROVEN fact (declared + zero registered names), not
+   * a connection verdict: the panel cannot observe down vs mid-reconnect vs
+   * tool-less — dsh's MCP client keeps that state in a closure, and a dropped
+   * server even keeps its tools listed until it gives up. The row exists so
+   * stored positions stay visible and the reload affordance stays reachable.
    */
   readonly unavailable?: boolean;
-  /** True when a host loader entry backs this server, so the panel can restart the connection on demand. */
+  /** True when a host loader entry backs this server, so the panel can reload its plugin instance on demand. */
   readonly reconnectable?: boolean;
 }
 

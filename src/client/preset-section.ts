@@ -2,6 +2,9 @@ import * as React from 'react';
 import { Collapsible } from '@base-ui/react/collapsible';
 import { Input } from '@base-ui/react/input';
 import { Tabs } from '@base-ui/react/tabs';
+// Same host-graph discipline as the composer panel: the Menu primitive keeps
+// the picker's popup on the theme tokens a native <select> can never reach.
+import { IconChevronDownOutline14, IconFolderClose16, IconRefreshOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives';
 import { resolveDisclosure } from './disclosure.js';
 import { chevronIcon, disclosureRow } from './disclosure-row.js';
 import { capabilitySwitch } from './switch.js';
@@ -65,6 +68,11 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
   // exclusive tabs because it is a 360px popover; this panel is wide enough to
   // show all three at once, so "all" is the default and the tabs narrow it.
   const [kind, setKind] = React.useState<'all' | 'skills' | 'mcp' | 'system'>('all');
+  // The preset picker's popup is owner-controlled like every Menu consumer.
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+  // Which server is mid-reconnect: its button spins and disables until the
+  // request settles, so a click reads as "starting" not "nothing happened".
+  const [reconnecting, setReconnecting] = React.useState<string | null>(null);
 
   const selected = state.payload?.presets.find((preset) => preset.id === state.selectedId);
   const filtering = query.trim() !== '';
@@ -165,11 +173,8 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
             ? React.createElement(
                 'span',
                 { className: 'ci-folder-icon', style: { display: 'inline-grid', placeItems: 'center', opacity: 0, transition: 'opacity 0.15s' } },
-                React.createElement(
-                  'svg',
-                  { width: '12', height: '12', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
-                  React.createElement('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' }),
-                ),
+                // The host's own folder glyph, same as the session panel's dividers.
+                React.createElement(IconFolderClose16, { size: 12 }),
               )
             : null,
           `${label} (${items.length})`,
@@ -365,13 +370,20 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                 'button',
                 {
                   type: 'button',
-                  className: 'ci-preset-reconnect',
-                  disabled: state.loading,
-                  title: t('action.reconnect', { name: server.server }),
-                  'aria-label': t('action.reconnect', { name: server.server }),
-                  onClick: () => { void reconnectPresetServer(server.server); },
+                  className: `ci-reconnect${reconnecting === server.server ? ' ci-reconnect-busy' : ''}`,
+                  disabled: reconnecting !== null,
+                  title: reconnecting === server.server
+                    ? t('action.reload.ing', { name: server.server })
+                    : `${t('action.reload', { name: server.server })}\n${t('action.reloadHint')}`,
+                  'aria-label': t('action.reload', { name: server.server }),
+                  onClick: () => {
+                    if (reconnecting !== null) return;
+                    setReconnecting(server.server);
+                    void reconnectPresetServer(server.server).finally(() => { setTimeout(() => { setReconnecting(null); }, 2500); });
+                  },
                 },
-                t('action.reconnect.label'),
+                React.createElement('span', { className: 'ci-reconnect-glyph', 'aria-hidden': true }, React.createElement(IconRefreshOutline14, { size: 12 })),
+                t('action.reload.label'),
               )
               : null,
           ),
@@ -432,17 +444,41 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
             'div',
             { className: 'ci-preset-toolbar' },
             React.createElement(
-              'label',
+              'span',
               { className: 'ci-preset-picker-label' },
               React.createElement('span', null, t('preset.choose')),
+              // The model selector's language: a borderless pill trigger and a
+              // Menu the theme owns — a native <select> popup cannot follow
+              // --dsw-* tokens, and its bordered box read as foreign here.
               React.createElement(
-                'select',
+                Menu,
                 {
-                  className: 'ci-preset-picker',
-                  value: state.selectedId ?? '',
-                  onChange: (event: React.ChangeEvent<HTMLSelectElement>) => { selectPreset(event.target.value); },
+                  open: pickerOpen,
+                  anchor: React.createElement(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'ci-preset-picker-trigger',
+                      // Menu renders role="menu" (same as the host's model
+                      // selector); the visible text above is a layout sibling,
+                      // not a label, so name the trigger explicitly.
+                      'aria-haspopup': 'menu',
+                      'aria-expanded': pickerOpen,
+                      'aria-label': t('preset.choose'),
+                      onClick: () => { setPickerOpen((open) => !open); },
+                    },
+                    React.createElement('span', { className: 'ci-preset-picker-name' }, selected?.name ?? ''),
+                    React.createElement(
+                      'span',
+                      { className: `ci-preset-picker-chevron${pickerOpen ? ' ci-preset-picker-chevron-open' : ''}`, 'aria-hidden': true },
+                      React.createElement(IconChevronDownOutline14, { size: 14 }),
+                    ),
+                  ),
+                  items: state.payload.presets.map((preset) => ({ id: preset.id, label: preset.name })),
+                  ...(state.selectedId === null ? {} : { selectedId: state.selectedId }),
+                  onSelect: (id: string) => { selectPreset(id); setPickerOpen(false); },
+                  onClose: () => { setPickerOpen(false); },
                 },
-                ...state.payload.presets.map((preset) => React.createElement('option', { key: preset.id, value: preset.id }, preset.name)),
               ),
             ),
             React.createElement(Input, {

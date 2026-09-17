@@ -605,6 +605,27 @@ describe('tools/change remask for late-registering tools', () => {
     expect(fx.capabilities.state('session-1')).toBeUndefined();
   });
 
+  it('runs a trailing sweep for a change that landed mid-sweep', async () => {
+    // With restrictEmitsChange, the sweep's own restrict re-fires tools/change
+    // mid-sweep; the pending flag must schedule one more pass instead of
+    // dropping the event. The second pass re-runs remask even though nothing
+    // new needs masking.
+    const fx = fixture({ ...defaults(['mcp__late__run'], []), lateTools: ['mcp__late__run'], restrictEmitsChange: true });
+    await fx.emitCreated();
+    fx.arriveLateTools();
+    let remaskCalls = 0;
+    const original = fx.capabilities.remask.bind(fx.capabilities);
+    fx.capabilities.remask = async (sessionId: string, defaults: { tools: string[]; skills: string[] }, overrides: never) => {
+      remaskCalls += 1;
+      return original(sessionId, defaults, overrides);
+    };
+    await fx.emitToolsChange();
+    expect(remaskCalls).toBeGreaterThanOrEqual(2);
+    expect([...fx.capabilities.state('session-1')!.mcpServers.keys()]).toEqual(['late']);
+    // Idempotent: no duplicate masks from the extra sweep.
+    expect(fx.restrictDisposers).toHaveLength(1);
+  });
+
   it('contains the echo loop its own mask writes cause', async () => {
     const fx = fixture({ ...defaults(['mcp__late__run'], []), lateTools: ['mcp__late__run'], restrictEmitsChange: true });
     await fx.emitCreated();

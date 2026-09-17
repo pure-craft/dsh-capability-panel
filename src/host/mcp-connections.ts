@@ -26,7 +26,10 @@ function entryConfig(entry: LoaderEntryLike): Record<string, unknown> | undefine
 }
 
 function declaredServerName(entry: LoaderEntryLike): string | undefined {
-  if (entry.name !== MCP_CLIENT_NAME) return undefined;
+  // The loader stores the plugin package name on `options.name` (the field it
+  // imports and logs), NOT a top-level `name`. Reading the wrong one silently
+  // matches nothing.
+  if (entry.options?.name !== MCP_CLIENT_NAME) return undefined;
   const serverName = entryConfig(entry)?.['serverName'];
   return typeof serverName === 'string' && serverName !== '' ? serverName : undefined;
 }
@@ -43,6 +46,9 @@ export function readConfiguredMcpServers(ctx: HostServices): Set<string> {
   if (loader === undefined) return servers;
   try {
     for (const entry of loader.entries()) {
+      // A deliberately disabled entry is not "no tools registered" — it is
+      // off by config. Listing it would promise a reload that can only 409.
+      if (entry.disabled === true) continue;
       const name = declaredServerName(entry);
       if (name !== undefined) servers.add(name);
     }
@@ -67,21 +73,29 @@ function entryFor(ctx: HostServices, server: string): LoaderEntryLike | undefine
 }
 
 /**
- * Restart one declared MCP server: dispose its plugin fiber, then refresh the
- * entry — the loader's own hot-swap pair, which tears down the stale
- * connection (and its reconnect timer) and re-initializes the client against
- * a now-listening server.
+ * Reload one declared MCP server's plugin instance: dispose its fiber, then
+ * refresh the entry — the loader's own hot-swap pair. This is exactly a
+ * manual HMR reload: it tears down the current connection (and stops its
+ * reconnect timer) and re-initializes the client, which reconnects and re-syncs
+ * the whole tool generation.
  *
- * The tool registration lands asynchronously after refresh resolves (the
- * client connects on its own schedule); the registry's `tools/change`
- * broadcast is what re-applies stored defaults, so the caller needs no
- * readiness wait here.
+ * Honest scope of what this guarantees: only that a fresh connection attempt
+ * starts NOW instead of waiting out the client's backoff. It does NOT prove
+ * the server was "down" (the panel cannot observe connection state), and for a
+ * stdio transport the reload respawns the child process. Registration lands
+ * asynchronously after refresh resolves; the registry's `tools/change`
+ * broadcast re-applies stored defaults, so callers need no readiness wait.
+ *
+ * Assumes a globally unique serverName: the settings view is host-global, and
+ * dsh reserves one serverName per global mcp-client instance, so at most one
+ * entry matches here. Agent-scoped instances may reuse a name across Agents,
+ * but those are not reachable from this global walk.
  */
 export async function restartMcpServer(ctx: HostServices, server: string): Promise<void> {
   const entry = entryFor(ctx, server);
   if (entry === undefined) throw new HttpError(404, `MCP server "${server}" is not configured on this host`);
   if (entry.disabled === true) {
-    throw new HttpError(409, `MCP server "${server}" is disabled in the host composition; enable it there instead of reconnecting`);
+    throw new HttpError(409, `MCP server "${server}" is disabled in the host composition; enable it there instead of reloading it`);
   }
   await entry._dispose();
   await entry.refresh();

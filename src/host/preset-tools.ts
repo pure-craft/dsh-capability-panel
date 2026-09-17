@@ -212,10 +212,11 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
           ...(rawPath === undefined ? {} : { path: displayPath(rawPath) }),
         };
       });
-      // A declared server that registered nothing (its local process is down)
-      // would otherwise vanish with its stored default. The row stays: dimmed,
-      // marked unavailable, listing exactly the names this preset already
-      // stores off for it — the only honest roster while it is down.
+      // A declared server that currently registers no tools would otherwise
+      // vanish with its stored default. The row stays: dimmed, marked "no
+      // tools registered" (a proven fact — NOT a claim that the service is
+      // down, which the panel cannot observe), listing exactly the names this
+      // preset already stores off for it.
       const hostPath = dshHome();
       for (const server of configuredServers) {
         if (mcp.some((group) => group.server === server)) continue;

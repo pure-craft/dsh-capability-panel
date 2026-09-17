@@ -6,9 +6,9 @@ function entry(name: unknown, serverName: unknown, options: { disabled?: boolean
   const dispose = vi.fn(() => Promise.resolve());
   const refresh = vi.fn(() => Promise.resolve());
   return {
-    name,
     disabled: options.disabled === true,
-    options: { config: serverName === undefined ? undefined : { serverName } },
+    // The loader carries the package name on options.name, not a top-level field.
+    options: { name, config: serverName === undefined ? undefined : { serverName } },
     _dispose: dispose,
     refresh,
   };
@@ -28,13 +28,21 @@ describe('readConfiguredMcpServers', () => {
       entry('@deepseek-ai/dsh-mcp-client', undefined),
       entry('@deepseek-ai/dsh-mcp-client', ''),
       entry('@deepseek-ai/dsh-mcp-client', 42),
-      { name: '@deepseek-ai/dsh-mcp-client', options: { config: null }, _dispose: vi.fn(), refresh: vi.fn() },
-      { name: '@deepseek-ai/dsh-mcp-client', options: { config: ['ida'] }, _dispose: vi.fn(), refresh: vi.fn() },
-      { name: '@deepseek-ai/dsh-mcp-client', options: { config: 'ida' }, _dispose: vi.fn(), refresh: vi.fn() },
+      { options: { name: '@deepseek-ai/dsh-mcp-client', config: null }, _dispose: vi.fn(), refresh: vi.fn() },
+      { options: { name: '@deepseek-ai/dsh-mcp-client', config: ['ida'] }, _dispose: vi.fn(), refresh: vi.fn() },
+      { options: { name: '@deepseek-ai/dsh-mcp-client', config: 'ida' }, _dispose: vi.fn(), refresh: vi.fn() },
       // Duplicate declarations collapse to one name.
       entry('@deepseek-ai/dsh-mcp-client', 'ida'),
     ]));
     expect([...servers].sort()).toEqual(['dnspy', 'ida']);
+  });
+
+  it('skips deliberately disabled entries — they are off by config, not offline', () => {
+    const servers = readConfiguredMcpServers(hostWith([
+      entry('@deepseek-ai/dsh-mcp-client', 'ida'),
+      entry('@deepseek-ai/dsh-mcp-client', 'dnspy', { disabled: true }),
+    ]));
+    expect([...servers]).toEqual(['ida']);
   });
 
   it('returns empty without a loader and degrades when the walk fails', () => {

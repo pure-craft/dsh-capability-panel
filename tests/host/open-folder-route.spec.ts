@@ -328,8 +328,7 @@ describe('open-folder route', () => {
   it('restarts a configured MCP server over POST /reconnect', async () => {
     const calls: string[] = [];
     const target = {
-      name: '@deepseek-ai/dsh-mcp-client',
-      options: { config: { serverName: 'mock-late' } },
+      options: { name: '@deepseek-ai/dsh-mcp-client', config: { serverName: 'mock-late' } },
       _dispose: () => { calls.push('dispose'); return Promise.resolve(); },
       refresh: () => { calls.push('refresh'); return Promise.resolve(); },
     };

@@ -435,8 +435,7 @@ describe('preset tool settings', () => {
 
 describe('declared-but-offline servers in the preset listing', () => {
   const mcpClientEntry = (serverName: string) => ({
-    name: '@deepseek-ai/dsh-mcp-client',
-    options: { config: { serverName } },
+    options: { name: '@deepseek-ai/dsh-mcp-client', config: { serverName } },
   });
 
   it('keeps an offline declared server visible with its stored default', async () => {

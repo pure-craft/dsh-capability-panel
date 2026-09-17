@@ -29,7 +29,8 @@ export function parentDir(path: string): string {
 export function displayPath(path: string, cwd?: string): string {
   if (cwd !== undefined && cwd !== '' && path.startsWith(`${cwd}/`)) return path.slice(cwd.length + 1);
   const home = process.env['HOME'];
-  if (home !== undefined && home !== '' && path.startsWith(home)) return `~${path.slice(home.length)}`;
+  // Require a path boundary: /home/user2 must not abbreviate against /home/user.
+  if (home !== undefined && home !== '' && (path === home || path.startsWith(`${home}/`))) return `~${path.slice(home.length)}`;
   return path;
 }
 
@@ -250,11 +251,11 @@ export function readMcp(
       const rawPath = allGlobal ? dshHome() : presetPath;
       return { server: group.server, tools: entries, enabled, ...(configuredServers.has(group.server) ? { reconnectable: true } : {}), source, ...(rawPath === undefined ? {} : { path: displayPath(rawPath) }) };
     });
-    // A declared server that registered nothing (its local process is down)
-    // would vanish with every mask the session holds for it. The row stays:
-    // marked unavailable, listing exactly the names this session already
-    // stores off (the server mask's recorded roster first, then per-tool
-    // names) — the only honest roster while it is down.
+    // A declared server that currently registers no tools would vanish with
+    // every mask the session holds for it. The row stays: marked "no tools
+    // registered" (a proven fact — NOT a claim the service is down, which the
+    // panel cannot observe), listing exactly the names this session already
+    // stores off (the server mask's recorded roster first, then per-tool names).
     const hostPath = dshHome();
     for (const server of configuredServers) {
       if (groups.some((group) => group.server === server)) continue;

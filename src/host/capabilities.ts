@@ -502,7 +502,7 @@ export function createCapabilityController(
      * change would be I/O for nobody).
      */
     remask: (sessionId, defaults, overrides) => enqueue(sessionId, async () => {
-      if (defaults.tools.length > 0) await seed(sessionId, { tools: defaults.tools, skills: [] }, false);
+      if (defaults.tools.length > 0) await seed(sessionId, defaults, false);
       if (overrides !== undefined) {
         await restoreImpl(sessionId, { skills: {}, mcpServers: overrides.mcpServers, mcpTools: overrides.mcpTools, systemTools: overrides.systemTools });
       }
