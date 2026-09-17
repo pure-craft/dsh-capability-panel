@@ -8,6 +8,10 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-17
+
+Feature release: offline MCP visibility, late-registration defaults enforcement, and a restyled preset picker.
+
 ### Added
 
 - MCP servers declared in the host composition stay visible even when they currently register no tools (an on-demand local service that isn't running): the row lists the positions already stored off for it, marked honestly as "no tools registered", with a **Reload** button that hot-swaps the plugin instance to retry the connection now instead of waiting out the client's backoff. Both the session panel and Settings → Capability Panel show it.
@@ -71,7 +75,8 @@ Initial public release.
 - One-click `/skill-name` composer fill, name/description/state filtering, MCP tools grouped by server.
 - Loopback-only data route `/api/capability-panel` (+ `/stats`, `/presets`); panel copy in 中文 and English.
 
-[Unreleased]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/pure-craft/dsh-capability-panel/releases/tag/v1.0.0
