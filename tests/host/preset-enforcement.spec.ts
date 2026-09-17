@@ -24,14 +24,24 @@ interface FixtureOptions {
   skillGet?: unknown;
   agentCwd?: boolean;
   deferSkillGet?: boolean;
+  lateTools?: string[];
+  presentTools?: string[];
+  restrictEmitsChange?: boolean;
+  agentsListThrows?: boolean;
+  agentsGetThrows?: boolean;
+  noAgentId?: boolean;
+  noAgentPresets?: boolean;
 }
 
 function fixture(options: FixtureOptions = {}) {
   const restrictDisposers: ReturnType<typeof vi.fn>[] = [];
   const restrict = vi.fn((filter: { deny: readonly string[] }) => {
-    const dispose = vi.fn();
+    const dispose = vi.fn(() => {
+      if (options.restrictEmitsChange === true) for (const listener of [...toolsChangeListeners]) void listener();
+    });
     (dispose as unknown as { denied: readonly string[] }).denied = filter.deny;
     restrictDisposers.push(dispose);
+    if (options.restrictEmitsChange === true) for (const listener of [...toolsChangeListeners]) void listener();
     return dispose;
   });
   const registeredSkills: Record<string, unknown>[] = [];
@@ -69,10 +79,23 @@ function fixture(options: FixtureOptions = {}) {
   // lands: the mutation queue must hold the reseed behind the pending seed.
   let skillGetGate: (() => void) | undefined;
   const skillGetGated = (): void => { skillGetGate?.(); };
+  let lateArrived = false;
+  const arriveLateTools = (): void => { lateArrived = true; };
+  const toolsChangeListeners: (() => unknown)[] = [];
   const ctx = {
     get(name: string): unknown {
-      if (name === 'agentPresets') return { composedPreset: () => (options.presetId === undefined && !('presetId' in options) ? 'alpha' : options.presetId) };
-      if (name === 'agents') return options.noAgent === true ? undefined : { get: () => agent };
+      if (name === 'agents' && options.agentsGetThrows === true) throw new Error('registry gone');
+      if (name === 'agentPresets') return options.noAgentPresets === true ? undefined : { composedPreset: () => (options.presetId === undefined && !('presetId' in options) ? 'alpha' : options.presetId) };
+      if (name === 'agents') {
+        if (options.noAgent === true) return undefined;
+        return {
+          get: () => agent,
+          list: () => {
+            if (options.agentsListThrows === true) throw new Error('registry gone');
+            return options.noAgentId === true ? [{ ctx: agent.ctx }] : [agent];
+          },
+        };
+      }
       if (name === 'tools') {
         return {
           schemas: (scope?: unknown) => [
@@ -80,10 +103,14 @@ function fixture(options: FixtureOptions = {}) {
             { name: 'bash', description: 'shell' },
             { name: 'fetch', description: 'network' },
             { name: 'mcp__search__web', description: 'lookup' },
-            { name: 'mcp__search__image', description: 'images' },
             // Registry noise the seed must skip, and a tool only the global
             // catalog knows (a preset cannot scope to what an agent lacks).
             { name: 42 },
+            // Late-arriving tools model an on-demand MCP server connecting
+            // AFTER the session was created: absent from every schema list
+            // until lateToolsArrived flips.
+            ...(options.presentTools ?? []).map((name) => ({ name, description: 'extra' })),
+            ...(lateArrived ? (options.lateTools ?? []).map((name) => ({ name, description: 'late' })) : []),
             ...(scope === undefined ? [{ name: 'global_only', description: 'no agent scope' }] : []),
           ],
           guard: () => () => {},
@@ -113,6 +140,7 @@ function fixture(options: FixtureOptions = {}) {
     on(event: string, listener: (...args: unknown[]) => unknown) {
       if (event === 'agent/created') listeners.push(listener);
       if (event === 'agent-preset/selected') selectedListeners.push(listener);
+      if (event === 'tools/change') toolsChangeListeners.push(listener);
     },
     effect(callback: () => (() => void) | void) {
       const dispose = callback();
@@ -147,6 +175,10 @@ function fixture(options: FixtureOptions = {}) {
     },
     releaseSkillGet: skillGetGated,
     skillGetArmed: () => skillGetGate !== undefined,
+    arriveLateTools,
+    async emitToolsChange() {
+      await Promise.all(toolsChangeListeners.map((listener) => listener()));
+    },
     restrict,
     restrictDisposers,
     registerSkill,
@@ -174,7 +206,7 @@ const defaults = (tools: string[] = [], skills: string[] = []): { defaults: { to
 
 describe('preset enforcement', () => {
   it('seeds stored tool and skill defaults into the session state', async () => {
-    const fx = fixture(defaults(['bash', 'mcp__search__web', 'mcp__search__image'], ['writing']));
+    const fx = fixture({ ...defaults(['bash', 'mcp__search__web', 'mcp__search__image'], ['writing']), presentTools: ['mcp__search__image'] });
     await fx.emitCreated();
 
     const state = fx.capabilities.state('session-1');
@@ -190,7 +222,7 @@ describe('preset enforcement', () => {
   });
 
   it('skips re-seeding a server mask that already stands', async () => {
-    const fx = fixture(defaults(['mcp__search__web', 'mcp__search__image'], []));
+    const fx = fixture({ ...defaults(['mcp__search__web', 'mcp__search__image'], []), presentTools: ['mcp__search__image'] });
     await fx.emitCreated();
     await fx.emitCreated();
     const state = fx.capabilities.state('session-1')!;
@@ -203,11 +235,15 @@ describe('preset enforcement', () => {
     // Only one of the server's two tools is stored off: the mask must land in
     // mcpTools, not mcpServers — a server-level mask would deny the tool the
     // user never touched.
-    const fx = fixture(defaults(['mcp__search__web'], []));
+    const fx = fixture({ ...defaults(['mcp__search__web'], []), presentTools: ['mcp__search__image'] });
     await fx.emitCreated();
     const state = fx.capabilities.state('session-1')!;
     expect([...state.mcpTools.keys()]).toEqual(['mcp__search__web']);
     expect([...state.mcpServers.keys()]).toEqual([]);
+    // A second sweep with the same partial default re-uses the standing mask.
+    await fx.emitToolsChange();
+    expect(fx.restrictDisposers).toHaveLength(1);
+    expect([...fx.capabilities.state('session-1')!.mcpTools.keys()]).toEqual(['mcp__search__web']);
   });
 
   // The user's rule: a preset default is the starting point, and the session
@@ -394,19 +430,26 @@ describe('preset switch re-seeds the session', () => {
   });
 
   it('disposes the masks the old composition seeded before re-seeding', async () => {
-    const fx = fixture(defaults(['bash'], ['writing']));
+    const fx = fixture({
+      ...defaults(['bash', 'mcp__search__web', 'mcp__search__image', 'mcp__late__run'], ['writing']),
+      presentTools: ['mcp__search__image', 'mcp__late__run', 'mcp__late__sync'],
+    });
     await fx.emitCreated();
     const firstTool = fx.restrictDisposers[0]!;
+    const firstLate = fx.restrictDisposers[1]!;
+    const firstServer = fx.restrictDisposers[2]!;
     const firstSkill = fx.skillDisposers[0]!;
 
     await fx.emitSelected('session-1', 'cordis');
 
     // The original masks are gone (disposed), replaced by fresh ones.
-    expect(firstTool).toHaveBeenCalled();
-    expect(firstSkill).toHaveBeenCalled();
-    expect(fx.restrictDisposers).toHaveLength(2);
+    expect(firstTool).toHaveBeenCalledOnce();
+    expect(firstLate).toHaveBeenCalledOnce();
+    expect(firstServer).toHaveBeenCalledOnce();
+    expect(firstSkill).toHaveBeenCalledOnce();
+    expect(fx.restrictDisposers).toHaveLength(6);
     expect(fx.skillDisposers).toHaveLength(2);
-    expect(fx.restrictDisposers[1]).not.toHaveBeenCalled();
+    for (const fresh of fx.restrictDisposers.slice(3)) expect(fresh).not.toHaveBeenCalled();
     expect(fx.skillDisposers[1]).not.toHaveBeenCalled();
   });
 
@@ -513,6 +556,179 @@ describe('preset switch re-seeds the session', () => {
     // A settings read that explodes mid-switch leaves the session as composed.
     await expect(fx.emitSelected('session-1', 'cordis')).resolves.toBeUndefined();
     expect(fx.capabilities.state('session-1')).toBeUndefined();
+  });
+});
+
+describe('server-row enable sweeps per-tool masks', () => {
+  it('clears only that server and needs no server-level mask to exist', async () => {
+    const fx = fixture({
+      ...defaults(['mcp__search__web', 'mcp__late__run'], []),
+      presentTools: ['mcp__search__image', 'mcp__late__run', 'mcp__late__sync'],
+    });
+    await fx.emitCreated();
+    expect([...fx.capabilities.state('session-1')!.mcpTools.keys()]).toEqual(['mcp__late__run', 'mcp__search__web']);
+
+    // Enabling 'search' (no server-level mask) sweeps its own per-tool mask
+    // and leaves the other server's standing.
+    await fx.capabilities.set('session-1', 'mcp-server', 'search', true);
+    expect([...fx.capabilities.state('session-1')!.mcpTools.keys()]).toEqual(['mcp__late__run']);
+  });
+});
+
+describe('tools/change remask for late-registering tools', () => {
+  it('masks a default whose names only registered after the session started', async () => {
+    const fx = fixture({ ...defaults(['mcp__late__run'], []), lateTools: ['mcp__late__run'] });
+    await fx.emitCreated();
+    // Offline at seed: nothing masked yet.
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+
+    fx.arriveLateTools();
+    await fx.emitToolsChange();
+
+    expect([...fx.capabilities.state('session-1')!.mcpServers.keys()]).toEqual(['late']);
+  });
+
+  it('is a no-op when every name is already masked', async () => {
+    const fx = fixture({ ...defaults([], ['mcp__search__web']), lateTools: [] });
+    await fx.emitCreated();
+    const callsBefore = fx.restrictDisposers.length;
+    await fx.emitToolsChange();
+    await fx.emitToolsChange();
+    expect(fx.restrictDisposers).toHaveLength(callsBefore);
+  });
+
+  it('skips sessions with no tool positions stored', async () => {
+    const fx = fixture({ lateTools: ['mcp__late__run'] });
+    await fx.emitCreated();
+    fx.arriveLateTools();
+    await fx.emitToolsChange();
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+  });
+
+  it('runs a trailing sweep for a change that landed mid-sweep', async () => {
+    // With restrictEmitsChange, the sweep's own restrict re-fires tools/change
+    // mid-sweep; the pending flag must schedule one more pass instead of
+    // dropping the event. The second pass re-runs remask even though nothing
+    // new needs masking.
+    const fx = fixture({ ...defaults(['mcp__late__run'], []), lateTools: ['mcp__late__run'], restrictEmitsChange: true });
+    await fx.emitCreated();
+    fx.arriveLateTools();
+    let remaskCalls = 0;
+    const original = fx.capabilities.remask.bind(fx.capabilities);
+    fx.capabilities.remask = async (sessionId: string, defaults: { tools: string[]; skills: string[] }, overrides: never) => {
+      remaskCalls += 1;
+      return original(sessionId, defaults, overrides);
+    };
+    await fx.emitToolsChange();
+    expect(remaskCalls).toBeGreaterThanOrEqual(2);
+    expect([...fx.capabilities.state('session-1')!.mcpServers.keys()]).toEqual(['late']);
+    // Idempotent: no duplicate masks from the extra sweep.
+    expect(fx.restrictDisposers).toHaveLength(1);
+  });
+
+  it('contains the echo loop its own mask writes cause', async () => {
+    const fx = fixture({ ...defaults(['mcp__late__run'], []), lateTools: ['mcp__late__run'], restrictEmitsChange: true });
+    await fx.emitCreated();
+    fx.arriveLateTools();
+    // The remask's own restrict re-fires tools/change synchronously; without
+    // the guard this recurses until the stack blows. With it, one mask lands.
+    await fx.emitToolsChange();
+    expect([...fx.capabilities.state('session-1')!.mcpServers.keys()]).toEqual(['late']);
+    expect(fx.restrictDisposers).toHaveLength(1);
+  });
+
+  it('rebuilds a server mask when a reconnect registers a bigger roster', async () => {
+    // The deny list is fixed at registration: a server coming back with MORE
+    // tools than its mask names needs the mask re-created, or the new tools
+    // arrive uncovered.
+    const fx = fixture({ ...defaults(['mcp__search__web', 'mcp__search__image'], []), lateTools: ['mcp__search__image'] });
+    await fx.emitCreated();
+    // Only web is registered: the full-coverage default lands a server mask
+    // over just that name.
+    expect([...fx.capabilities.state('session-1')!.mcpServers.keys()]).toEqual(['search']);
+    const first = fx.restrictDisposers[0]!;
+
+    fx.arriveLateTools();
+    await fx.emitToolsChange();
+
+    expect(first).toHaveBeenCalledOnce();
+    expect(fx.restrictDisposers).toHaveLength(2);
+    expect(fx.restrictDisposers[1]).not.toHaveBeenCalled();
+    expect([...fx.capabilities.state('session-1')!.mcpServers.keys()]).toEqual(['search']);
+  });
+
+  it('promotes per-tool masks to a server-level mask when the default grows to full coverage', async () => {
+    // The server has two tools registered; the stored default covers only
+    // one, so the seed lands per-tool. The default then grows to the full
+    // roster (the user disabled the whole server in settings), and the next
+    // registry change must promote the mask: one server entry, no per-tool
+    // leftovers.
+    const fx = fixture({
+      ...defaults(['mcp__search__web', 'mcp__late__run'], []),
+      presentTools: ['mcp__search__image', 'mcp__late__run', 'mcp__late__sync'],
+    });
+    await fx.emitCreated();
+    expect([...fx.capabilities.state('session-1')!.mcpTools.keys()]).toEqual(['mcp__late__run', 'mcp__search__web']);
+
+    fx.setDefaults({ tools: ['mcp__search__web', 'mcp__search__image'], skills: [] });
+    await fx.emitToolsChange();
+
+    const state = fx.capabilities.state('session-1')!;
+    expect([...state.mcpServers.keys()]).toEqual(['search']);
+    // The OTHER server's per-tool mask is untouched by the promotion sweep.
+    expect([...state.mcpTools.keys()]).toEqual(['mcp__late__run']);
+  });
+});
+
+describe('tools/change remask sweep edge cases', () => {
+  it('replays tool overrides for a session that has no preset defaults', async () => {
+    const fx = fixture({
+      lateTools: ['mcp__late__run'],
+      overrides: { skills: {}, mcpServers: {}, mcpTools: { 'mcp__late__run': false }, systemTools: {} },
+    });
+    await fx.emitCreated();
+    fx.arriveLateTools();
+    await fx.emitToolsChange();
+    expect([...fx.capabilities.state('session-1')!.mcpTools.keys()]).toEqual(['mcp__late__run']);
+  });
+
+  it('ignores a change while the agents service or list is unavailable', async () => {
+    const fx = fixture({ noAgent: true, lateTools: ['mcp__late__run'] });
+    await expect(fx.emitToolsChange()).resolves.toBeUndefined();
+    const failing = fixture({ agentsListThrows: true, lateTools: ['mcp__late__run'] });
+    await expect(failing.emitToolsChange()).resolves.toBeUndefined();
+    expect(fx.restrictDisposers).toHaveLength(0);
+    expect(failing.restrictDisposers).toHaveLength(0);
+  });
+
+  it('skips an agent without a string id and a session with no positions', async () => {
+    const fx = fixture({ noAgentId: true, lateTools: ['mcp__late__run'] });
+    await fx.emitToolsChange();
+    expect(fx.restrictDisposers).toHaveLength(0);
+  });
+
+  it('skips a session whose preset cannot be resolved and contains a settings failure', async () => {
+    const fx = fixture({ noAgentPresets: true, lateTools: ['mcp__late__run'] });
+    await fx.emitToolsChange();
+    expect(fx.restrictDisposers).toHaveLength(0);
+
+    const failing = fixture({ defaultsThrow: true, lateTools: ['mcp__late__run'] });
+    await failing.emitToolsChange();
+    expect(failing.restrictDisposers).toHaveLength(0);
+  });
+
+  it('evaluates a system-tool-only override through the sweep', async () => {
+    const fx = fixture({
+      overrides: { skills: {}, mcpServers: {}, mcpTools: {}, systemTools: { bash: false } },
+    });
+    await fx.emitCreated();
+    await fx.emitToolsChange();
+    expect([...fx.capabilities.state('session-1')!.systemTools.keys()]).toEqual(['bash']);
+  });
+
+  it('contains a synchronous registry failure in the sweep prelude', async () => {
+    const fx = fixture({ agentsGetThrows: true });
+    await expect(fx.emitToolsChange()).resolves.toBeUndefined();
   });
 });
 

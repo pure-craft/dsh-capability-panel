@@ -77,4 +77,75 @@ export function registerPresetEnforcement(
       return undefined;
     }
   });
+
+  /**
+   * Re-mask when the tool registry changes. seed() can only mask names that
+   * are registered at that moment (tools.restrict refuses unknown names), so
+   * an on-demand MCP server that connects AFTER the session was created would
+   * otherwise arrive with every tool enabled, preset default or not. The
+   * registry broadcasts every layer change through this event — late
+   * registration, a reconnect's fresh generation, a teardown — and remask is
+   * idempotent over names already masked.
+   *
+   * The guard breaks the echo loop: our own restrict() calls re-emit
+   * tools/change, and without it every mask write would schedule another
+   * sweep. A change arriving mid-sweep is not lost, though: it is marked
+   * pending and one trailing sweep runs when the current one settles, so an
+   * external registration landing while a session's slow queue is still
+   * processing does not leave stale masks behind.
+   */
+  let remasking = false;
+  let pendingSweep = false;
+  ctx.on('tools/change', () => {
+    if (remasking) {
+      pendingSweep = true;
+      return undefined;
+    }
+    try {
+      const agents = ctx.get('agents');
+      if (agents === undefined || typeof agents.list !== 'function') return undefined;
+      return (async () => {
+        do {
+          remasking = true;
+          pendingSweep = false;
+          try {
+            let live;
+            try {
+              live = agents.list();
+            } catch {
+              // The registry is mid-reload; the next change event re-sweeps.
+              return;
+            }
+            for (const agent of live) {
+              try {
+                const sessionId = agent?.id;
+                if (typeof sessionId !== 'string') continue;
+                const presetId = ctx.get('agentPresets')?.composedPreset(agent.ctx);
+                const defaults = presetId === undefined ? undefined : presetTools.defaultsFor(presetId);
+                const overrides = sessionOverrides.overridesFor(sessionId);
+                const hasToolDefaults = defaults !== undefined && defaults.tools.length > 0;
+                const hasToolOverrides = overrides !== undefined
+                  && (Object.keys(overrides.mcpServers).length > 0
+                    || Object.keys(overrides.mcpTools).length > 0
+                    || Object.keys(overrides.systemTools).length > 0);
+                if (!hasToolDefaults && !hasToolOverrides) continue;
+                await capabilities.remask(
+                  sessionId,
+                  defaults ?? { tools: [], skills: [] },
+                  overrides,
+                );
+              } catch {
+                // One session whose stored positions cannot be read keeps its
+                // current masks; the sweep continues for the others.
+              }
+            }
+          } finally {
+            remasking = false;
+          }
+        } while (pendingSweep);
+      })();
+    } catch {
+      return undefined;
+    }
+  });
 }

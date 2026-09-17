@@ -2,9 +2,39 @@ import type { IncomingLike as BaseIncomingLike } from '../loopback.js';
 
 export type CapabilityKind = 'skill' | 'mcp-server' | 'mcp-tool' | 'system-tool';
 
+/**
+ * A server-level MCP mask and the exact tool names its deny list carries.
+ * The roster matters on re-mask: a server whose tool list GROWS while masked
+ * (a reconnect registering a new generation) needs its mask re-created with
+ * the fresh roster — the old deny list cannot cover names that did not exist.
+ */
+export interface ServerMask {
+  readonly dispose: () => void;
+  readonly names: readonly string[];
+}
+
+/**
+ * Structural view of one cordis loader entry: enough to read an MCP client's
+ * declared configuration and to restart its plugin instance. `_dispose` +
+ * `refresh` are the loader's own public hot-swap pair — the same two calls an
+ * HMR reload makes — so a restart reproduces exactly a reload: teardown,
+ * re-init, fresh connection.
+ */
+export interface LoaderEntryLike {
+  readonly disabled?: unknown;
+  /** The loader keeps the plugin package name and its config on `options`. */
+  readonly options?: { readonly id?: unknown; readonly name?: unknown; readonly config?: unknown };
+  _dispose(): Promise<void>;
+  refresh(): Promise<void>;
+}
+
+export interface LoaderLike {
+  entries(): Iterable<LoaderEntryLike>;
+}
+
 export interface SessionCapabilityState {
   readonly skills: Map<string, () => void>;
-  readonly mcpServers: Map<string, () => void>;
+  readonly mcpServers: Map<string, ServerMask>;
   readonly mcpTools: Map<string, () => void>;
   readonly systemTools: Map<string, () => void>;
   /**
@@ -19,6 +49,8 @@ export interface SessionCapabilityState {
 
 export interface AgentsService {
   get(sessionId: string): AgentLike | undefined;
+  /** All live agents, in registration order. */
+  list(): AgentLike[];
 }
 
 export interface AgentPresetLike {
@@ -111,6 +143,8 @@ export interface HostServices {
       handler: (req: IncomingLike, res: ServerResponseLike) => Promise<void> | void;
     }): () => void;
   };
+  /** The cordis loader mixin every host context carries (entry inventory + hot-swap). */
+  readonly loader?: LoaderLike;
   get(name: 'agents'): AgentsService | undefined;
   get(name: 'agentPresets'): AgentPresetsService | undefined;
   get(name: 'settings'): SettingsService | undefined;
@@ -130,6 +164,11 @@ export interface HostServices {
   on(
     event: 'agent-preset/selected',
     listener: (sessionId: unknown, presetId: unknown) => void | Promise<void>,
+  ): void;
+  /** Fired when the tool registry changes (registration, restriction, teardown). */
+  on(
+    event: 'tools/change',
+    listener: () => void | Promise<void>,
   ): void;
   on(
     event: 'tools/result',
@@ -170,6 +209,8 @@ export interface ScopedToolsRegistry {
 }
 
 export interface AgentLike {
+  /** The shared agent/session id. */
+  readonly id?: string;
   readonly session?: {
     readonly header?: { readonly cwd?: string };
     /**

@@ -108,6 +108,17 @@ export interface McpServerEntry {
    * to open the folder.
    */
   readonly path?: string;
+  /**
+   * True when the host composition declares this server but it currently
+   * registers no tools. A PROVEN fact (declared + zero registered names), not
+   * a connection verdict: the panel cannot observe down vs mid-reconnect vs
+   * tool-less — dsh's MCP client keeps that state in a closure, and a dropped
+   * server even keeps its tools listed until it gives up. The row exists so
+   * stored positions stay visible and the reload affordance stays reachable.
+   */
+  readonly unavailable?: boolean;
+  /** True when a host loader entry backs this server, so the panel can reload its plugin instance on demand. */
+  readonly reconnectable?: boolean;
 }
 
 export interface InspectorPayload {

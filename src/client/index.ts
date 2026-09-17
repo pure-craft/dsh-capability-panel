@@ -23,7 +23,7 @@
  * chips tint via color-mix on the same tokens, so dark mode stays free.
  */
 import type { McpServerEntry, SkillEntry, SkillLoadState, ToolEntry } from '../contract.js';
-import { subscribe, getSnapshot, toggle, close, refresh, reset, setCapability } from './store.js';
+import { subscribe, getSnapshot, toggle, close, refresh, reportActionError, reset, setCapability } from './store.js';
 import { filterPayload } from './filter.js';
 import { MCP_TOOL_ROOT_CLASS, ROW_HEADER_CLASS, ROW_ROOT_CLASS, resolveDisclosure } from './disclosure.js';
 import { LOCALE_NS, registerLocale } from './locale.js';
@@ -35,6 +35,9 @@ import { resetPresetTools } from './preset-store.js';
 
 const ROUTE = '/api/capability-panel';
 
+/** The plugin's issue tracker, surfaced as the panel foot's feedback link. */
+const FEEDBACK_URL = 'https://github.com/pure-craft/dsh-capability-panel/issues';
+
 // React comes through the module loader's `require`, which resolves the HOST's
 // copy — the runtime calls `apply(ctx, config)`, never `apply(ctx, react)`.
 // tsdown keeps this import external so no second React instance is bundled.
@@ -45,8 +48,10 @@ import * as React from 'react';
 import {
   IconChevronRightOutline14,
   IconContextInjectionOutline16,
+  IconFolderClose16,
   IconSendOutline14,
   IconSearchOutline16,
+  IconRefreshOutline14,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives';
 // Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
@@ -159,6 +164,17 @@ export function apply(ctx: SlotContext): void {
    *  ready for the user's own Enter. */
   const insertIcon = (size: number) => h(IconSendOutline14, { size });
 
+  /** Circular arrows: pull a declared-but-offline server's connection up now. */
+  const reconnectIcon = (size: number) => h(IconRefreshOutline14, { size });
+
+  /** The GitHub mark. Not in the host icon set (brand logos are not shipped
+   *  there), so this one path is inlined for the feedback link's recognizability. */
+  const githubIcon = (size: number) => h(
+    'svg',
+    { width: size, height: size, viewBox: '0 0 1024 1024', fill: 'currentColor', 'aria-hidden': true },
+    h('path', { d: 'M511.6 76.3C264.3 76.2 64 276.4 64 523.5 64 718.9 189.3 885 363.8 946c23.5 5.9 19.9-10.8 19.9-22.2v-77.5c-135.7 15.9-141.2-73.9-150.3-88.9C215 726 171.5 718 184.5 703c30.9-15.9 62.4 4 98.9 57.9 26.4 39.1 77.9 32.5 104 26 5.7-23.5 17.9-44.5 34.7-60.8-140.6-25.2-199.2-111-199.2-213 0-49.5 16.3-95 48.3-131.7-20.4-60.5 1.9-112.3 4.9-120 58.1-5.2 118.5 41.6 123.2 45.3 33-8.9 70.7-13.6 112.9-13.6 42.4 0 80.2 4.9 113.5 13.9 11.3-8.6 67.3-48.8 121.3-43.9 2.9 7.7 24.7 58.3 5.5 118 32.4 36.8 48.9 82.7 48.9 132.3 0 102.2-59 188.1-200 212.9 23.5 23.2 38.1 55.4 38.1 91v112.5c0.8 9 0 17.9 15 17.9 177.1-59.7 304.6-227 304.6-424.1 0-247.2-200.4-447.3-447.5-447.3z' }),
+  );
+
   ctx.slots.inject('settings.section', () =>
     ctx.slots.register(
       { name: 'settings.section', id: 'capability-panel', order: 25, label: () => t('preset.nav') },
@@ -178,6 +194,9 @@ export function apply(ctx: SlotContext): void {
       const [expanded, setExpanded] = react.useState<Record<string, boolean>>({});
       const [query, setQuery] = react.useState('');
       const [tab, setTab] = react.useState('skills');
+      // Which server is mid-reconnect: its button spins and disables until the
+      // request settles, so a click reads as "starting" not "nothing happened".
+      const [reconnecting, setReconnecting] = react.useState<string | null>(null);
       const sessionId = props.sessionId ?? null;
 
       // Refetch when the panel opens rather than polling: the answer is only
@@ -220,6 +239,37 @@ export function apply(ctx: SlotContext): void {
           }
         }).catch((error: unknown) => {
           console.warn('[capability-panel] open source folder request failed', error);
+        });
+      };
+      /**
+       * Pull a declared-but-offline server's connection up, then refresh:
+       * registration lands asynchronously, and the registry's tools/change
+       * broadcast is what re-applies this session's stored positions.
+       */
+      const reconnectServer = (server: string) => {
+        if (reconnecting !== null) return;
+        setReconnecting(server);
+        void fetch(`${ROUTE}/reconnect`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ server }),
+        }).then(async (response) => {
+          if (!response.ok) {
+            const detail = await response.text();
+            console.warn(`[capability-panel] reconnect failed (${response.status}): ${detail}`);
+            reportActionError(t('action.reload.failed', { name: server, error: `HTTP ${response.status}` }));
+          }
+          await refresh(sessionId);
+        }).catch((error: unknown) => {
+          console.warn('[capability-panel] reconnect request failed', error);
+          reportActionError(t('action.reload.failed', { name: server, error: error instanceof Error ? error.message : String(error) }));
+        }).finally(() => {
+          // The restart only kicks the connection attempt; the tools land a
+          // few seconds later via the client's own retry. Hold the spinner
+          // through a short beat so the state visibly settles rather than
+          // snapping back to "not connected" before registration arrives.
+          setTimeout(() => { setReconnecting(null); }, 2500);
         });
       };
       /**
@@ -294,12 +344,9 @@ export function apply(ctx: SlotContext): void {
                       transition: 'opacity 0.15s',
                     },
                   },
-                  // Minimal folder SVG, 12×12.
-                  h(
-                    'svg',
-                    { width: '12', height: '12', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
-                    h('path', { d: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z' }),
-                  ),
+                  // The host's own folder glyph — the same set every shipped
+                  // surface draws from, so it follows theme and density for free.
+                  h(IconFolderClose16, { size: 12 }),
                 )
               : null,
             `${label} (${count})`,
@@ -637,9 +684,42 @@ export function apply(ctx: SlotContext): void {
               h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
             ),
             nameText(server.server),
-            metaText(server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length })),
+            server.unavailable === true
+              ? // Nothing is registered, so a tool count would be a lie: the
+                // listed rows are this session's stored positions, not a
+                // roster. Report the state and offer the one action that can
+                // still change it.
+                h(
+                  'span',
+                  {
+                    className: 'ci-preset-badge',
+                    title: t('server.unavailableHint'),
+                    style: { flex: 'none' },
+                  },
+                  t('server.unavailable'),
+                )
+              : metaText(server.tools.length === 1 ? t('server.tool.one') : t('server.tools', { count: server.tools.length })),
             blockedChip(serverBlocked),
-            switchControl('mcp-server', server.server, server.enabled),
+            server.unavailable === true && server.reconnectable === true
+              ? h(
+                  'button',
+                  {
+                    type: 'button',
+                    // A persistent, bordered state control — not a hover-only
+                    // icon — so the row always offers its one honest action.
+                    className: `ci-reconnect${reconnecting === server.server ? ' ci-reconnect-busy' : ''}`,
+                    disabled: reconnecting !== null,
+                    'aria-label': t('action.reload', { name: server.server }),
+                    title: reconnecting === server.server
+                      ? t('action.reload.ing', { name: server.server })
+                      : `${t('action.reload', { name: server.server })}\n${t('action.reloadHint')}`,
+                    onClick: () => { reconnectServer(server.server); },
+                  },
+                  h('span', { className: 'ci-reconnect-glyph', 'aria-hidden': true }, reconnectIcon(12)),
+                  t('action.reload.label'),
+                )
+              : null,
+            server.unavailable === true ? null : switchControl('mcp-server', server.server, server.enabled),
           ),
           h(
             Collapsible.Panel,
@@ -918,6 +998,27 @@ export function apply(ctx: SlotContext): void {
 
               ...notices,
               ...body,
+
+              // A quiet feedback link at the panel foot: when the honest
+              // "no tools registered" state or anything else confuses a user,
+              // one click reaches the issue tracker. External, opens in a new
+              // tab; rel guards the reverse-tabnabbing vector. The host's own
+              // link glyph leads it (right-aligned so it never competes with
+              // the list above); label is fully localized via locale keys.
+              h(
+                'div',
+                { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '10px' } },
+                h('a', {
+                  href: FEEDBACK_URL,
+                  target: '_blank',
+                  rel: 'noopener noreferrer',
+                  className: 'ci-feedback-link',
+                  title: t('footer.feedbackHint'),
+                },
+                  h('span', { className: 'ci-feedback-icon', 'aria-hidden': true }, githubIcon(12)),
+                  t('footer.feedback'),
+                ),
+              ),
             ),
           ),
         ),

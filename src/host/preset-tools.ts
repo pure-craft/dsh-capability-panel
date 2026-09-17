@@ -1,5 +1,6 @@
 import { errorMessage, HttpError } from './errors.js';
 import { displayPath, dshHome, parentDir } from './catalog.js';
+import { readConfiguredMcpServers } from './mcp-connections.js';
 import type {
   AgentPresetLike,
   AgentPresetsService,
@@ -151,6 +152,7 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
       .map((p) => ({ key: p.name ?? p.id, path: p.path as string }));
     // Global tool names tell a host-composition MCP server from a
     // preset-scoped one, the same test the session payload uses.
+    const configuredServers = readConfiguredMcpServers(ctx);
     const globalNames = new Set<string>();
     for (const schema of tools.schemas()) {
       if (typeof schema.name === 'string' && schema.name.startsWith('mcp__')) globalNames.add(schema.name);
@@ -205,10 +207,36 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
           server: group.server,
           tools,
           enabled: tools.some((tool) => tool.enabled),
+          ...(configuredServers.has(group.server) ? { reconnectable: true } : {}),
           source: allGlobal ? 'host' : presetName,
           ...(rawPath === undefined ? {} : { path: displayPath(rawPath) }),
         };
       });
+      // A declared server that currently registers no tools would otherwise
+      // vanish with its stored default. The row stays: dimmed, marked "no
+      // tools registered" (a proven fact — NOT a claim that the service is
+      // down, which the panel cannot observe), listing exactly the names this
+      // preset already stores off for it.
+      const hostPath = dshHome();
+      for (const server of configuredServers) {
+        if (mcp.some((group) => group.server === server)) continue;
+        const prefix = `mcp__${server}__`;
+        mcp.push({
+          server,
+          tools: [...disabled]
+            .filter((name) => name.startsWith(prefix))
+            .sort()
+            .map((name) => row(name, name.slice(prefix.length))),
+          enabled: false,
+          unavailable: true,
+          reconnectable: true,
+          source: 'host',
+          ...(hostPath === undefined ? {} : { path: displayPath(hostPath) }),
+        });
+      }
+      // Declared servers sort in among the connected ones: the list is an
+      // inventory of what this preset can configure, not of what is up.
+      mcp.sort((a, b) => a.server.localeCompare(b.server));
       const systemTools = entries
         .filter((entry) => !entry.name.startsWith('mcp__'))
         .map((entry) => row(entry.name, entry.name));

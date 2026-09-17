@@ -24,6 +24,18 @@ export const zh: Record<string, string> = {
   'action.insert': '把 /{name} 填入输入框',
   'server.tools': '{count} 工具',
   'server.tool.one': '1 个工具',
+  // Honest wording only: the panel can prove "declared" and "no tools
+  // registered right now". It cannot observe connection state (dsh's MCP
+  // client keeps that in a closure), so it must not claim "offline",
+  // "connecting", or a failure reason. A dropped-but-retrying server also
+  // keeps its tools listed, so even tool-presence is not a liveness proof.
+  'server.unavailable': '无已注册工具',
+  'server.unavailableHint': '宿主配置里声明了这个服务器，但它当前没有注册任何工具。原因无法从面板判定（服务未启动、正在重连、或本就没有工具都可能）。若它是个本地按需服务，先把程序开起来。',
+  'action.reload': '重载 {name}',
+  'action.reload.label': '重载',
+  'action.reload.ing': '正在重载 {name}…',
+  'action.reloadHint': '重新加载该服务器的插件实例（等同一次热重载）：会断开并重连。对 stdio 类型的服务，这会重启其子进程。',
+  'action.reload.failed': '重载 {name} 失败：{error}',
   'status.loading': '读取中…',
   'status.error': '读取失败：{error}（可尝试刷新页面；宿主改动需重启 dsh 后生效）',
   'empty.match': '无匹配项',
@@ -45,6 +57,8 @@ export const zh: Record<string, string> = {
   'filter.aria': '筛选技能与工具',
   'filter.clear': '清空筛选',
   'filter.count': '匹配 {shown} / {total} 项',
+  'footer.feedback': '反馈问题',
+  'footer.feedbackHint': '在 GitHub 上打开能力面板的 issue 页',
   'disclosure.expand': '展开 {subject} 的{detail}',
   'disclosure.collapse': '收起 {subject} 的{detail}',
   'disclosure.pinned': '{subject} 的{detail}（筛选时保持展开）',
@@ -85,6 +99,18 @@ export const en: Record<string, string> = {
   'action.insert': 'Insert /{name} into the composer',
   'server.tools': '{count} tools',
   'server.tool.one': '1 tool',
+  // Honest wording only: the panel can prove "declared" and "no tools
+  // registered right now". It cannot observe connection state (dsh's MCP
+  // client keeps that in a closure), so it must not claim "offline",
+  // "connecting", or a failure reason. A dropped-but-retrying server also
+  // keeps its tools listed, so even tool-presence is not a liveness proof.
+  'server.unavailable': 'no tools registered',
+  'server.unavailableHint': 'This host declares the server, but it currently registers no tools. The panel cannot tell why (service not started, mid-reconnect, or genuinely tool-less are all possible). If it is a local on-demand service, start its program first.',
+  'action.reload': 'Reload {name}',
+  'action.reload.label': 'Reload',
+  'action.reload.ing': 'Reloading {name}…',
+  'action.reloadHint': 'Reload this server’s plugin instance (equivalent to one hot reload): it disconnects and reconnects. For a stdio service this restarts its child process.',
+  'action.reload.failed': 'Failed to reload {name}: {error}',
   'status.loading': 'Loading…',
   'status.error': 'Failed to load: {error} (try refreshing the page; host changes take effect after a dsh restart)',
   'empty.match': 'No matches',
@@ -106,6 +132,8 @@ export const en: Record<string, string> = {
   'filter.aria': 'Filter skills and tools',
   'filter.clear': 'Clear filter',
   'filter.count': '{shown} / {total} matched',
+  'footer.feedback': 'Report an issue',
+  'footer.feedbackHint': 'Open the capability panel’s issues on GitHub',
   'disclosure.expand': 'Expand {detail} for {subject}',
   'disclosure.collapse': 'Collapse {detail} for {subject}',
   'disclosure.pinned': '{detail} for {subject} (kept open while filtering)',

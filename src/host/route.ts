@@ -2,6 +2,7 @@ import { isLoopback } from '../loopback.js';
 import { buildPayload, EMPTY_STATE, parentDir } from './catalog.js';
 import type { CapabilityController } from './capabilities.js';
 import { errorMessage, HttpError } from './errors.js';
+import { restartMcpServer } from './mcp-connections.js';
 import { openFolder } from './open-folder.js';
 import type { PresetToolController } from './preset-tools.js';
 import type { SessionOverrideStore } from './session-overrides.js';
@@ -141,6 +142,29 @@ export function createRouteHandler(
         }
         const snapshot = stats.read();
         json(res, 200, { logFile: stats.file, blocked: blockedCounts, records: snapshot.records, ...(snapshot.warnings.length > 0 ? { warnings: snapshot.warnings } : {}) }, true);
+        return;
+      }
+      if (url.pathname === `${ROUTE}/reconnect`) {
+        if (req.method !== 'POST') {
+          res.writeHead(405, { allow: 'POST', 'content-type': 'text/plain; charset=utf-8' });
+          res.end('method not allowed');
+          return;
+        }
+        if (!validatePresetContentType(req, res)) return;
+        const body = await readRequestBody(req);
+        if (body === null || typeof body !== 'object') {
+          json(res, 400, { error: 'invalid request body' });
+          return;
+        }
+        const record = body as { server?: unknown };
+        if (typeof record.server !== 'string' || record.server === '') {
+          json(res, 400, { error: 'server is required' });
+          return;
+        }
+        // Restart the entry; tool registration lands asynchronously and the
+        // registry's tools/change broadcast re-applies stored defaults.
+        await restartMcpServer(services, record.server);
+        json(res, 200, { ok: true, server: record.server });
         return;
       }
       if (url.pathname === `${ROUTE}/open-folder`) {

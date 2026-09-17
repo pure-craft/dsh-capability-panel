@@ -64,7 +64,15 @@ function parseMcpServerEntry(value: unknown): McpServerEntry | null {
   }
   const source = optString(value['source']);
   const path = optString(value['path']);
-  return { server: value['server'], enabled: value['enabled'], tools, ...(source === undefined ? {} : { source }), ...(path === undefined ? {} : { path }) };
+  return {
+    server: value['server'],
+    enabled: value['enabled'],
+    tools,
+    ...(source === undefined ? {} : { source }),
+    ...(path === undefined ? {} : { path }),
+    ...(value['unavailable'] === true ? { unavailable: true } : {}),
+    ...(value['reconnectable'] === true ? { reconnectable: true } : {}),
+  };
 }
 
 function parseBlocked(value: unknown): Record<string, number> | null {

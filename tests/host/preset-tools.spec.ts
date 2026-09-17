@@ -20,6 +20,7 @@ interface FixtureOptions {
   presetPath?: string;
   presetMcpTool?: boolean;
   richSkills?: boolean;
+  loaderEntries?: unknown[];
 }
 
 function fixture(options: FixtureOptions = {}) {
@@ -103,6 +104,7 @@ function fixture(options: FixtureOptions = {}) {
     };
   }
   const ctx = {
+    ...(options.loaderEntries === undefined ? {} : { loader: { entries: () => options.loaderEntries as never } }),
     get: (name: string) => services[name],
   };
   return {
@@ -428,5 +430,59 @@ describe('preset tool settings', () => {
     const local = listed.presets[0]!.mcp.find((server) => server.server === 'local');
     expect(local).toMatchObject({ source: 'alpha' });
     expect(local).not.toHaveProperty('path');
+  });
+});
+
+describe('declared-but-offline servers in the preset listing', () => {
+  const mcpClientEntry = (serverName: string) => ({
+    options: { name: '@deepseek-ai/dsh-mcp-client', config: { serverName } },
+  });
+
+  it('keeps an offline declared server visible with its stored default', async () => {
+    const fx = fixture({ loaderEntries: [mcpClientEntry('mock-late')] });
+    fx.values.presets['alpha'] = ['bash', 'mcp__mock-late__ping', 'mcp__mock-late__echo'];
+    const payload = await fx.controller.list();
+    const offline = payload.presets[0]?.mcp.find((s) => s.server === 'mock-late');
+    expect(offline).toMatchObject({
+      enabled: false,
+      unavailable: true,
+      reconnectable: true,
+      source: 'host',
+    });
+    expect(offline?.tools.map((t) => t.label)).toEqual(['echo', 'ping']);
+    expect(offline?.tools.every((t) => t.enabled === false)).toBe(true);
+  });
+
+  it('shows an empty roster for an offline server with nothing stored', async () => {
+    const fx = fixture({ loaderEntries: [mcpClientEntry('bare')] });
+    const payload = await fx.controller.list();
+    expect(payload.presets[0]?.mcp.find((s) => s.server === 'bare'))
+      .toMatchObject({ unavailable: true, tools: [] });
+  });
+
+  it('omits the offline row path when no home is known', async () => {
+    const fx = fixture({ loaderEntries: [mcpClientEntry('bare')] });
+    const realDsh = process.env['DSH_HOME'];
+    const realHome = process.env['HOME'];
+    try {
+      delete process.env['DSH_HOME'];
+      delete process.env['HOME'];
+      const payload = await fx.controller.list();
+      expect(payload.presets[0]?.mcp.find((s) => s.server === 'bare')).not.toHaveProperty('path');
+    } finally {
+      if (realDsh === undefined) delete process.env['DSH_HOME'];
+      else process.env['DSH_HOME'] = realDsh;
+      if (realHome === undefined) delete process.env['HOME'];
+      else process.env['HOME'] = realHome;
+    }
+  });
+
+  it('does not duplicate an offline row for a server that IS registered', async () => {
+    const fx = fixture({ loaderEntries: [mcpClientEntry('search')] });
+    const payload = await fx.controller.list();
+    const rows = payload.presets[0]?.mcp.filter((s) => s.server === 'search') ?? [];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveProperty('unavailable');
+    expect(rows[0]).toMatchObject({ reconnectable: true });
   });
 });

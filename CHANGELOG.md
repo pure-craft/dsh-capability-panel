@@ -8,8 +8,19 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+### Added
+
+- MCP servers declared in the host composition stay visible even when they currently register no tools (an on-demand local service that isn't running): the row lists the positions already stored off for it, marked honestly as "no tools registered", with a **Reload** button that hot-swaps the plugin instance to retry the connection now instead of waiting out the client's backoff. Both the session panel and Settings → Capability Panel show it.
+- A GitHub feedback link sits at the foot of the session panel.
+
+### Changed
+
+- The preset picker in Settings → Capability Panel is now a borderless pill with a theme-owned popup menu, matching the host's model selector instead of the native `<select>`.
+
 ### Fixed
 
+- Tools that register mid-session (an on-demand MCP server connecting after the session was created) no longer bypass the preset's stored defaults: registry changes now re-apply the session's masks, idempotently and per-session serialized.
+- Enabling an MCP server from its row now also clears per-tool masks a partial default left behind — previously the row read on while those tools stayed denied.
 - MCP server defaults seeded by a preset now display correctly in the session panel: a stored default that covers every tool a server exposes registers as a server-level mask (what the server row reads), while a partial default stays per-tool. Previously the per-tool restricts did deny the calls, but the server row read the server-level map and showed the server on.
 
 ## [1.1.1] - 2026-09-11

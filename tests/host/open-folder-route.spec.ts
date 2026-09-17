@@ -10,6 +10,7 @@ import { createRouteHandler } from '../../src/host/route.js';
 const openFolderMock = vi.mocked(openFolder);
 
 interface FixtureOptions {
+  loaderEntries?: unknown[];
   skillsList?: unknown[];
   skillsListThrows?: boolean;
   noSkillsService?: boolean;
@@ -32,6 +33,9 @@ function fixture(options: FixtureOptions = {}) {
       : Promise.resolve(options.agentPresetsList ?? []),
   };
   const services = {
+    loader: options.loaderEntries === undefined
+      ? undefined
+      : { entries: () => options.loaderEntries as never },
     get(name: string): unknown {
       if (name === 'skills') return options.noSkillsService === true ? undefined : skills;
       if (name === 'agents') return options.noAgentsService === true ? undefined : { get: () => options.agent };
@@ -42,7 +46,7 @@ function fixture(options: FixtureOptions = {}) {
   const payload = { presets: [], writable: true };
   const handler = createRouteHandler(
     services as never,
-    { states: new Map(), state: () => undefined, set: () => Promise.resolve(), seed: () => Promise.resolve(), restore: () => Promise.resolve(), reseed: () => Promise.resolve() },
+    { states: new Map(), state: () => undefined, set: () => Promise.resolve(), seed: () => Promise.resolve(), restore: () => Promise.resolve(), reseed: () => Promise.resolve(), remask: () => Promise.resolve() },
     { file: '/tmp/stats', read: () => ({ blocked: {}, records: [], warnings: [] }) } as never,
     {},
     { list: () => Promise.resolve(payload), set: () => Promise.resolve(payload), setServer: () => Promise.resolve(payload), setSkill: () => Promise.resolve(payload), defaultsFor: () => undefined },
@@ -51,11 +55,11 @@ function fixture(options: FixtureOptions = {}) {
   return { handler };
 }
 
-async function call(fx: ReturnType<typeof fixture>, body?: unknown, method = 'POST', contentType = 'application/json') {
+async function call(fx: ReturnType<typeof fixture>, body?: unknown, method = 'POST', contentType = 'application/json', url = '/api/capability-panel/open-folder') {
   const listeners = new Map<string, ((value?: unknown) => void)[]>();
   const req = {
     method,
-    url: '/api/capability-panel/open-folder',
+    url,
     headers: { host: '127.0.0.1:3080', 'content-type': contentType },
     socket: { remoteAddress: '127.0.0.1' },
     on(event: string, listener: (value?: unknown) => void) {
@@ -319,6 +323,56 @@ describe('open-folder route', () => {
     const fx = fixture({ agentPresetsListThrows: true });
     const result = await call(fx, { source: 'runtime' });
     expect(result.status).toBe(404);
+  });
+
+  it('restarts a configured MCP server over POST /reconnect', async () => {
+    const calls: string[] = [];
+    const target = {
+      options: { name: '@deepseek-ai/dsh-mcp-client', config: { serverName: 'mock-late' } },
+      _dispose: () => { calls.push('dispose'); return Promise.resolve(); },
+      refresh: () => { calls.push('refresh'); return Promise.resolve(); },
+    };
+    const fx = fixture({ loaderEntries: [target] });
+    const listeners = new Map<string, ((value?: unknown) => void)[]>();
+    const req = {
+      method: 'POST',
+      url: '/api/capability-panel/reconnect',
+      headers: { host: '127.0.0.1:3080', 'content-type': 'application/json' },
+      socket: { remoteAddress: '127.0.0.1' },
+      on(event: string, listener: (value?: unknown) => void) {
+        const bucket = listeners.get(event) ?? [];
+        bucket.push(listener);
+        listeners.set(event, bucket);
+        return req;
+      },
+    };
+    let status = 0;
+    let text = '';
+    const pending = fx.handler(req, {
+      writeHead(code: number) { status = code; },
+      end(chunk?: string) { text = chunk ?? ''; },
+    });
+    for (const listener of listeners.get('data') ?? []) listener(JSON.stringify({ server: 'mock-late' }));
+    for (const listener of listeners.get('end') ?? []) listener();
+    await pending;
+    expect(status).toBe(200);
+    expect(JSON.parse(text)).toEqual({ ok: true, server: 'mock-late' });
+    expect(calls).toEqual(['dispose', 'refresh']);
+  });
+
+  it('rejects reconnect with bad input or an unconfigured server', async () => {
+    const url = '/api/capability-panel/reconnect';
+    const fx = fixture({ loaderEntries: [] });
+    const bad = await call(fx, { server: 'ghost' }, 'POST', 'application/json', url);
+    expect(bad.status).toBe(404);
+    const noServer = await call(fx, {}, 'POST', 'application/json', url);
+    expect(noServer.status).toBe(400);
+    const nullBody = await call(fx, null, 'POST', 'application/json', url);
+    expect(nullBody.status).toBe(400);
+    const get = await call(fx, undefined, 'GET', 'application/json', url);
+    expect(get.status).toBe(405);
+    const wrongType = await call(fx, { server: 'mock-late' }, 'POST', 'text/plain', url);
+    expect(wrongType.status).toBe(415);
   });
 
   it('reports 500 when the opener fails', async () => {

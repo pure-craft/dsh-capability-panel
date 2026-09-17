@@ -44,6 +44,23 @@ describe('preset skill provenance fields', () => {
   });
 });
 
+describe('preset MCP server offline fields', () => {
+  const base = { server: 'x', enabled: false, tools: [] };
+
+  it('carries unavailable and reconnectable when present', () => {
+    const parsed = parsePresetToolPayload(withServer({ ...base, unavailable: true, reconnectable: true }));
+    expect(parsed?.presets[0]?.mcp[0]).toMatchObject({ unavailable: true, reconnectable: true });
+    const plain = parsePresetToolPayload(withServer(base));
+    expect(plain?.presets[0]?.mcp[0]).not.toHaveProperty('unavailable');
+    expect(plain?.presets[0]?.mcp[0]).not.toHaveProperty('reconnectable');
+  });
+
+  it('rejects non-boolean unavailable or reconnectable', () => {
+    expect(parsePresetToolPayload(withServer({ ...base, unavailable: 'yes' }))).toBeNull();
+    expect(parsePresetToolPayload(withServer({ ...base, reconnectable: 1 }))).toBeNull();
+  });
+});
+
 describe('preset MCP server source fields', () => {
   const base = { server: 'search', enabled: true, tools: [] };
 

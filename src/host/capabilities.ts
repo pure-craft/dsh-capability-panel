@@ -51,6 +51,13 @@ export interface CapabilityController {
    * overrides land again.
    */
   reseed(sessionId: string, defaults: PresetDefaults, overrides: SessionOverrideState | undefined): Promise<void>;
+  /**
+   * Re-apply the tool masks a session should hold, for names that exist NOW
+   * but did not at seed time (an on-demand MCP server whose local process
+   * just connected). Idempotent: seed and restore skip names already masked.
+   * Tool-only — skills do not late-register the way reconnecting tools do.
+   */
+  remask(sessionId: string, defaults: PresetDefaults, overrides: SessionOverrideState | undefined): Promise<void>;
 }
 
 function renderDisabledNote(state: SessionCapabilityState): string {
@@ -193,13 +200,26 @@ export function createCapabilityController(
   const setServer = (sessionId: string, server: string, enabled: boolean): void => {
     const state = stateFor(sessionId);
     const existing = state.mcpServers.get(server);
-    if (enabled && existing !== undefined) {
-      existing();
-      state.mcpServers.delete(server);
+    if (enabled) {
+      // Enabling from the server row must clear EVERY mask under this server:
+      // the server-level entry AND any per-tool entries a partial preset
+      // default (or per-tool switch) left behind — otherwise the row reads on
+      // while those tools stay denied.
+      const prefix = `mcp__${server}__`;
+      for (const [name, dispose] of [...state.mcpTools]) {
+        if (name.startsWith(prefix)) {
+          dispose();
+          state.mcpTools.delete(name);
+        }
+      }
+      if (existing !== undefined) {
+        existing.dispose();
+        state.mcpServers.delete(server);
+      }
       return;
     }
+    if (existing !== undefined) return;
     const { agent, tools } = getAgentTools(sessionId);
-    if (enabled || existing !== undefined) return;
     const toolService = ctx.get('tools');
     if (toolService === undefined) throw new HttpError(503, 'tools service unavailable');
     const prefix = `mcp__${server}__`;
@@ -207,7 +227,7 @@ export function createCapabilityController(
       .map((schema) => schema.name)
       .filter((name): name is string => typeof name === 'string' && name.startsWith(prefix));
     if (names.length === 0) throw new HttpError(404, `MCP server "${server}" exposes no tools`);
-    state.mcpServers.set(server, tools.restrict({ deny: names }));
+    state.mcpServers.set(server, { dispose: tools.restrict({ deny: names }), names });
     ensurePromptNote(agent, state);
   };
 
@@ -215,16 +235,20 @@ export function createCapabilityController(
     const state = stateFor(sessionId);
     const map = system ? state.systemTools : state.mcpTools;
     const existing = map.get(name);
-    if (enabled && existing !== undefined) {
-      existing();
-      map.delete(name);
+    if (enabled) {
+      // Enabling is a pure state cleanup: an unmasked tool needs no services
+      // (a server-row enable may already have swept this tool's mask).
+      if (existing !== undefined) {
+        existing();
+        map.delete(name);
+      }
       return;
     }
+    if (existing !== undefined) return;
     if (system && name === RESERVED_TOOL) {
       throw new HttpError(409, 'run_code is the reserved Code Mode transport and cannot be restricted');
     }
     const { agent, tools } = getAgentTools(sessionId);
-    if (enabled || existing !== undefined) return;
     const toolService = ctx.get('tools');
     if (toolService === undefined) throw new HttpError(503, 'tools service unavailable');
     const globalNames = new Set(
@@ -250,15 +274,16 @@ export function createCapabilityController(
 
   ctx.effect(() => () => {
     for (const state of states.values()) {
-      for (const map of [state.skills, state.mcpServers, state.mcpTools, state.systemTools]) {
-        for (const dispose of map.values()) dispose();
-      }
+      for (const dispose of state.skills.values()) dispose();
+      for (const mask of state.mcpServers.values()) mask.dispose();
+      for (const dispose of state.mcpTools.values()) dispose();
+      for (const dispose of state.systemTools.values()) dispose();
       state.noteDispose?.();
     }
     states.clear();
   }, 'capability-panel: capability masks');
 
-  const seed = async (sessionId: string, defaults: PresetDefaults): Promise<void> => {
+  const seed = async (sessionId: string, defaults: PresetDefaults, includeSkills = true): Promise<void> => {
     const agent = ctx.get('agents')?.get(sessionId);
     if (agent === undefined) return;
     // The state is created on the first mask that actually lands: a session
@@ -306,8 +331,25 @@ export function createCapabilityController(
         const full = fullByServer.get(group.server)!;
         const coversAll = full.every((tool) => group.tools.includes(tool));
         if (coversAll) {
-          if (state?.mcpServers.has(group.server) === true) continue;
-          ensureState().mcpServers.set(group.server, scopedTools.restrict({ deny: full.map((tool) => `mcp__${group.server}__${tool}`) }));
+          const st = ensureState();
+          const prefix = `mcp__${group.server}__`;
+          const fullNames = full.map((tool) => `${prefix}${tool}`);
+          const existingMask = st.mcpServers.get(group.server);
+          // A standing mask whose deny list predates a roster growth (the
+          // server reconnected with MORE tools) cannot cover the new names:
+          // replace it with the fresh roster.
+          if (existingMask !== undefined && fullNames.every((name) => existingMask.names.includes(name))) continue;
+          // Promote any per-tool masks an earlier partial application left
+          // (e.g. the server was mid-startup at seed time) into the
+          // server-level entry — one owner per server, no double bookkeeping.
+          for (const [name, dispose] of [...st.mcpTools]) {
+            if (name.startsWith(prefix)) {
+              dispose();
+              st.mcpTools.delete(name);
+            }
+          }
+          existingMask?.dispose();
+          st.mcpServers.set(group.server, { dispose: scopedTools.restrict({ deny: fullNames }), names: fullNames });
           maskedAny = true;
           continue;
         }
@@ -322,7 +364,7 @@ export function createCapabilityController(
 
     const scopedSkills = agent.ctx?.get('skills') as ScopedSkillsRegistry | undefined;
     const skillsService = ctx.get('skills');
-    if (scopedSkills !== undefined && skillsService !== undefined) {
+    if (includeSkills && scopedSkills !== undefined && skillsService !== undefined) {
       const cwd = agent.session?.header?.cwd;
       const lookup = { ...(cwd === undefined ? {} : { cwd }), scope: agent };
       // Read every original concurrently: each get is an I/O read, and the
@@ -433,8 +475,11 @@ export function createCapabilityController(
     reseed: (sessionId, defaults, overrides) => enqueue(sessionId, async () => {
       const st = states.get(sessionId);
       if (st !== undefined) {
+        for (const dispose of st.systemTools.values()) dispose();
+        for (const mask of st.mcpServers.values()) mask.dispose();
+        for (const dispose of st.mcpTools.values()) dispose();
+        for (const dispose of st.skills.values()) dispose();
         for (const map of [st.systemTools, st.mcpServers, st.mcpTools, st.skills]) {
-          for (const dispose of map.values()) dispose();
           map.clear();
         }
         st.noteDispose?.();
@@ -446,6 +491,21 @@ export function createCapabilityController(
       // deadlock the session's own queue.
       if (defaults.tools.length > 0 || defaults.skills.length > 0) await seed(sessionId, defaults);
       if (overrides !== undefined) await restoreImpl(sessionId, overrides);
+    }),
+    /**
+     * Re-apply the masks a session SHOULD hold, for names that exist NOW but
+     * did not at seed time — an on-demand MCP server whose local process just
+     * connected. Tool-only by design: seed and restore skip every name
+     * already masked, so this is a no-op when nothing new registered, and
+     * skills are excluded (they do not late-register the way a reconnecting
+     * server's tools do, and re-reading every default skill per registry
+     * change would be I/O for nobody).
+     */
+    remask: (sessionId, defaults, overrides) => enqueue(sessionId, async () => {
+      if (defaults.tools.length > 0) await seed(sessionId, defaults, false);
+      if (overrides !== undefined) {
+        await restoreImpl(sessionId, { skills: {}, mcpServers: overrides.mcpServers, mcpTools: overrides.mcpTools, systemTools: overrides.systemTools });
+      }
     }),
     set: (sessionId, kind, name, enabled) => enqueue(sessionId, async () => {
       stateFor(sessionId).userToggled.add(`${kind}:${name}`);

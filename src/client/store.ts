@@ -27,6 +27,14 @@ export function close(): void {
   if (snapshot.open) store.set({ ...snapshot, open: false });
 }
 
+/**
+ * Surface an action failure (e.g. a rejected reload) in the panel's existing
+ * error slot, without clobbering the payload or loading state.
+ */
+export function reportActionError(message: string): void {
+  store.set({ ...store.getSnapshot(), error: message });
+}
+
 const ROUTE = '/api/capability-panel';
 
 /**

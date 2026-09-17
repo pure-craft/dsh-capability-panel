@@ -150,6 +150,114 @@ describe('MCP source detection', () => {
   });
 });
 
+describe('displayPath home abbreviation boundary', () => {
+  it('does not abbreviate a sibling that merely shares the home prefix', () => {
+    const real = process.env['HOME'];
+    try {
+      process.env['HOME'] = '/home/user';
+      expect(displayPath('/home/user/skills/x')).toBe('~/skills/x');
+      expect(displayPath('/home/user2/skills/x')).toBe('/home/user2/skills/x');
+      expect(displayPath('/home/user')).toBe('~');
+    } finally {
+      if (real === undefined) delete process.env['HOME'];
+      else process.env['HOME'] = real;
+    }
+  });
+});
+
+describe('readMcp offline declared servers', () => {
+  const mcpClientEntry = (serverName: string) => ({
+    options: { name: '@deepseek-ai/dsh-mcp-client', config: { serverName } },
+  });
+
+  it('keeps a declared-but-unregistered server as an unavailable row', () => {
+    const degraded: string[] = [];
+    const tools = {
+      schemas: () => [{ name: 'mcp__yunxiao__tool_a', description: '' }],
+    };
+    const services = {
+      loader: { entries: () => [mcpClientEntry('mock-late'), mcpClientEntry('yunxiao') as never] },
+      get: () => tools,
+    };
+    const result = readMcp(
+      services as never,
+      degraded,
+      new Set(),
+      new Set(['mcp__mock-late__ping']),
+      undefined,
+      undefined,
+      undefined,
+      new Map([['mock-late', ['mcp__mock-late__ping', 'mcp__mock-late__echo']]]),
+    );
+    const offline = result.find((s) => s.server === 'mock-late');
+    expect(offline).toMatchObject({
+      enabled: false,
+      unavailable: true,
+      reconnectable: true,
+      source: 'host',
+    });
+    expect(offline?.tools.map((t) => t.label)).toEqual(['ping', 'echo']);
+    expect(offline?.tools.every((t) => t.enabled === false)).toBe(true);
+    // The connected server keeps its own row and gains reconnectable too.
+    const online = result.find((s) => s.server === 'yunxiao');
+    expect(online).toMatchObject({ enabled: true, reconnectable: true });
+    expect(online).not.toHaveProperty('unavailable');
+  });
+
+  it('falls back to per-tool stored names when no server roster was recorded', () => {
+    const degraded: string[] = [];
+    const tools = { schemas: () => [] };
+    const services = { loader: { entries: () => [mcpClientEntry('ghost')] }, get: () => tools };
+    const result = readMcp(services as never, degraded, new Set(), new Set(['mcp__ghost__b', 'mcp__ghost__a']));
+    const offline = result.find((s) => s.server === 'ghost');
+    expect(offline?.tools.map((t) => t.label)).toEqual(['a', 'b']);
+  });
+
+  it('omits the path when no home is known, and keeps it when DSH_HOME is set', () => {
+    const degraded: string[] = [];
+    const tools = { schemas: () => [] };
+    const services = { loader: { entries: () => [mcpClientEntry('bare')] }, get: () => tools };
+    const realDsh = process.env['DSH_HOME'];
+    const realHome = process.env['HOME'];
+    try {
+      delete process.env['DSH_HOME'];
+      delete process.env['HOME'];
+      const withoutHome = readMcp(services as never, degraded, new Set(), new Set());
+      expect(withoutHome.find((s) => s.server === 'bare')).not.toHaveProperty('path');
+      process.env['DSH_HOME'] = '/dsh-home';
+      const withHome = readMcp(services as never, degraded, new Set(), new Set());
+      expect(withHome.find((s) => s.server === 'bare')?.path).toBe('/dsh-home');
+    } finally {
+      if (realDsh === undefined) delete process.env['DSH_HOME'];
+      else process.env['DSH_HOME'] = realDsh;
+      if (realHome === undefined) delete process.env['HOME'];
+      else process.env['HOME'] = realHome;
+    }
+  });
+
+  it('renders an empty roster row when nothing is stored for the server', () => {
+    const degraded: string[] = [];
+    const tools = { schemas: () => [] };
+    const services = { loader: { entries: () => [mcpClientEntry('bare')] }, get: () => tools };
+    const result = readMcp(services as never, degraded, new Set(), new Set());
+    expect(result.find((s) => s.server === 'bare')).toMatchObject({ unavailable: true, tools: [] });
+  });
+
+  it('reads no configured servers when the loader walk throws', () => {
+    const degraded: string[] = [];
+    const tools = { schemas: () => [] };
+    const services = {
+      loader: {
+        *entries(): Generator<never> {
+          throw new Error('mid-reload');
+        },
+      } as never,
+      get: () => tools,
+    };
+    expect(readMcp(services as never, degraded, new Set(), new Set())).toEqual([]);
+  });
+});
+
 describe('dshHome', () => {
   it('prefers DSH_HOME, falls back to HOME/.dsh, and survives with neither', () => {
     const realDsh = process.env['DSH_HOME'];

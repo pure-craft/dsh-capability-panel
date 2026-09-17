@@ -111,6 +111,39 @@ export function setPresetServer(presetId: string, server: string, enabled: boole
   return mutate({ presetId, kind: 'mcp-server', name: server, enabled });
 }
 
+/**
+ * Pull a declared-but-offline server's connection up, then reload the preset
+ * list: registration lands asynchronously, so the payload refresh reflects
+ * whatever the registry knows when it answers.
+ */
+export function reconnectPresetServer(server: string): Promise<void> {
+  const requestEpoch = begin();
+  const run = async (): Promise<void> => {
+    try {
+      const response = await fetch('/api/capability-panel/reconnect', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ server }),
+      });
+      if (!response.ok) {
+        let detail = '';
+        try {
+          const body = await response.json() as { error?: unknown };
+          if (typeof body.error === 'string') detail = `: ${body.error}`;
+        } catch { /* a non-JSON error body adds nothing */ }
+        throw new Error(`HTTP ${response.status}${detail}`);
+      }
+      finish(requestEpoch, { payload: await requestPayload(), error: null });
+    } catch (error) {
+      finish(requestEpoch, { error: error instanceof Error ? error.message : String(error) });
+    }
+  };
+  const result = queue.then(run);
+  queue = result;
+  return result;
+}
+
 export function resetPresetTools(): void {
   epoch += 1;
   requests = 0;
