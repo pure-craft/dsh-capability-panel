@@ -8,6 +8,12 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-17
+
+### Fixed
+
+- MCP tools masked by ANOTHER plugin for the session (e.g. a lazy-load manager's session-scoped restrict) no longer display as on in the session panel: rows now reflect the session's actual reachability, matching how system tools and skills were already judged. Previously the MCP list merged the global registry in and only consulted this plugin's own disable tables, so externally masked tools read as callable when the model cannot call them.
+
 ## [1.2.0] - 2026-09-17
 
 Feature release: offline MCP visibility, late-registration defaults enforcement, and a restyled preset picker.
@@ -75,7 +81,8 @@ Initial public release.
 - One-click `/skill-name` composer fill, name/description/state filtering, MCP tools grouped by server.
 - Loopback-only data route `/api/capability-panel` (+ `/stats`, `/presets`); panel copy in 中文 and English.
 
-[Unreleased]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/pure-craft/dsh-capability-panel/compare/v1.0.0...v1.1.0
