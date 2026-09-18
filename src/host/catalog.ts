@@ -233,6 +233,18 @@ export function readMcp(
     for (const schema of tools.schemas()) {
       if (typeof schema.name === 'string' && schema.name.startsWith('mcp__')) globalNames.add(schema.name);
     }
+    // The session's own view is the reachability truth: a name absent from it
+    // is not callable by the model right now, whoever masked it (this panel's
+    // switch, or another plugin's session-scoped restrict — e.g. a lazy-load
+    // manager). The list still shows the name (merged from the global view so
+    // a masked row can be re-enabled), but it must not read as "on".
+    const sessionNames = new Set<string>();
+    if (agent !== undefined) {
+      for (const schema of tools.schemas(agent)) {
+        if (typeof schema.name === 'string' && schema.name.startsWith('mcp__')) sessionNames.add(schema.name);
+      }
+    }
+    const reachable = (name: string): boolean => agent === undefined || sessionNames.has(name);
     const configuredServers = readConfiguredMcpServers(services);
     const groups: McpServerEntry[] = groupMcpTools(names).map((group) => {
       const enabled = !disabledServers.has(group.server);
@@ -243,7 +255,7 @@ export function readMcp(
           name,
           label: tool,
           ...(description === undefined ? {} : { description }),
-          enabled: enabled && !disabledTools.has(name),
+          enabled: enabled && !disabledTools.has(name) && reachable(name),
         };
       });
       const allGlobal = group.tools.every((tool) => globalNames.has(`mcp__${group.server}__${tool}`));

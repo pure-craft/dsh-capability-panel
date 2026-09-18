@@ -150,6 +150,36 @@ describe('MCP source detection', () => {
   });
 });
 
+describe('MCP session reachability', () => {
+  it('shows a tool another plugin masked in this session as off, though we did not disable it', () => {
+    const degraded: string[] = [];
+    const all = [
+      { name: 'mcp__chrome__navigate', description: '' },
+      { name: 'mcp__chrome__screenshot', description: '' },
+    ];
+    const tools = {
+      // Global registry keeps both; the session view lost one to another
+      // plugin's session-scoped restrict (e.g. a lazy-load manager).
+      schemas(scope?: unknown) {
+        return scope === undefined ? all : all.filter((entry) => entry.name !== 'mcp__chrome__screenshot');
+      },
+    };
+    const services = { get: () => tools };
+    const result = readMcp(services as never, degraded, new Set(), new Set(), {});
+    const server = result.find((row) => row.server === 'chrome');
+    expect(server?.tools.find((t) => t.name === 'mcp__chrome__navigate')?.enabled).toBe(true);
+    expect(server?.tools.find((t) => t.name === 'mcp__chrome__screenshot')?.enabled).toBe(false);
+  });
+
+  it('keeps every registered tool on when no agent view is given', () => {
+    const degraded: string[] = [];
+    const tools = { schemas: () => [{ name: 'mcp__chrome__navigate', description: '' }] };
+    const services = { get: () => tools };
+    const result = readMcp(services as never, degraded, new Set(), new Set());
+    expect(result.find((row) => row.server === 'chrome')?.tools[0]?.enabled).toBe(true);
+  });
+});
+
 describe('displayPath home abbreviation boundary', () => {
   it('does not abbreviate a sibling that merely shares the home prefix', () => {
     const real = process.env['HOME'];
