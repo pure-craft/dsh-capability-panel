@@ -143,13 +143,21 @@ export interface HostServices {
       handler: (req: IncomingLike, res: ServerResponseLike) => Promise<void> | void;
     }): () => void;
   };
-  /** The cordis loader mixin every host context carries (entry inventory + hot-swap). */
-  readonly loader?: LoaderLike;
-  get(name: 'agents'): AgentsService | undefined;
-  get(name: 'agentPresets'): AgentPresetsService | undefined;
-  get(name: 'settings'): SettingsService | undefined;
-  get(name: 'skills'): SkillsService | undefined;
-  get(name: 'tools'): ToolsService | undefined;
+  /** The cordis loader service (entry inventory + hot-swap), read via get(). */
+  /**
+   * The cordis reflect channel. `strict` defaults to true, which only returns
+   * an implementation whose providing fiber is CURRENTLY active: during
+   * startup and HMR windows that reads as absent even though the service
+   * exists. Every lazy root-level read in this plugin passes strict=false so
+   * a provider mid-transition still resolves; a genuinely unmounted service
+   * stays undefined either way.
+   */
+  get(name: 'loader', strict?: boolean): LoaderLike | undefined;
+  get(name: 'agents', strict?: boolean): AgentsService | undefined;
+  get(name: 'agentPresets', strict?: boolean): AgentPresetsService | undefined;
+  get(name: 'settings', strict?: boolean): SettingsService | undefined;
+  get(name: 'skills', strict?: boolean): SkillsService | undefined;
+  get(name: 'tools', strict?: boolean): ToolsService | undefined;
   on(
     event: 'agent/created',
     /**

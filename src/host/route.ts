@@ -193,8 +193,8 @@ export function createRouteHandler(
         // 'custom' (customSkillDirs) — without guessing paths.
         if (sessionId !== null) {
           try {
-            const skills = services.get('skills');
-            const agent = services.get('agents')?.get(sessionId);
+            const skills = services.get('skills', false);
+            const agent = services.get('agents', false)?.get(sessionId);
             if (skills !== undefined && agent !== undefined) {
               const cwd = agent.session?.header?.cwd;
               const list = await skills.list({ ...(cwd === undefined ? {} : { cwd }), scope: agent });
@@ -224,7 +224,7 @@ export function createRouteHandler(
         } else if (folderPath === undefined && (source === 'project-dsh' || source === 'project-agents')) {
           // Sessionless callers (the settings page) report project rows
           // against the dsh process's own cwd — resolve those the same way.
-          const agent = sessionId === null ? undefined : services.get('agents')?.get(sessionId);
+          const agent = sessionId === null ? undefined : services.get('agents', false)?.get(sessionId);
           const cwd = agent?.session?.header?.cwd ?? (sessionId === null ? process.cwd() : undefined);
           if (cwd !== undefined) {
             folderPath = source === 'project-dsh' ? `${cwd}/.dsh/skills` : `${cwd}/.agents/skills`;
@@ -235,7 +235,7 @@ export function createRouteHandler(
         } else if (folderPath === undefined && source !== 'bundled' && source !== 'runtime') {
           // Anything else is a preset name — look up its path.
           try {
-            const presets = await services.get('agentPresets')?.list();
+            const presets = await services.get('agentPresets', false)?.list();
             const preset = presets?.find((p) => p.id === source || p.name === source);
             if (preset !== undefined) folderPath = preset.path;
           } catch { /* preset lookup failed — leave folderPath undefined */ }

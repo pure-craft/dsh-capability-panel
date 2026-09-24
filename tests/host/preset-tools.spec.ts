@@ -104,8 +104,9 @@ function fixture(options: FixtureOptions = {}) {
     };
   }
   const ctx = {
-    ...(options.loaderEntries === undefined ? {} : { loader: { entries: () => options.loaderEntries as never } }),
-    get: (name: string) => services[name],
+    get: (name: string) => (name === 'loader' && options.loaderEntries !== undefined
+      ? { entries: () => options.loaderEntries as never }
+      : services[name]),
   };
   return {
     controller: createPresetToolController(ctx as never, createToolkitSettingsAccess(ctx as never)),

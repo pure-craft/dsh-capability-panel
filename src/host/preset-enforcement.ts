@@ -42,7 +42,7 @@ export function registerPresetEnforcement(
     try {
       if (typeof agent.id !== 'string') return undefined;
       const sessionId = agent.id;
-      const presetId = ctx.get('agentPresets')?.composedPreset(agent.ctx);
+      const presetId = ctx.get('agentPresets', false)?.composedPreset(agent.ctx);
       const defaults = presetId === undefined ? undefined : presetTools.defaultsFor(presetId);
       const hasDefaults = defaults !== undefined && (defaults.tools.length > 0 || defaults.skills.length > 0);
       const overrides = sessionOverrides.overridesFor(sessionId);
@@ -102,7 +102,7 @@ export function registerPresetEnforcement(
       return undefined;
     }
     try {
-      const agents = ctx.get('agents');
+      const agents = ctx.get('agents', false);
       if (agents === undefined || typeof agents.list !== 'function') return undefined;
       return (async () => {
         do {
@@ -120,7 +120,7 @@ export function registerPresetEnforcement(
               try {
                 const sessionId = agent?.id;
                 if (typeof sessionId !== 'string') continue;
-                const presetId = ctx.get('agentPresets')?.composedPreset(agent.ctx);
+                const presetId = ctx.get('agentPresets', false)?.composedPreset(agent.ctx);
                 const defaults = presetId === undefined ? undefined : presetTools.defaultsFor(presetId);
                 const overrides = sessionOverrides.overridesFor(sessionId);
                 const hasToolDefaults = defaults !== undefined && defaults.tools.length > 0;

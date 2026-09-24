@@ -42,7 +42,9 @@ function declaredServerName(entry: LoaderEntryLike): string | undefined {
  */
 export function readConfiguredMcpServers(ctx: HostServices): Set<string> {
   const servers = new Set<string>();
-  const loader = ctx.loader;
+  // Non-strict: the loader may be mid-reload while the panel reads; a strict
+  // get would report "nothing declared" for a tree that exists.
+  const loader = ctx.get?.('loader', false);
   if (loader === undefined) return servers;
   try {
     for (const entry of loader.entries()) {
@@ -60,7 +62,7 @@ export function readConfiguredMcpServers(ctx: HostServices): Set<string> {
 }
 
 function entryFor(ctx: HostServices, server: string): LoaderEntryLike | undefined {
-  const loader = ctx.loader;
+  const loader = ctx.get?.('loader', false);
   if (loader === undefined) return undefined;
   try {
     for (const entry of loader.entries()) {

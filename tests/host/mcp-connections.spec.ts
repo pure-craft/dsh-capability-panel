@@ -15,7 +15,8 @@ function entry(name: unknown, serverName: unknown, options: { disabled?: boolean
 }
 
 function hostWith(entries: readonly unknown[]) {
-  return { loader: { entries: () => entries as never } } as never;
+  const loader = { entries: () => entries as never };
+  return { get: (name: string) => (name === 'loader' ? loader : undefined) } as never;
 }
 
 describe('readConfiguredMcpServers', () => {
@@ -48,12 +49,14 @@ describe('readConfiguredMcpServers', () => {
   it('returns empty without a loader and degrades when the walk fails', () => {
     expect(readConfiguredMcpServers({} as never).size).toBe(0);
     const broken = {
-      loader: {
-        *entries() {
-          yield entry('@deepseek-ai/dsh-mcp-client', 'ida');
-          throw new Error('mid-reload');
-        },
-      },
+      get: (name: string) => (name === 'loader'
+        ? {
+            *entries() {
+              yield entry('@deepseek-ai/dsh-mcp-client', 'ida');
+              throw new Error('mid-reload');
+            },
+          }
+        : undefined),
     } as never;
     expect([...readConfiguredMcpServers(broken)]).toEqual(['ida']);
   });
@@ -78,11 +81,13 @@ describe('restartMcpServer', () => {
 
   it('404s when the loader walk fails', async () => {
     const broken = {
-      loader: {
-        *entries(): Generator<never> {
-          throw new Error('mid-reload');
-        },
-      } as never,
+      get: (name: string) => (name === 'loader'
+        ? {
+            *entries(): Generator<never> {
+              throw new Error('mid-reload');
+            },
+          } as never
+        : undefined),
     } as never;
     await expect(restartMcpServer(broken, 'ida')).rejects.toMatchObject({ status: 404 });
   });

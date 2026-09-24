@@ -48,7 +48,13 @@ export function createToolkitSettingsAccess(ctx: HostServices): ToolkitSettingsA
   return {
     scope() {
       if (scope === undefined) {
-        scope = ctx.get('settings')?.register<ToolkitSettings>(
+        // Non-strict read: the settings provider may be mid-activation during
+        // startup or an HMR reload, and a strict get would freeze that moment
+        // into a permanent 503. A genuinely unmounted service still resolves
+        // undefined and keeps this lazy — the next read retries.
+        const settings = ctx.get('settings', false);
+        if (settings === undefined) return undefined;
+        scope = settings.register<ToolkitSettings>(
           TOOLKIT_SETTINGS_NAMESPACE,
           ToolkitSettingsSchema,
           { applies: 'live' },

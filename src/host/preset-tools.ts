@@ -133,8 +133,8 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
   const settingsScope = (): ReturnType<ToolkitSettingsAccess['scope']> => access.scope();
 
   const services = (): { agentPresets: AgentPresetsService; tools: ToolsService; settings: NonNullable<ReturnType<ToolkitSettingsAccess['scope']>> } => ({
-    agentPresets: requireService(ctx.get('agentPresets'), 'agentPresets service unavailable'),
-    tools: requireService(ctx.get('tools'), 'tools service unavailable'),
+    agentPresets: requireService(ctx.get('agentPresets', false), 'agentPresets service unavailable'),
+    tools: requireService(ctx.get('tools', false), 'tools service unavailable'),
     settings: requireService(settingsScope(), 'settings service unavailable'),
   });
 
@@ -142,7 +142,7 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
     const { agentPresets, tools, settings: settingsScope } = services();
     const stored = settingsScope.get();
     const configured = stored.presets;
-    const skills = ctx.get('skills');
+    const skills = ctx.get('skills', false);
     // The reading process's workspace: the panel has no session, so this is
     // the only project root it can honestly report against.
     const cwd = process.cwd();
@@ -255,7 +255,7 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
         systemTools,
       };
     }));
-    return { presets: entries, writable: ctx.get('settings')?.writable === true };
+    return { presets: entries, writable: ctx.get('settings', false)?.writable === true };
   };
 
   // Every write is read-modify-write over the whole namespace, serialized
@@ -334,7 +334,7 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
     },
     async setSkill(presetId, name, enabled) {
       const { agentPresets, settings: settingsScope } = services();
-      const skills = requireService(ctx.get('skills'), 'skills service unavailable');
+      const skills = requireService(ctx.get('skills', false), 'skills service unavailable');
       const presets = await agentPresets.list();
       const preset = presets.find((entry) => entry.id === presetId);
       if (preset === undefined) throw new HttpError(404, `preset "${presetId}" is not available`);

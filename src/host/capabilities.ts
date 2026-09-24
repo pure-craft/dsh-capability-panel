@@ -90,7 +90,7 @@ export function createCapabilityController(
   };
   const disabledToolNames = (state: SessionCapabilityState): Set<string> => {
     const names = new Set([...state.mcpTools.keys(), ...state.systemTools.keys()]);
-    for (const schema of state.mcpServers.size > 0 ? (ctx.get('tools')?.schemas() ?? []) : []) {
+    for (const schema of state.mcpServers.size > 0 ? (ctx.get('tools', false)?.schemas() ?? []) : []) {
       if (typeof schema.name !== 'string' || !schema.name.startsWith('mcp__')) continue;
       const server = schema.name.slice('mcp__'.length, schema.name.indexOf('__', 'mcp__'.length));
       if (state.mcpServers.has(server)) names.add(schema.name);
@@ -109,7 +109,7 @@ export function createCapabilityController(
   let guardRegistered = false;
   const ensureGuard = (): void => {
     if (guardRegistered) return;
-    const guardDispose = ctx.get('tools')?.guard?.((execution) => {
+    const guardDispose = ctx.get('tools', false)?.guard?.((execution) => {
       const sessionId = typeof execution.agent?.id === 'string' ? execution.agent.id : null;
       const state = sessionId === null ? undefined : states.get(sessionId);
       const name = typeof execution.name === 'string' ? execution.name : null;
@@ -154,7 +154,7 @@ export function createCapabilityController(
   };
 
   const getAgentTools = (sessionId: string): { agent: AgentLike; tools: ScopedToolsRegistry } => {
-    const agent = ctx.get('agents')?.get(sessionId);
+    const agent = ctx.get('agents', false)?.get(sessionId);
     const tools = agent?.ctx?.get('tools') as ScopedToolsRegistry | undefined;
     if (agent === undefined) throw new HttpError(404, 'session agent is not available');
     if (tools === undefined) throw new HttpError(503, 'session tools service is not available');
@@ -169,13 +169,13 @@ export function createCapabilityController(
       state.skills.delete(name);
       return;
     }
-    const agent = ctx.get('agents')?.get(sessionId);
+    const agent = ctx.get('agents', false)?.get(sessionId);
     const scopedSkills = agent?.ctx?.get('skills') as ScopedSkillsRegistry | undefined;
     if (agent === undefined || scopedSkills === undefined) {
       throw new HttpError(agent === undefined ? 404 : 503, agent === undefined ? 'session agent is not available' : 'session skills service is not available');
     }
     if (enabled || existing !== undefined) return;
-    const skills = ctx.get('skills');
+    const skills = ctx.get('skills', false);
     if (skills === undefined) throw new HttpError(503, 'skills service unavailable');
     const cwd = agent.session?.header?.cwd;
     const original = await skills.get(name, { ...(cwd === undefined ? {} : { cwd }), scope: agent });
@@ -220,7 +220,7 @@ export function createCapabilityController(
     }
     if (existing !== undefined) return;
     const { agent, tools } = getAgentTools(sessionId);
-    const toolService = ctx.get('tools');
+    const toolService = ctx.get('tools', false);
     if (toolService === undefined) throw new HttpError(503, 'tools service unavailable');
     const prefix = `mcp__${server}__`;
     const names = [...toolService.schemas()]
@@ -249,7 +249,7 @@ export function createCapabilityController(
       throw new HttpError(409, 'run_code is the reserved Code Mode transport and cannot be restricted');
     }
     const { agent, tools } = getAgentTools(sessionId);
-    const toolService = ctx.get('tools');
+    const toolService = ctx.get('tools', false);
     if (toolService === undefined) throw new HttpError(503, 'tools service unavailable');
     const globalNames = new Set(
       [...toolService.schemas()]
@@ -284,7 +284,7 @@ export function createCapabilityController(
   }, 'capability-panel: capability masks');
 
   const seed = async (sessionId: string, defaults: PresetDefaults, includeSkills = true): Promise<void> => {
-    const agent = ctx.get('agents')?.get(sessionId);
+    const agent = ctx.get('agents', false)?.get(sessionId);
     if (agent === undefined) return;
     // The state is created on the first mask that actually lands: a session
     // whose stored defaults all name things it cannot see keeps no state at
@@ -297,7 +297,7 @@ export function createCapabilityController(
     let maskedAny = false;
 
     const scopedTools = agent.ctx?.get('tools') as ScopedToolsRegistry | undefined;
-    const toolsService = ctx.get('tools');
+    const toolsService = ctx.get('tools', false);
     if (scopedTools !== undefined && toolsService !== undefined) {
       const globalNames = new Set<string>();
       const scopedNames = new Set<string>();
@@ -363,7 +363,7 @@ export function createCapabilityController(
     }
 
     const scopedSkills = agent.ctx?.get('skills') as ScopedSkillsRegistry | undefined;
-    const skillsService = ctx.get('skills');
+    const skillsService = ctx.get('skills', false);
     if (includeSkills && scopedSkills !== undefined && skillsService !== undefined) {
       const cwd = agent.session?.header?.cwd;
       const lookup = { ...(cwd === undefined ? {} : { cwd }), scope: agent };

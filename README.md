@@ -3,135 +3,135 @@
 [![npm](https://img.shields.io/npm/v/dsh-capability-panel)](https://www.npmjs.com/package/dsh-capability-panel) [![CI](https://github.com/pure-craft/dsh-capability-panel/actions/workflows/check.yml/badge.svg)](https://github.com/pure-craft/dsh-capability-panel/actions/workflows/check.yml) [![license](https://img.shields.io/npm/l/dsh-capability-panel)](LICENSE)
 
 
-English | [中文](README.zh.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
+[English](README.md) | 中文 | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-**See what your DeepSeek Harness agent can actually reach right now — and switch it, per session or per preset.**
+**看清你的 DeepSeek Harness agent 此刻真正能触达什么——并且随时开关，按会话或按 preset。**
 
-A panel for the live conversation's capability surface: every skill, MCP server, and system tool, with its real in-context state and a switch that takes effect on the very next model step.
+一个面向当前对话能力面的面板：每个技能、每个 MCP 服务器、每个系统工具，都有真实的"在不在上下文里"状态，和一个从下一步模型调用就生效的开关。
 
-![The capability panel in a live session: skills with load-state pills, MCP servers grouped, per-row switches](docs/images/panel-session.png)
+![会话中的能力面板:技能带加载状态、MCP 按服务器分组、每行一个开关](docs/images/panel-session.png)
 
 ---
 
-## At a glance (agent quick reference)
+## 速查(agent 快速参考)
 
 | | |
 |---|---|
-| What | A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) web plugin: a panel that lists the live session's skills, MCP servers, and system tools with their true in-context state, plus switches to toggle them |
-| Use it to | answer "why doesn't the agent know this skill"; see whether a loaded skill survived pruning/compaction; turn a tool or MCP server off for one session only; set per-preset default capabilities; count blocked tool calls after a disable |
-| Install | `dsh plugin --profile web add dsh-capability-panel` (then restart dsh) |
-| Requires | dsh web profile, dsh ≥ 0.1.2-alpha.4 (older versions run with load states degraded); all `@deepseek-ai/*` peers provided by the host |
-| Data | `$DSH_HOME/settings.yaml` namespace `capability-panel`; stats at `$DSH_HOME/capability-panel/stats.jsonl`; loopback API `/api/capability-panel` |
-| Package | `dsh-capability-panel` on npm; bundle id `capability-panel` |
+| 是什么 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`)的 web 插件:一个面板,列出当前会话的技能、MCP 服务器、系统工具及其真实的在不在上下文状态,并能逐项开关 |
+| 什么时候用 | 回答"为什么 agent 不知道这个技能";看一个加载过的技能是否挺过了剪枝/压缩;只在当前会话里关掉某个工具或 MCP 服务器;为 preset 设置默认能力集合;统计关闭后被拦截的调用次数 |
+| 安装 | `dsh plugin --profile web add dsh-capability-panel`(然后重启 dsh) |
+| 要求 | dsh web profile,dsh ≥ 0.1.2-alpha.4(更早版本可运行,但加载状态降级显示);`@deepseek-ai/*` peer 全部由宿主提供 |
+| 数据 | `$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间;统计在 `$DSH_HOME/capability-panel/stats.jsonl`;loopback API `/api/capability-panel` |
+| 包 | npm 上的 `dsh-capability-panel`;bundle id `capability-panel` |
 
-## Why
+## 为什么
 
-A skill being *installed* and a skill being *in the model's context right now* are two different facts — and only the second one answers "why doesn't my agent know this?" Between them sits context management: the tool-result pruner truncates long payloads, and compaction replaces whole spans of history with a summary. A skill you watched load five minutes ago may be partially or fully gone from the model's view, while its load record sits in the durable log forever, pretending otherwise.
+技能"装好了"和技能"此刻在模型的上下文里"是两件事——而只有后者能回答"为什么 agent 不知道这个"。两者之间隔着上下文管理：工具结果剪枝器会截断过长的返回，压缩会把整段历史换成一条摘要。你眼看着五分钟前加载过的技能，可能已经部分或全部离开了模型的视野，而它的加载记录还永久躺在日志里，假装一切如常。
 
-And sometimes you simply want the model to stop reaching for one tool in one conversation — not uninstall a plugin, not edit a config file and restart. Just this session, from the next step on.
+有时你也只是想让模型在这一个对话里别再碰某个工具——不是卸载插件，不是改配置文件重启，就只是这一个会话、从下一步开始。
 
-This plugin turns both into one panel at the right of the composer.
+这个插件把这两件事变成输入框右侧的一个面板。
 
-## Features
+## 功能
 
-- **Ground-truth load states.** Every skill reports what the model actually sees on the next request: `loaded` (full instructions in context), `truncated` (the pruner kept head & tail, cut the middle), `evicted` (compaction took it entirely), or `not loaded` — plus a cumulative load count, so a skill reloaded after eviction reads `loaded ×2`.
-- **Per-session switches that survive restarts.** Turn a skill, tool, or whole MCP server off for the current conversation. The switch applies from the next prompt assembly, stays bound to that session across a dsh restart, and never touches another session or the conversation history.
-- **Preset defaults.** Settings → Capability Panel stores the default capability set per agent preset; sessions created or resumed afterward inherit it. Same filter, same grouping, same switches as the session panel — a preset default is a starting point the session can still override.
-- **MCP grouped by server.** Two hundred tools behind two servers stay scannable: collapse to one row per server, flip the whole server in one write.
-- **Offline servers stay listed.** An MCP server declared in the host composition but currently registering no tools (a local on-demand service that isn't running) still gets a row — marked honestly as "no tools registered", showing the positions already stored off for it, with a **Reload** button that retries the connection now. Late-registered tools also pick up the session's stored defaults automatically.
-- **Grouped by source.** Skills and MCP servers cluster under labeled divider rules: preset-bundled entries name the preset they came from; everything else shows its real directory (`~/.dsh/skills`, project-relative paths, middle-ellipsized when long) — "where did this skill come from" is answered at a glance.
-- **One click to the source folder.** Hover a group divider and a folder icon appears; clicking it opens that source directory in the system file manager (macOS, Windows, and freedesktop Linux).
-- **Blocked-attempt counts.** If the model still calls a capability after you turned it off, the panel counts it — the signal that the model is acting from memory and the switch needs a louder story.
-- **One-click command fill.** A skill row's paper-plane button drops `/skill-name` into the composer, ready for your Enter.
-- **Fast filtering.** Match on name, description, or the visible state pill ("truncated" / "已截断" both work), with matching descriptions auto-expanded.
-- **Lightweight.** Zero runtime dependencies, zero-copy reads, no background work — the panel only reads when open.
-- **Follows the UI language.** Panel copy switches between 中文 and English with the host.
+- **真实的加载状态。** 每个技能报告的是模型在下一次请求里实际能看到什么：`已加载`（完整指令在上下文里）/ `已截断`（剪枝器留下首尾、挖掉中间）/ `已挤出`（被压缩整体吞掉）/ `未加载`——外加累计加载次数，被挤出后重新加载的技能读作"已加载 ×2"。
+- **重启不丢的会话级开关。** 关掉当前会话里的一个技能、一个工具或一整个 MCP 服务器：从下一次提示组装生效，重启 dsh 后随该会话恢复，且绝不碰其他会话、绝不动对话历史。
+- **Preset 默认。** 设置 → 能力面板，为每个 agent preset 存一份默认能力集合；之后新建或恢复的会话继承它。与会话面板同一套筛选、分组和开关——preset 默认只是起点，会话里仍然可以覆盖。
+- **MCP 按服务器分组。** 两个服务器挂着两百个工具也能扫得过来：折叠成每服务器一行，一次开关整组。
+- **离线服务器照常列出。** 宿主配置里声明了、但当前没注册任何工具的 MCP 服务器（比如没启动的本地按需服务）仍会显示一行——如实标注「无已注册工具」，列出已存的关闭项，并附一个「重载」按钮立即重试连接。会话中途才注册上来的工具也会自动继承已存的默认。
+- **按来源分组。** 技能和 MCP 服务器在带标签的分隔线下聚类：preset 自带的条目标注它来自哪个 preset，其余显示真实目录（`~/.dsh/skills`、项目相对路径，过长时中间省略）——"这个技能是从哪来的"一眼即有答案。
+- **一键打开源文件夹。** 悬停分组分隔线会出现文件夹图标，点击即在系统文件管理器中打开该来源目录（macOS、Windows 和 freedesktop Linux）。
+- **拦截计数。** 模型在你关掉某项之后仍然尝试调用，面板会计数——这是"模型在凭记忆行动、开关需要更响亮的告知"的信号。
+- **一键填入命令。** 技能行上的纸飞机按钮把 `/skill-name` 放进输入框，等你自己的回车。
+- **快速筛选。** 按名称、描述或状态文案匹配（搜"已截断"或"truncated"都可以），命中时描述自动展开。
+- **轻量。** 零运行时依赖、零拷贝读取、无后台工作——面板只在打开时读一次。
+- **跟随界面语言。** 面板文案随宿主在中英文之间切换。
 
-## Production-grade by default
+## 工程品质
 
-- **Thoroughly tested**: 390+ tests with typecheck, type-aware lint, and 100% coverage gates (statements/branches/functions/lines) enforced in CI on every push and PR.
-- **Honest failures**: when any one read fails (skill registry, session view, settings store), the panel shows partial data plus an explicit degraded note — a read failure never masquerades as an empty list.
-- **Race-free writes**: preset defaults and session switches share one serialized write queue, so two panels writing at once cannot clobber each other.
-- **Never a drag on the host**: the agent-created listener is fully failure-isolated — no plugin error can stop your session from starting.
-- **Local-first, zero network**: the data route accepts loopback callers only, and the plugin makes no outbound calls, sends no telemetry, and talks to no third-party service — all state stays in the local settings.yaml and one JSONL file.
-- **Instant even on huge sessions**: on a 60k-event, tens-of-MB session log the panel still opens instantly — zero-copy surface reads, one read per open, no polling, no background work.
-- **History-preserving switches**: a switch never rewrites conversation history — disabled capabilities stay intact in the log, and the "these are off" note is recomputed at every assembly. Every switch is a reversible decision, not irreversible surgery.
-- **Sanctioned seams only**: every capability comes from dsh's official extension points (`tools.restrict`, `system-prompt/assemble`, the settings namespace, UI slots) — no monkey-patching, so host upgrades are far less likely to break it.
-- **Theme comes free**: all colors are host design tokens and all icons come from the host's own set — light/dark and language switches follow the host automatically, no theme code to maintain.
-- **i18n-friendly**: panel copy follows the host's UI language (中文/English), and the docs are kept section-aligned across four languages.
+- **测试完备**:390+ 测试,typecheck + 类型感知 lint + 100% 覆盖率门槛(语句/分支/函数/行)在 CI 上对每次 push 和 PR 强制执行。
+- **失败诚实**:任何一环读不到(技能注册表、会话视图、设置存储),面板显示部分数据加明确的降级提示——绝不把"读失败"伪装成"列表为空"。
+- **写入不竞态**:preset 默认和会话开关共享一条串行写队列,两个面板同时写也互不覆盖。
+- **不拖累宿主**:agent 创建监听做了完整的失败隔离——插件的任何异常都不会阻止你的会话启动。
+- **本地优先，零网络**:数据路由只接受 loopback,插件没有外呼、没有遥测、没有第三方服务——所有状态只留在本机的 settings.yaml 和一个 JSONL 里。
+- **长会话依然秒开**:6 万事件、几十 MB 日志的会话上,面板即点即开:零拷贝 surface 直读,打开时才读一次,没有轮询和后台任务。
+- **历史保留式开关**:开关永不改写对话历史——被关掉的能力在日志里原样保留,"已关闭"告知在每次组装时现算。每个开关都是可后悔的决定,不是不可逆的手术。
+- **只走官方扩展点**:全部能力来自 dsh 的正式接缝(`tools.restrict`、`system-prompt/assemble`、settings 命名空间、UI slots),没有猴子补丁,宿主升级时更不容易碎。
+- **主题免费**:颜色全部走宿主 design token,图标用宿主图标库——浅色/深色、语言切换都自动跟随,不需要自己维护主题。
+- **国际化友好**:面板文案跟随宿主界面语言(中/英),文档四种语言逐节对齐。
 
-## Install
+## 安装
 
-From the marketplace or straight from the repo:
+从插件市场，或直接从仓库安装：
 
 ```bash
 dsh plugin --profile web add dsh-capability-panel
-# or
+# 或
 dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 ```
 
-Restart dsh for the install to take effect.
+安装后需要重启 dsh 才生效。
 
-Requires a DeepSeek Harness web profile (`dsh web`), dsh ≥ 0.1.2-alpha.4 (load states read via `session.snapshotEvents`, introduced in that release; on older versions the panel runs with load states degraded and notes so in the payload). All `@deepseek-ai/*` runtime pieces are provided by the host as peer dependencies — there is nothing else to install.
+要求 DeepSeek Harness 的 web profile(`dsh web`),dsh ≥ 0.1.2-alpha.4(加载状态经由该版本引入的 `session.snapshotEvents` 读取;更早版本面板仍可运行,加载状态降级显示并在 payload 中注明)。所有 `@deepseek-ai/*` 运行时件都由宿主以 peer 依赖形式提供——没有别的要装。
 
-**Zero configuration** — the plugin has no settings of its own. After the restart you will find it in two places:
+**安装即用，不需要任何配置**——插件没有配置项。重启后你会在两个地方看到它：
 
-- the **context icon** at the right of any conversation's composer — that opens the session panel
-- **Settings → Capability Panel** — the per-preset default capabilities
+- 任意对话输入框右侧的**上下文图标**——点开就是会话面板
+- **设置 → 能力面板**——管理每个 preset 的默认能力集合
 
-`--profile web` is the profile your `dsh web` GUI already uses, so the command applies verbatim. You can also search "capability panel" in the marketplace UI for a one-click install. Uninstall with `dsh plugin --profile web remove dsh-capability-panel`; settings and stats stay in `$DSH_HOME` (see "Where data lives").
+`--profile web` 就是 dsh web GUI 使用的配置档；如果你平时用 `dsh web` 启动界面，照抄命令即可。也可以在插件市场里搜索 "capability panel" 一键安装。卸载用 `dsh plugin --profile web remove dsh-capability-panel`；设置和统计会保留在 `$DSH_HOME`（见"数据存放")。
 
-## Usage
+## 使用
 
-Open any conversation and click the context icon at the right of the composer; the panel opens upward.
+打开任意对话，点输入框右侧的上下文图标，面板向上展开。
 
-- Three tabs across the top: **Skills N** / **MCP N** / **Tools N**, each with its live count
-- The switch at the right of each row takes effect immediately — no refresh, no restart
-- Click the row itself to expand its description
-- The filter box at the top matches name, description, or state label, with an `X / Y` matched count
-- Divider rules group each tab by source: a preset name for preset-bundled entries, otherwise the on-disk directory — hover a divider for the full path, click it to open that folder in the file manager
-- A disabled row renders dimmed, and the model is told in its system prompt that you turned the capability off
+- 顶部三个分区：**技能 N** / **MCP N** / **工具 N**，各带实时计数
+- 每行右侧的开关立即生效——不刷新、不重启
+- 点击行本身展开描述
+- 顶部筛选框匹配名称、描述或状态文案，下方有 `X / Y` 命中计数
+- 分隔线把每个分区按来源归类：preset 自带条目显示 preset 名，其余显示磁盘上的目录——悬停分隔线查看完整路径，点击即在文件管理器中打开该文件夹
+- 被关闭的行变暗，同时模型的系统提示里会被告知"用户关闭了这些能力"
 
-`run_code` is the reserved Code Mode transport — the registry forbids masking it, so its switch is locked on.
+`run_code` 是保留的 Code Mode 传输通道——注册表禁止遮罩它，所以它的开关锁定为开。
 
-Two scopes, same switches: **the composer panel** is bound to the session in front of you (and restored with it after a restart); **Settings → Capability Panel** decides what every later session starts from. Preset defaults are read when a session agent is created — they do not rewrite preset files and do not change agents that are already running.
+两个作用域，同一组开关：**输入框里的面板**绑定你眼前的会话（重启后随它恢复）;**设置 → 能力面板**决定之后每个会话从什么状态开始。Preset 默认在会话 agent 创建时读取——不改写 preset 文件，也不改变已经在运行的 agent。
 
-![Settings → Capability Panel: per-preset default capabilities](docs/images/panel-settings.png)
+![设置 → 能力面板：每个 preset 的默认能力集合](docs/images/panel-settings.png)
 
-## How it works
+## 工作原理
 
-**Lightweight by construction.** The plugin ships zero runtime dependencies — React, the UI primitives, and every `@deepseek-ai/*` piece are provided by the host — and its reads are zero-copy: load states come from the live session's in-memory surface (what the model will see next), never re-folded from the durable log, so opening the panel costs a scan of references, not a parse of history.
+**生而轻量。** 插件零运行时依赖——React、UI 组件和全部 `@deepseek-ai/*` 都由宿主提供——读取也是零拷贝:加载状态来自 live session 的内存 surface(模型下一次将看到的内容),从不对持久日志重新折叠,打开面板的代价是一次引用扫描,而不是解析历史。
 
-Switches are thin overlays on the next prompt assembly — a same-name shadow for skills, a registry mask for tools — plus a per-assembly note telling the model what you turned off. Session toggles persist under the session's own id in the plugin's settings namespace, so a restored session gets exactly its own switches back, and nothing ever writes to the conversation log.
+开关是下一次提示组装上的薄覆盖层——技能用同名影子、工具用注册表遮罩——外加一条组装时现算的"你关了什么"的告知。会话开关以会话自己的 id 持久化在插件设置命名空间里,恢复的会话恰好拿回自己的开关,对话日志永不被写入。
 
-## Where data lives
+## 数据存放
 
-- Preset defaults and session-bound switch positions: the `capability-panel` namespace in `$DSH_HOME/settings.yaml` (session switches under `sessions.<sessionId>`, kept for up to 200 sessions, oldest evicted first). The harness never drops a section whose plugin is not loaded, so uninstalling keeps these until you delete the section.
-- Blocked-attempt stats: `$DSH_HOME/capability-panel/stats.jsonl`, readable directly at `curl 'http://127.0.0.1:3080/api/capability-panel/stats'`.
+- Preset 默认值与会话绑定的开关位置：`$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间（会话开关在 `sessions.<sessionId>` 下，最多保留 200 个会话、最旧的先淘汰）。宿主从不丢弃未加载插件的分节，所以卸载后它们还在，直到你手动删除该段。
+- 拦截统计：`$DSH_HOME/capability-panel/stats.jsonl`，可直接读取：`curl 'http://127.0.0.1:3080/api/capability-panel/stats'`。
 
-The data route accepts loopback callers only, keyed on the connection's peer address.
+数据路由只接受 loopback 请求，判定依据是连接对端地址。
 
-## Development
+## 开发
 
 ```bash
 pnpm install
-pnpm dev        # watch build
-pnpm build      # build both the host and client halves
-pnpm test       # run the tests
-pnpm typecheck  # typecheck
-pnpm lint       # oxlint, including its type-aware rules
-pnpm check      # typecheck + lint + test (100% coverage gates)
-pnpm scan:dead-code  # advisory dead-code report (never a gate)
+pnpm dev        # watch 构建
+pnpm build      # 构建 host 与 client 两半
+pnpm test       # 跑测试
+pnpm typecheck  # 类型检查
+pnpm lint       # oxlint(含 type-aware 规则)
+pnpm check      # typecheck + lint + test(100% 覆盖率门槛)
+pnpm scan:dead-code  # 死代码巡检报告(仅提示,不做门禁)
 ```
 
-A change to the host half needs a dsh restart; the client half hot-swaps while `dsh web` and the watch build run together.
+改动 host 半需要重启 dsh;client 半在 `dsh web` 与 watch 构建同时运行时热替换。
 
-## Support
+## 支持
 
-If this panel saved you a debugging session, a [star](https://github.com/pure-craft/dsh-capability-panel) helps others find it — and sharing it with someone else hacking on dsh helps too. Issues and PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+如果这个面板帮你省过一次排查，点个 [star](https://github.com/pure-craft/dsh-capability-panel) 让更多人能找到它；也欢迎顺手分享给同样在折腾 dsh 的朋友。Issue 和 PR 都欢迎——详见[贡献指南](CONTRIBUTING.zh.md)。
 
-Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
+版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
-## License
+## 许可证
 
 [MIT](LICENSE)

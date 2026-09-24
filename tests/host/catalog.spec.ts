@@ -206,8 +206,7 @@ describe('readMcp offline declared servers', () => {
       schemas: () => [{ name: 'mcp__yunxiao__tool_a', description: '' }],
     };
     const services = {
-      loader: { entries: () => [mcpClientEntry('mock-late'), mcpClientEntry('yunxiao') as never] },
-      get: () => tools,
+      get: (name: string) => (name === 'loader' ? { entries: () => [mcpClientEntry('mock-late'), mcpClientEntry('yunxiao') as never] } : tools),
     };
     const result = readMcp(
       services as never,
@@ -237,7 +236,7 @@ describe('readMcp offline declared servers', () => {
   it('falls back to per-tool stored names when no server roster was recorded', () => {
     const degraded: string[] = [];
     const tools = { schemas: () => [] };
-    const services = { loader: { entries: () => [mcpClientEntry('ghost')] }, get: () => tools };
+    const services = { get: (name: string) => (name === 'loader' ? { entries: () => [mcpClientEntry('ghost')] } : tools) };
     const result = readMcp(services as never, degraded, new Set(), new Set(['mcp__ghost__b', 'mcp__ghost__a']));
     const offline = result.find((s) => s.server === 'ghost');
     expect(offline?.tools.map((t) => t.label)).toEqual(['a', 'b']);
@@ -246,7 +245,7 @@ describe('readMcp offline declared servers', () => {
   it('omits the path when no home is known, and keeps it when DSH_HOME is set', () => {
     const degraded: string[] = [];
     const tools = { schemas: () => [] };
-    const services = { loader: { entries: () => [mcpClientEntry('bare')] }, get: () => tools };
+    const services = { get: (name: string) => (name === 'loader' ? { entries: () => [mcpClientEntry('bare')] } : tools) };
     const realDsh = process.env['DSH_HOME'];
     const realHome = process.env['HOME'];
     try {
@@ -268,7 +267,7 @@ describe('readMcp offline declared servers', () => {
   it('renders an empty roster row when nothing is stored for the server', () => {
     const degraded: string[] = [];
     const tools = { schemas: () => [] };
-    const services = { loader: { entries: () => [mcpClientEntry('bare')] }, get: () => tools };
+    const services = { get: (name: string) => (name === 'loader' ? { entries: () => [mcpClientEntry('bare')] } : tools) };
     const result = readMcp(services as never, degraded, new Set(), new Set());
     expect(result.find((s) => s.server === 'bare')).toMatchObject({ unavailable: true, tools: [] });
   });
@@ -277,12 +276,13 @@ describe('readMcp offline declared servers', () => {
     const degraded: string[] = [];
     const tools = { schemas: () => [] };
     const services = {
-      loader: {
-        *entries(): Generator<never> {
-          throw new Error('mid-reload');
-        },
-      } as never,
-      get: () => tools,
+      get: (name: string) => (name === 'loader'
+        ? {
+            *entries(): Generator<never> {
+              throw new Error('mid-reload');
+            },
+          } as never
+        : tools),
     };
     expect(readMcp(services as never, degraded, new Set(), new Set())).toEqual([]);
   });

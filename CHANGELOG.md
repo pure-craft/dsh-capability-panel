@@ -8,6 +8,10 @@ All notable changes to this project will be documented here. The format follows 
 
 ## [Unreleased]
 
+### Fixed
+
+- 新版 dsh 宿主（cordis ≥ 4.0.x）下面板不再 500：可选宿主服务改经非严格 `ctx.get(name, false)` 通道解析，启动或 HMR 重载中处于激活过渡期的提供方也能正常取到——此前 `settings.register` 可能落在一个 undefined 查询结果上导致整页加载失败。settings scope 首次绑定失败后也会重试，不再缓存坏值。已对 cordis 4.0.2（dev 依赖）与 4.0.4（dsh 0.1.7-alpha.2）实测验证。
+
 ## [1.2.1] - 2026-09-17
 
 ### Fixed

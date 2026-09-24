@@ -33,10 +33,10 @@ function fixture(options: FixtureOptions = {}) {
       : Promise.resolve(options.agentPresetsList ?? []),
   };
   const services = {
-    loader: options.loaderEntries === undefined
-      ? undefined
-      : { entries: () => options.loaderEntries as never },
     get(name: string): unknown {
+      if (name === 'loader') return options.loaderEntries === undefined
+        ? undefined
+        : { entries: () => options.loaderEntries as never };
       if (name === 'skills') return options.noSkillsService === true ? undefined : skills;
       if (name === 'agents') return options.noAgentsService === true ? undefined : { get: () => options.agent };
       if (name === 'agentPresets') return options.noAgentPresetsService === true ? undefined : agentPresets;
