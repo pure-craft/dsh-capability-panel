@@ -1,8 +1,9 @@
 # Multilingual consistency record: the git blob hash of each side as of the last
 # confirmed-consistent state. All languages carry equal authority; after editing
 # any side, bring the others along and re-record with:
-#   git hash-object README.md README.zh.md README.ja.md README.ko.md
-README.md: b68e24710f0c4d0c91b9e527fe459804cd7e56ce
-README.zh.md: a1f55f347b685f52a25b362157555a718ea31ea6
-README.ja.md: ca9550d9d4b11266728387f800d811e721a68845
-README.ko.md: 3cc6504d2dfe44547bfe5ee3bdf72120f662dd29
+#   git hash-object README.md README.en.md README.ja.md README.ko.md
+# Primary README.md is Chinese; English lives in README.en.md.
+README.md: 6acac3b5ac3ddb590c03f720812adf2b70353661
+README.en.md: 386777852655ec2ddc9c7afa8d5eed2d49ef9370
+README.ja.md: d892e136ac6f22746f0cb38710e095b381a3b0b9
+README.ko.md: c2262de569f645b197623ea19fcc410f0128f26c

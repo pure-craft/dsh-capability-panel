@@ -23,7 +23,7 @@ Host-half changes need a dsh restart; the client half hot-swaps while `dsh web` 
 
 ## Conventions that will bite you if missed
 
-- **Bilingual-plus docs**: `README.md`, `README.zh.md`, `README.ja.md`, and `README.ko.md` carry equal authority. Edit all four together, then re-record the consistency hashes: `git hash-object README.md README.zh.md README.ja.md README.ko.md` into `README.i18n.yaml`.
+- **Bilingual-plus docs**: `README.md` (中文，主文档), `README.en.md`, `README.ja.md`, and `README.ko.md` carry equal authority. Edit all four together, then re-record the consistency hashes: `git hash-object README.md README.en.md README.ja.md README.ko.md` into `README.i18n.yaml`.
 - **Locale parity**: `src/client/locale.ts` zh/en dictionaries must keep identical key sets (pinned by a test).
 - **Wire contract**: `src/contract.ts` is types-only; `src/wire.ts` is its runtime guard. New payload fields need both plus a wire.spec case.
 - **Session binding**: capability switches are scoped to one session id and persisted per session. Never let one session's switches leak into another.
