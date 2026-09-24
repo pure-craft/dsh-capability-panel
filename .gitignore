@@ -11,3 +11,6 @@ coverage/
 .npm-cache/
 AGENTS.md
 SUBMISSIONS.md
+
+# Local pnpm content-addressable store (accidental cache dir, never commit)
+.pnpm-store/
