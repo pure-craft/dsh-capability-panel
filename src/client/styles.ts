@@ -12,6 +12,11 @@ export const TOK = {
   menuBg: 'var(--dsw-specific-menu, #ffffff)',
   menuBorder: 'var(--dsw-alias-border-inverted, rgba(0,0,0,.1))',
   menuShadow: 'var(--dsw-shadow-lv3, 0 12px 32px rgba(0,0,0,.22))',
+  // dsh 0.1.7 made menu surfaces translucent (--dsw-specific-menu is now
+  // #f8f9fa94) and pairs them with this blur; a surface that takes the color
+  // without the filter reads as a dirty see-through. Older hosts lack the
+  // token, so the fallback keeps their opaque surfaces blur-free.
+  menuBlur: 'var(--dsw-menu-backdrop-filter, none)',
   bgBase: 'var(--dsw-alias-bg-base, #ffffff)',
   fontFamily:
     'var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif)',
@@ -47,35 +52,56 @@ export const PANEL_CSS = [
   '.ci-description{padding:3px 0 0 24px;line-height:18px;color:var(--dsw-alias-label-tertiary,#81858c);word-break:break-word}',
   '.ci-chevron{display:grid;place-items:center;width:18px;height:18px;flex:none;color:var(--dsw-alias-label-tertiary,#81858c);border-radius:4px}',
   '.ci-chevron svg{transition:transform .12s var(--ds-ease-in-out,ease)}',
-  '.ci-server-trigger[aria-expanded="true"] .ci-chevron svg,.ci-disclosure-trigger[aria-expanded="true"] .ci-chevron svg{transform:rotate(90deg)}',
-  '.ci-tabs{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--dsw-alias-bg-base,#ffffff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.04))}',
+  '.ci-server-trigger[aria-expanded="true"] .ci-chevron svg,.ci-disclosure-trigger[aria-expanded="true"] .ci-chevron svg,.ci-preset-part-trigger[aria-expanded="true"] .ci-chevron svg{transform:rotate(90deg)}',
+  // Track and active pill follow the host's SegmentedControl recipe: the track
+  // is the same translucent fill as a hover state (it reads as a place, not a
+  // button), and the one raised part is the active pill on an opaque layer-1
+  // surface with the soft elevation ring (0.1.7 made --dsw-specific-menu
+  // translucent, which washed the active pill out).
+  '.ci-tabs{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
   '.ci-tab{flex:1;height:24px;border:none;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary,#61666b);font:inherit;font-size:12px;line-height:1;cursor:pointer;font-variant-numeric:tabular-nums;padding:0 4px}',
   '.ci-tab:hover{color:var(--dsw-alias-label-primary,#0f1115)}',
-  '.ci-tab[data-active]{background:var(--dsw-specific-menu,#fff);color:var(--dsw-alias-label-primary,#0f1115);box-shadow:0 1px 2px rgba(0,0,0,.08)}',
-  '.ci-preset-section{max-width:720px;color:var(--dsw-alias-label-secondary,#61666b)}',
-  '.ci-settings-title{margin:0 0 6px;color:var(--dsw-alias-label-primary,#0f1115);font-size:18px;line-height:26px}',
-  '.ci-settings-intro,.ci-settings-description,.ci-settings-note{margin:0 0 16px;line-height:20px;color:var(--dsw-alias-label-tertiary,#81858c)}',
+  '.ci-tab[data-active]{background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#0f1115);box-shadow:var(--dsw-elevation-soft,0 1px 2px rgba(0,0,0,.08))}',
+  // Settings page frame follows the host's plugin-inventory page: a 760px
+  // column with 14px gaps (measured from its CSS module), primary text on top.
+  '.ci-preset-section{width:100%;max-width:760px;color:var(--dsw-alias-label-primary,#0f1115);display:flex;flex-direction:column;gap:14px}',
+  '.ci-settings-title{margin:0;color:var(--dsw-alias-label-primary,#0f1115);font-size:18px;font-weight:600;line-height:26px}',
+  '.ci-settings-intro,.ci-settings-description,.ci-settings-note{margin:0;font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary,#81858c)}',
   '.ci-settings-note{padding:10px 12px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:8px}',
-  '.ci-preset-toolbar{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:10px 0}',
-  '.ci-preset-filter{flex:1 1 220px;min-width:180px;height:34px;box-sizing:border-box;padding:0 10px;border:1px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1));border-radius:8px;background-color:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary,#0f1115);font:inherit;font-weight:400}',
-  '.ci-preset-part{margin:18px 0 0}',
-  '.ci-preset-part:first-of-type{margin-top:10px}',
-  // Section titles read as real headings (primary, 14px semibold) so they
-  // stand clearly above the subtle ruled source dividers beneath them.
-  '.ci-preset-part-title{margin:0;font-size:14px;font-weight:600;line-height:22px;color:var(--dsw-alias-label-primary,#0f1115)}',
-  '.ci-preset-badge{display:inline-block;margin-left:6px;padding:1px 6px;line-height:1.5;border-radius:999px;font-size:11px;font-weight:500;vertical-align:middle;background-color:var(--dsw-alias-bg-fill-2,rgba(0,0,0,.05));color:var(--dsw-alias-label-tertiary,#81858c)}',
+  // Toolbar: a full-width search row (the host inventory page's recipe: icon
+  // pinned at left 12px, a 36px input on a 0.5px l4 border) with the preset
+  // switcher pinned at its end.
+  '.ci-preset-toolbar{display:flex;gap:10px;align-items:center;margin:0}',
+  '.ci-search{position:relative;flex:1 1 auto;min-width:180px;display:flex;align-items:center;color:var(--dsw-alias-label-tertiary,#81858c)}',
+  '.ci-search>svg{position:absolute;left:12px;pointer-events:none}',
+  '.ci-preset-filter{width:100%;height:36px;box-sizing:border-box;padding:0 34px 0 36px;border:.5px solid var(--dsw-alias-border-l4,rgba(0,0,0,.16));border-radius:var(--dsw-radius-md,12px);background-color:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#0f1115);font:inherit;font-size:13px;font-weight:400;outline:none}',
+  '.ci-preset-filter:focus-visible{border-color:var(--dsw-alias-state-business-primary,#4176e6);box-shadow:0 0 0 2px color-mix(in srgb,var(--dsw-alias-state-business-primary,#4176e6) 18%,transparent)}',
+  // Parts are collapsible groups now: hairline-separated (the inventory page's
+  // group+group rule), a chevron-led trigger row, title at regular weight, and
+  // a tabular count subtitle aligned under the title text.
+  '.ci-preset-part{display:flex;flex-direction:column;gap:10px;margin:0;padding:14px 0 0;border-top:.5px solid var(--dsw-alias-border-l2,rgba(0,0,0,.1))}',
+  '.ci-preset-part:first-of-type{border-top:0;padding-top:0}',
+  '.ci-preset-part-trigger{display:flex;align-items:center;gap:8px;min-height:32px;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}',
+  '.ci-preset-part-trigger:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:2px;border-radius:4px}',
+  '.ci-preset-part-title{margin:0;font-size:14px;font-weight:400;line-height:22px;color:var(--dsw-alias-label-primary,#0f1115)}',
+  '.ci-preset-part-sub{margin:-4px 0 0 26px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary,#81858c);font-variant-numeric:tabular-nums}',
+  // Badge fill: --dsw-alias-bg-fill-2 was deleted from the theme (already gone
+  // in 0.1.6); the host's subtle-fill token is the hover-fill alias, which is
+  // also what the SegmentedControl track uses. Theme-aware in dark mode, unlike
+  // the old rgba fallback.
+  '.ci-preset-badge{display:inline-block;margin-left:6px;padding:1px 6px;line-height:1.5;border-radius:999px;font-size:11px;font-weight:500;vertical-align:middle;background-color:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05));color:var(--dsw-alias-label-tertiary,#81858c)}',
   '.ci-preset-group{padding:0}',
   '.ci-preset-server-trigger{display:flex;align-items:center;gap:8px;flex:1;min-width:0;background:none;border:none;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer}',
   '.ci-preset-server-trigger:disabled{cursor:default}',
   '.ci-preset-group .ci-preset-tool-list{margin:0;padding-left:26px}',
-  '.ci-preset-picker-label{display:grid;gap:6px;color:var(--dsw-alias-label-primary,#0f1115);font-weight:600}',
-  // The preset picker's trigger follows the host model selector exactly: a
-  // borderless pill, secondary label, soft hover fill, ring on keyboard focus.
-  '.ci-preset-picker-trigger{height:28px;display:flex;align-items:center;gap:4px;padding:0 4px 0 8px;border:none;border-radius:24px;background:transparent;color:var(--dsw-alias-label-secondary,#61666b);font-size:13px;font-weight:500;line-height:20px;cursor:pointer;outline:none;max-width:280px}',
+  // The preset switcher speaks the host's switcher language (its preset-mode
+  // button on the same page): a 36px module-platform pill carrying the current
+  // value and a chevron, replacing the old model-selector pill.
+  '.ci-preset-picker-trigger{height:36px;display:inline-flex;align-items:center;gap:8px;padding:0 14px;border:none;border-radius:var(--dsw-radius-md,12px);background:var(--dsw-alias-bg-module-platform,rgba(38,49,72,.06));color:var(--dsw-alias-label-primary,#0f1115);font:inherit;font-size:14px;font-weight:400;line-height:22px;cursor:pointer;outline:none;max-width:280px;flex:none;white-space:nowrap}',
   '.ci-preset-picker-trigger:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}',
-  '.ci-preset-picker-trigger:focus-visible{box-shadow:0 0 0 2px var(--dsw-alias-border-l3,rgba(0,0,0,.16))}',
+  '.ci-preset-picker-trigger:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:2px}',
   '.ci-preset-picker-name{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}',
-  '.ci-preset-picker-chevron{color:var(--dsw-alias-label-caption,#81858c);flex:none;display:inline-grid;place-items:center;transition:transform .12s}',
+  '.ci-preset-picker-chevron{color:var(--dsw-alias-label-tertiary,#81858c);flex:none;display:inline-grid;place-items:center;transition:transform .12s}',
   '.ci-preset-picker-chevron-open{transform:rotate(180deg)}',
   '.ci-settings-subtitle{margin:0 0 6px;color:var(--dsw-alias-label-primary,#0f1115);font-size:14px;line-height:22px}',
   // Settings rows speak the composer panel's row language: compact padding,
@@ -92,7 +118,7 @@ export const PANEL_CSS = [
   // with the rows that have one.
   '.ci-preset-spacer{width:18px;flex:none}',
   '.ci-preset-detail{padding:0 0 10px 24px;color:var(--dsw-alias-label-tertiary,#81858c);line-height:18px;overflow-wrap:anywhere}',
-  '.ci-preset-kinds{margin:0 0 4px}',
+  '.ci-preset-kinds{margin:0}',
   '.ci-preset-kinds .ci-tabs{display:inline-flex}',
   '.ci-preset-kinds .ci-tab{flex:0 0 auto;padding:0 12px}',
   // Folder icon on source section headers: invisible until hover.
@@ -115,5 +141,8 @@ export const PANEL_CSS = [
   '.ci-feedback-link:hover{color:var(--dsw-alias-label-primary,#0f1115);text-decoration:underline}',
   '.ci-feedback-link:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#4176e6);outline-offset:2px;border-radius:3px}',
   '.ci-feedback-icon{display:inline-grid;place-items:center;flex:none}',
+  // The settings entry shares the feedback link's quiet styling but is a
+  // <button>, so it also needs the control reset the anchor never did.
+  '.ci-settings-link{border:0;background:none;padding:0;font-family:inherit}',
   '@media (prefers-reduced-motion: reduce){.ci-thumb,.ci-panel,.ci-collapse,.ci-chevron svg{transition:none !important}}',
 ].join('\n');

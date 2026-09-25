@@ -45,15 +45,19 @@ import * as React from 'react';
 // Same story for primitives: the module system resolves it to the host graph's
 // row (every shipped UI bundle requires it the same way), keeping Tooltip's
 // theme and i18n context singular. tsdown must NOT bundle it.
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
+// Icon names differ across host generations (pixel-suffixed before 0.1.7,
+// stroke-weight variants since); icons.ts resolves whichever the host has.
 import {
-  IconChevronRightOutline14,
-  IconContextInjectionOutline16,
-  IconFolderClose16,
-  IconSendOutline14,
-  IconSearchOutline16,
-  IconRefreshOutline14,
-  Tooltip,
-} from '@deepseek-ai/dsh-client-ui-primitives';
+  IconChevronRight,
+  IconContextInjection,
+  IconFolderClose,
+  IconSend,
+  IconSearch,
+  IconRefresh,
+  IconSettings,
+  HOST_HAS_MODERN_SHELL,
+} from './icons.js';
 // Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
 // the host instance, exactly like our own (verified against shipped bundles).
 import { Collapsible } from '@base-ui/react/collapsible';
@@ -118,6 +122,84 @@ function sortSkills(skills: readonly SkillEntry[]): SkillEntry[] {
   );
 }
 
+/**
+ * Platform for the settings shortcut's modifier: the host binds
+ * `settings.open` to Cmd+, on macOS and Ctrl+, elsewhere (the `primary`
+ * modifier in its binding table resolves the same way).
+ */
+function isMacPlatform(): boolean {
+  const platform = navigator.platform ?? '';
+  return platform !== '' ? /mac/i.test(platform) : /mac/i.test(navigator.userAgent ?? '');
+}
+
+/**
+ * Open the Settings modal by driving its official keybinding through the input
+ * pipeline. The host's shortcuts service listens for `keydown` on `window`
+ * with no `isTrusted` gate, so a synthesized event is processed exactly like a
+ * physical press — region "page" (no editable/terminal ancestor), no open
+ * shortcut-modal, both of which the `settings.open` command accepts.
+ *
+ * This deliberately uses the input seam, not a host internal: the shortcuts
+ * service is not visible to plugin contexts, and the settings shell exposes no
+ * section deep-link (`openSection` stays internal to the shell). Caveats,
+ * accepted over shipping no entry at all: a user who rebound the settings
+ * shortcut changed what this gesture triggers, and hosts older than 0.1.7 have
+ * no such binding at all — the caller gates the entry on `HOST_HAS_MODERN_SHELL`.
+ */
+function dispatchOpenSettings(): void {
+  const mac = isMacPlatform();
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      code: 'Comma',
+      key: ',',
+      metaKey: mac,
+      ctrlKey: !mac,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+/**
+ * Select our own section inside an open Settings dialog by clicking its nav
+ * row — the official user interaction, located through two anchors that cannot
+ * drift with host internals: the dialog's own `data-shortcut-modal="settings"`
+ * attribute (the shortcut system's public hook) and OUR OWN localized section
+ * label as the row's text. Returns false when the row is not (yet) there, so
+ * the caller can retry while the modal mounts.
+ */
+function selectCapabilitySection(label: string): boolean {
+  const dialog = document.querySelector('[data-shortcut-modal="settings"]');
+  const buttons = dialog?.querySelectorAll('nav button') ?? [];
+  for (const button of buttons) {
+    if (button.textContent?.trim() === label) {
+      (button as HTMLButtonElement).click();
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Open Settings ON the capability-panel section. The shell offers no section
+ * deep-link, so this drives the two official gestures in sequence: the
+ * settings.open keybinding (which TOGGLES — skipped when the dialog is already
+ * open, or it would close it), then a nav-row click once the dialog has
+ * mounted. The retry is bounded; if the row never appears the user still lands
+ * on the settings landing page, which is the pre-existing behavior.
+ */
+function openGlobalSettings(sectionLabel: string): void {
+  close();
+  if (document.querySelector('[data-shortcut-modal="settings"]') === null) dispatchOpenSettings();
+  let attempts = 0;
+  const trySelect = (): void => {
+    attempts += 1;
+    if (selectCapabilitySection(sectionLabel)) return;
+    if (attempts < 20) requestAnimationFrame(trySelect);
+  };
+  requestAnimationFrame(trySelect);
+}
+
 export function apply(ctx: SlotContext): void {
   const react = React as unknown as ReactLike;
   const h = react.createElement;
@@ -155,17 +237,17 @@ export function apply(ctx: SlotContext): void {
   }, 'capability-panel: stylesheet');
 
   /** Host iconography: the panel inspects what lands in the session's context. */
-  const layersIcon = (size: number) => h(IconContextInjectionOutline16, { size });
+  const layersIcon = (size: number) => h(IconContextInjection, { size });
 
   /** Magnifier sitting inside the filter input. */
-  const searchIcon = (size: number) => h(IconSearchOutline16, { size });
+  const searchIcon = (size: number) => h(IconSearch, { size });
 
   /** Paper plane: the row action lands the command in the composer,
    *  ready for the user's own Enter. */
-  const insertIcon = (size: number) => h(IconSendOutline14, { size });
+  const insertIcon = (size: number) => h(IconSend, { size });
 
   /** Circular arrows: pull a declared-but-offline server's connection up now. */
-  const reconnectIcon = (size: number) => h(IconRefreshOutline14, { size });
+  const reconnectIcon = (size: number) => h(IconRefresh, { size });
 
   /** The GitHub mark. Not in the host icon set (brand logos are not shipped
    *  there), so this one path is inlined for the feedback link's recognizability. */
@@ -346,7 +428,7 @@ export function apply(ctx: SlotContext): void {
                   },
                   // The host's own folder glyph — the same set every shipped
                   // surface draws from, so it follows theme and density for free.
-                  h(IconFolderClose16, { size: 12 }),
+                  h(IconFolderClose, { size: 12 }),
                 )
               : null,
             `${label} (${count})`,
@@ -457,7 +539,7 @@ export function apply(ctx: SlotContext): void {
         });
 
       /** Right chevron the disclosure CSS rotates 90° when expanded. */
-      const chevronIcon = h(IconChevronRightOutline14, { size: 12 });
+      const chevronIcon = h(IconChevronRight, { size: 12 });
 
       const groupLabel = (text: string, first: boolean) =>
         h(
@@ -883,9 +965,19 @@ export function apply(ctx: SlotContext): void {
                   boxSizing: 'border-box',
                   width: '480px',
                   maxHeight: 'min(60vh, var(--available-height, 60vh))',
-                  overflowY: 'auto',
+                  // The host's pinned-footer model (its Menu primitive): the
+                  // popup is a flex column, content scrolls inside the middle
+                  // viewport, and the footer is a flex:none row below it so it
+                  // stays visible no matter how long the list gets.
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
                   padding: '10px 12px',
                   background: TOK.menuBg,
+                  // 0.1.7's menu surface color is translucent; the host always
+                  // pairs it with this blur (the HoverCard recipe), otherwise
+                  // the panel reads as a dirty see-through.
+                  backdropFilter: TOK.menuBlur,
                   color: TOK.textSecondary,
                   border: `1px solid ${TOK.menuBorder}`,
                   borderRadius: '12px',
@@ -896,6 +988,27 @@ export function apply(ctx: SlotContext): void {
                   cursor: 'default',
                 },
               },
+
+              h(
+                'div',
+                // Full-bleed viewport: the popup's 12px side padding is moved
+                // INTO the scroll region, because row hover backgrounds bleed
+                // 8px past their container on purpose (`.ci-row-head`'s
+                // negative margins) and that room must exist inside the
+                // scrolling box — otherwise the bleed becomes a 16px
+                // horizontal overflow and the panel grows a sideways
+                // scrollbar. overflowX hidden is the belt-and-braces guard:
+                // no content in this panel is ever meant to scroll sideways.
+                {
+                  style: {
+                    flex: '1 1 auto',
+                    minHeight: 0,
+                    overflowY: 'auto',
+                    overflowX: 'hidden',
+                    margin: '0 -12px',
+                    padding: '0 12px',
+                  },
+                },
 
               // Header: the filter is always one keystroke away — opening the
               // panel lands focus in this input (first focusable in the popup),
@@ -998,6 +1111,7 @@ export function apply(ctx: SlotContext): void {
 
               ...notices,
               ...body,
+              ),
 
               // A quiet feedback link at the panel foot: when the honest
               // "no tools registered" state or anything else confuses a user,
@@ -1005,9 +1119,46 @@ export function apply(ctx: SlotContext): void {
               // tab; rel guards the reverse-tabnabbing vector. The host's own
               // link glyph leads it (right-aligned so it never competes with
               // the list above); label is fully localized via locale keys.
+              // The left seat holds the jump to the global settings page: the
+              // panel edits the session, the settings page edits the defaults
+              // every new session inherits. On a host too old to expose the
+              // shortcuts registry the entry does not render at all.
+              // Pinned below the scroll viewport with the host Menu's footer
+              // recipe: flex:none plus an l2 hairline (l1 is near-invisible on
+              // the menu surface).
               h(
                 'div',
-                { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '10px' } },
+                {
+                  style: {
+                    flex: 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginTop: '6px',
+                    paddingTop: '8px',
+                    borderTop: '0.5px solid var(--dsw-alias-border-l2, rgba(0,0,0,.1))',
+                  },
+                },
+                (() => {
+                  // The settings shortcut only exists on the 0.1.7+ shell (see
+                  // hasModernShell); older hosts hide the entry entirely rather
+                  // than offer a button whose click can only be a no-op.
+                  return HOST_HAS_MODERN_SHELL
+                    ? h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'ci-feedback-link ci-settings-link',
+                          title: t('footer.openSettingsHint'),
+                          onClick: () => {
+                            openGlobalSettings(t('preset.nav'));
+                          },
+                        },
+                        h('span', { className: 'ci-feedback-icon', 'aria-hidden': true }, h(IconSettings, { size: 12 })),
+                        t('footer.openSettings'),
+                      )
+                    : h('span');
+                })(),
                 h('a', {
                   href: FEEDBACK_URL,
                   target: '_blank',

@@ -4,7 +4,22 @@ import { Input } from '@base-ui/react/input';
 import { Tabs } from '@base-ui/react/tabs';
 // Same host-graph discipline as the composer panel: the Menu primitive keeps
 // the picker's popup on the theme tokens a native <select> can never reach.
-import { IconChevronDownOutline14, IconFolderClose16, IconRefreshOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives';
+import { Menu } from '@deepseek-ai/dsh-client-ui-primitives';
+import * as primitives from '@deepseek-ai/dsh-client-ui-primitives';
+// Icon names differ across host generations; icons.ts resolves whichever exists.
+import { IconChevronDown, IconFolderClose, IconRefresh, IconSearch } from './icons.js';
+
+/** The 0.1.7 design-system SegmentedControl, as far as this panel reads it. */
+type SegmentedKind = 'all' | 'skills' | 'mcp' | 'system';
+type SegmentedControlComponent = (props: {
+  id: string;
+  value: SegmentedKind;
+  options: readonly { value: SegmentedKind; label: string; disabled?: boolean; title?: string }[];
+  onChange: (next: SegmentedKind) => void;
+  label: string;
+  disabled?: boolean;
+  className?: string;
+}) => React.ReactElement;
 import { resolveDisclosure } from './disclosure.js';
 import { chevronIcon, disclosureRow } from './disclosure-row.js';
 import { capabilitySwitch } from './switch.js';
@@ -64,6 +79,10 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
   React.useEffect(() => { void loadPresetTools(); }, []);
   const [query, setQuery] = React.useState('');
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  // Part-level collapse state (skills / MCP / system tools). Parts default
+  // open: this is an editing surface, and hiding the toggles behind a click
+  // would only add friction.
+  const [partOpen, setPartOpen] = React.useState<Record<string, boolean>>({});
   // Which categories to show. The composer panel switches between them with
   // exclusive tabs because it is a 360px popover; this panel is wide enough to
   // show all three at once, so "all" is the default and the tabs narrow it.
@@ -174,7 +193,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                 'span',
                 { className: 'ci-folder-icon', style: { display: 'inline-grid', placeItems: 'center', opacity: 0, transition: 'opacity 0.15s' } },
                 // The host's own folder glyph, same as the session panel's dividers.
-                React.createElement(IconFolderClose16, { size: 12 }),
+                React.createElement(IconFolderClose, { size: 12 }),
               )
             : null,
           `${label} (${items.length})`,
@@ -290,26 +309,50 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
     const groups: React.ReactElement[] = [];
     const group = (
       key: 'skills' | 'mcp' | 'system',
-      label: string,
+      title: string,
       rows: readonly React.ReactElement[],
+      total: number,
+      shown: number,
     ): void => {
       if (kind !== 'all' && kind !== key) return;
       if (rows.length === 0) return;
+      // The host inventory page's group interaction: a chevron-led trigger row
+      // with a tabular count subtitle, hairline-separated groups. Defaults open
+      // (this is an editing surface, not an inventory), and a text filter
+      // forces every part open so matched rows stay visible.
+      const open = filtering || (partOpen[key] ?? true);
       groups.push(React.createElement(
-        'section',
-        { key, className: 'ci-preset-part' },
-        React.createElement('h3', { className: 'ci-preset-part-title' }, label),
-        React.createElement('ul', { className: 'ci-preset-tool-list' }, ...rows),
+        Collapsible.Root,
+        {
+          key,
+          className: 'ci-preset-part',
+          open,
+          onOpenChange: (next: boolean) => { setPartOpen((prev) => ({ ...prev, [key]: next })); },
+        },
+        React.createElement(
+          Collapsible.Trigger,
+          { className: 'ci-preset-part-trigger' },
+          React.createElement('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
+          React.createElement('h3', { className: 'ci-preset-part-title' }, title),
+        ),
+        React.createElement('p', { className: 'ci-preset-part-sub' }, t('group.count', { shown, total })),
+        React.createElement(
+          Collapsible.Panel,
+          { className: 'ci-collapse' },
+          React.createElement('ul', { className: 'ci-preset-tool-list' }, ...rows),
+        ),
       ));
     };
 
     group(
       'skills',
-      t('group.skills', { shown: view.skills.length, total: totals.skills }),
+      t('tab.skills'),
       groupBy(view.skills, (skill) => skill.group ?? skill.source ?? 'unknown').flatMap(([groupKey, items], i) => [
         sourceDivider(groupKey, items, i === 0),
         ...items.map((skill) => skillRow(skill, selected.id)),
       ]),
+      totals.skills,
+      view.skills.length,
     );
 
     const serverRow = (server: (typeof view.mcp)[number]): React.ReactElement => {
@@ -382,7 +425,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                     void reconnectPresetServer(server.server).finally(() => { setTimeout(() => { setReconnecting(null); }, 2500); });
                   },
                 },
-                React.createElement('span', { className: 'ci-reconnect-glyph', 'aria-hidden': true }, React.createElement(IconRefreshOutline14, { size: 12 })),
+                React.createElement('span', { className: 'ci-reconnect-glyph', 'aria-hidden': true }, React.createElement(IconRefresh, { size: 12 })),
                 t('action.reload.label'),
               )
               : null,
@@ -402,16 +445,20 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
 
     group(
       'mcp',
-      t('group.mcp', { shown: view.mcp.length, total: totals.mcp }),
+      t('tab.mcp'),
       groupBy(view.mcp, (server) => server.source === undefined || server.source === 'host' ? 'host' : `preset:${server.source}`).flatMap(([groupKey, items], i) => [
         sourceDivider(groupKey, items, i === 0),
         ...items.map((server) => serverRow(server)),
       ]),
+      totals.mcp,
+      view.mcp.length,
     );
     group(
       'system',
-      t('group.system', { shown: view.systemTools.length, total: totals.systemTools }),
+      t('group.systemTools'),
       view.systemTools.map((tool) => toolRow(tool, selected.id, false)),
+      totals.systemTools,
+      view.systemTools.length,
     );
     // Narrowing to a category that this preset has nothing in is a normal
     // outcome, not an error: say so rather than render an empty panel.
@@ -443,81 +490,103 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
           React.createElement(
             'div',
             { className: 'ci-preset-toolbar' },
+            // The host inventory page's search row: the magnifier lives inside
+            // the field (pinned at left 12px), the input takes the full width.
             React.createElement(
-              'span',
-              { className: 'ci-preset-picker-label' },
-              React.createElement('span', null, t('preset.choose')),
-              // The model selector's language: a borderless pill trigger and a
-              // Menu the theme owns — a native <select> popup cannot follow
-              // --dsw-* tokens, and its bordered box read as foreign here.
-              React.createElement(
-                Menu,
-                {
-                  open: pickerOpen,
-                  anchor: React.createElement(
-                    'button',
-                    {
-                      type: 'button',
-                      className: 'ci-preset-picker-trigger',
-                      // Menu renders role="menu" (same as the host's model
-                      // selector); the visible text above is a layout sibling,
-                      // not a label, so name the trigger explicitly.
-                      'aria-haspopup': 'menu',
-                      'aria-expanded': pickerOpen,
-                      'aria-label': t('preset.choose'),
-                      onClick: () => { setPickerOpen((open) => !open); },
-                    },
-                    React.createElement('span', { className: 'ci-preset-picker-name' }, selected?.name ?? ''),
-                    React.createElement(
-                      'span',
-                      { className: `ci-preset-picker-chevron${pickerOpen ? ' ci-preset-picker-chevron-open' : ''}`, 'aria-hidden': true },
-                      React.createElement(IconChevronDownOutline14, { size: 14 }),
-                    ),
-                  ),
-                  items: state.payload.presets.map((preset) => ({ id: preset.id, label: preset.name })),
-                  ...(state.selectedId === null ? {} : { selectedId: state.selectedId }),
-                  onSelect: (id: string) => { selectPreset(id); setPickerOpen(false); },
-                  onClose: () => { setPickerOpen(false); },
-                },
-              ),
+              'div',
+              { className: 'ci-search' },
+              React.createElement(IconSearch, { size: 16 }),
+              React.createElement(Input, {
+                className: 'ci-filter ci-preset-filter',
+                value: query,
+                placeholder: t('filter.placeholder'),
+                'aria-label': t('filter.aria'),
+                autoComplete: 'off',
+                spellCheck: false,
+                name: 'ci-preset-filter',
+                onChange: (event: { target: { value: string } }) => { setQuery(event.target.value); },
+                onKeyDown: (event: { key: string }) => { if (event.key === 'Escape' && filtering) setQuery(''); },
+              }),
             ),
-            React.createElement(Input, {
-              className: 'ci-filter ci-preset-filter',
-              value: query,
-              placeholder: t('filter.placeholder'),
-              'aria-label': t('filter.aria'),
-              autoComplete: 'off',
-              spellCheck: false,
-              name: 'ci-preset-filter',
-              onChange: (event: { target: { value: string } }) => { setQuery(event.target.value); },
-              onKeyDown: (event: { key: string }) => { if (event.key === 'Escape' && filtering) setQuery(''); },
-            }),
+            // The preset switcher follows the host's own preset-mode button on
+            // that page: a module-platform pill with the current value and a
+            // chevron. Menu still owns the popup — a native <select> cannot
+            // follow --dsw-* tokens.
+            React.createElement(
+              Menu,
+              {
+                open: pickerOpen,
+                anchor: React.createElement(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'ci-preset-picker-trigger',
+                    // Menu renders role="menu"; the visible text is the current
+                    // value, so name the trigger explicitly.
+                    'aria-haspopup': 'menu',
+                    'aria-expanded': pickerOpen,
+                    'aria-label': t('preset.choose'),
+                    onClick: () => { setPickerOpen((open) => !open); },
+                  },
+                  React.createElement('span', { className: 'ci-preset-picker-name' }, selected?.name ?? ''),
+                  React.createElement(
+                    'span',
+                    { className: `ci-preset-picker-chevron${pickerOpen ? ' ci-preset-picker-chevron-open' : ''}`, 'aria-hidden': true },
+                    React.createElement(IconChevronDown, { size: 14 }),
+                  ),
+                ),
+                items: state.payload.presets.map((preset) => ({ id: preset.id, label: preset.name })),
+                ...(state.selectedId === null ? {} : { selectedId: state.selectedId }),
+                onSelect: (id: string) => { selectPreset(id); setPickerOpen(false); },
+                onClose: () => { setPickerOpen(false); },
+              },
+            ),
           ),
           // Same three categories, same words, as the composer panel's tabs --
           // plus "all", because this panel is wide enough to show every group
-          // at once and that is the useful default here.
+          // at once and that is the useful default here. On a 0.1.7+ host this
+          // is the design system's SegmentedControl (the same in-page mode
+          // switch the models settings page uses); older hosts keep the local
+          // compact tabs.
           selected === undefined
             ? null
-            : React.createElement(
-                Tabs.Root,
-                {
-                  value: kind,
-                  onValueChange: (value: string) => { setKind(value as 'all' | 'skills' | 'mcp' | 'system'); },
-                  className: 'ci-preset-kinds',
-                },
-                React.createElement(
-                  Tabs.List,
-                  { 'aria-label': t('preset.kindAria'), className: 'ci-tabs' },
-                  React.createElement(Tabs.Tab, { value: 'all', className: 'ci-tab' }, t('tab.all')),
-                  React.createElement(Tabs.Tab, { value: 'skills', className: 'ci-tab' }, `${t('tab.skills')} ${selected.skills.length}`),
-                  React.createElement(Tabs.Tab, { value: 'mcp', className: 'ci-tab' }, `${t('tab.mcp')} ${selected.mcp.length}`),
+            : (() => {
+                const Segmented = (primitives as unknown as { SegmentedControl?: SegmentedControlComponent }).SegmentedControl;
+                if (Segmented !== undefined) {
+                  return React.createElement(Segmented, {
+                    id: 'ci-preset-kinds',
+                    label: t('preset.kindAria'),
+                    value: kind,
+                    options: [
+                      { value: 'all' as const, label: t('tab.all') },
+                      { value: 'skills' as const, label: `${t('tab.skills')} ${selected.skills.length}` },
+                      { value: 'mcp' as const, label: `${t('tab.mcp')} ${selected.mcp.length}` },
+                      { value: 'system' as const, label: `${t('tab.system')} ${selected.systemTools.length}` },
+                    ],
+                    onChange: (next) => { setKind(next); },
+                  });
+                }
+                return React.createElement(
+                  Tabs.Root,
+                  {
+                    value: kind,
+                    onValueChange: (value: string) => { setKind(value as 'all' | 'skills' | 'mcp' | 'system'); },
+                    className: 'ci-preset-kinds',
+                  },
                   React.createElement(
-                    Tabs.Tab,
-                    { value: 'system', className: 'ci-tab', 'aria-label': t('tab.system.aria', { count: selected.systemTools.length }) },
-                    `${t('tab.system')} ${selected.systemTools.length}`,
+                    Tabs.List,
+                    { 'aria-label': t('preset.kindAria'), className: 'ci-tabs' },
+                    React.createElement(Tabs.Tab, { value: 'all', className: 'ci-tab' }, t('tab.all')),
+                    React.createElement(Tabs.Tab, { value: 'skills', className: 'ci-tab' }, `${t('tab.skills')} ${selected.skills.length}`),
+                    React.createElement(Tabs.Tab, { value: 'mcp', className: 'ci-tab' }, `${t('tab.mcp')} ${selected.mcp.length}`),
+                    React.createElement(
+                      Tabs.Tab,
+                      { value: 'system', className: 'ci-tab', 'aria-label': t('tab.system.aria', { count: selected.systemTools.length }) },
+                      `${t('tab.system')} ${selected.systemTools.length}`,
+                    ),
                   ),
-                ),
-              ),
+                );
+              })(),
           selected?.description === undefined
             ? null
             : React.createElement('p', { className: 'ci-settings-description' }, selected.description),

@@ -210,10 +210,48 @@ describe('the route answers a payload the client half accepts', () => {
     expect(parsed).not.toBeNull();
     const preset = parsed?.presets[0];
     expect(preset?.id).toBe('cordis');
+    expect(preset?.trust).toBe('system');
     // Stored defaults must show up as off in the served rows.
     expect(preset?.systemTools.find((tool) => tool.name === 'read')?.enabled).toBe(false);
     expect(preset?.skills.find((skill) => skill.name === 'lark-im')?.enabled).toBe(false);
     expect(parsed?.writable).toBe(true);
+  });
+
+  // dsh 0.1.7's roster dropped trust/path and replaced standingKeyFor with a
+  // lease-returning acquireScope. One build serves both shapes: the same
+  // route-through-parser round trip on the new service, no legacy fields.
+  it('serves a 0.1.7-shaped preset roster the parser still accepts', async () => {
+    const leases: { disposed: boolean }[] = [];
+    const route = hostWithCatalog({
+      agentPresets: {
+        list: () => Promise.resolve([{ id: 'cordis', name: 'Cordis', description: 'primary' }]),
+        acquireScope: () => {
+          const lease = { key: { preset: 'cordis' }, disposed: false };
+          leases.push(lease);
+          return Promise.resolve({
+            key: lease.key,
+            [Symbol.asyncDispose]: () => {
+              lease.disposed = true;
+              return Promise.resolve();
+            },
+          });
+        },
+        composedPreset: () => 'cordis',
+      },
+      settings: {
+        writable: true,
+        register: () => ({ get: () => ({ presets: { cordis: ['read'] }, presetSkills: {} }), replace: () => Promise.resolve() }),
+      },
+    });
+    const { status, body } = await get(route.handler, '/api/capability-panel/presets');
+    expect(status).toBe(200);
+    const parsed = parsePresetToolPayload(JSON.parse(body));
+    expect(parsed?.presets[0]).toBeDefined();
+    expect(parsed?.presets[0]).not.toHaveProperty('trust');
+    expect(parsed?.presets[0]?.systemTools.find((tool) => tool.name === 'read')?.enabled).toBe(false);
+    // Every acquired lease came back released through the full route.
+    expect(leases.length).toBeGreaterThan(0);
+    expect(leases.every((lease) => lease.disposed)).toBe(true);
   });
 
   it('groups MCP tools under their server, not as flat system tools', async () => {

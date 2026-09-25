@@ -74,3 +74,24 @@ describe('preset MCP server source fields', () => {
     expect(parsePresetToolPayload(withServer({ ...base, path: 42 }))).toBeNull();
   });
 });
+
+describe('preset trust field (optional since dsh 0.1.7)', () => {
+  it('accepts a row with no trust and omits the key from the parsed entry', () => {
+    const payload = basePayload();
+    delete (payload.presets[0] as Record<string, unknown>)['trust'];
+    const parsed = parsePresetToolPayload(payload);
+    expect(parsed?.presets[0]).toBeDefined();
+    expect(parsed?.presets[0]).not.toHaveProperty('trust');
+  });
+
+  it('still carries a valid trust through', () => {
+    const parsed = parsePresetToolPayload(basePayload());
+    expect(parsed?.presets[0]?.trust).toBe('system');
+  });
+
+  it('rejects an unexpected trust value', () => {
+    const payload = basePayload();
+    (payload.presets[0] as Record<string, unknown>)['trust'] = 'other';
+    expect(parsePresetToolPayload(payload)).toBeNull();
+  });
+});

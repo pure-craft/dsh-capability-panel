@@ -98,6 +98,37 @@ async function presetSkillRows(
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Read one preset's tool/skill roster through its standing scope, on whichever
+ * API the live host offers.
+ *
+ * dsh ≤ 0.1.6 exposed `standingKeyFor(id)` — a bare key, no lease. The 0.1.7
+ * registry split replaced it with `acquireScope(id)`, which retains the
+ * generation and hands back `{ key }` plus async disposal; the lease MUST be
+ * released or the mount is pinned against collection forever. Probing at call
+ * time (not composition time) keeps one build working across both shapes, and
+ * a service offering neither surfaces as the caller's existing 503/degraded
+ * channel rather than a TypeError.
+ */
+async function withPresetScope<T>(
+  agentPresets: AgentPresetsService,
+  presetId: string,
+  read: (scope: unknown) => T | Promise<T>,
+): Promise<T> {
+  if (agentPresets.acquireScope !== undefined) {
+    const lease = await agentPresets.acquireScope(presetId);
+    try {
+      return await read(lease.key);
+    } finally {
+      await lease[Symbol.asyncDispose]();
+    }
+  }
+  if (agentPresets.standingKeyFor !== undefined) {
+    return await read(await agentPresets.standingKeyFor(presetId));
+  }
+  throw new Error('host exposes neither acquireScope nor standingKeyFor');
+}
+
 async function presetAndTools(
   agentPresets: AgentPresetsService,
   tools: ToolsService,
@@ -108,8 +139,8 @@ async function presetAndTools(
   if (preset === undefined) throw new HttpError(404, `preset "${presetId}" is not available`);
   if (preset.broken !== undefined) throw new HttpError(409, `preset "${presetId}" is broken: ${preset.broken}`);
   try {
-    const scope = await agentPresets.standingKeyFor(presetId);
-    return { preset, tools: toolSummaries(tools, scope) };
+    const scoped = await withPresetScope(agentPresets, presetId, (scope) => toolSummaries(tools, scope));
+    return { preset, tools: scoped };
   } catch (error) {
     throw new HttpError(503, `preset "${presetId}" tools are unavailable: ${errorMessage(error)}`);
   }
@@ -166,14 +197,14 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
       // mount error as the reason, and let the others list normally.
       let mountError: string | undefined;
       if (preset.broken === undefined) {
-        let scope: unknown;
         try {
-          scope = await agentPresets.standingKeyFor(preset.id);
-          entries = toolSummaries(tools, scope);
-          if (skills !== undefined) {
-            const disabledSkills = new Set(stored.presetSkills[preset.id] ?? []);
-            skillRows = await presetSkillRows(skills, scope, disabledSkills, cwd, presetDirs);
-          }
+          await withPresetScope(agentPresets, preset.id, async (scope) => {
+            entries = toolSummaries(tools, scope);
+            if (skills !== undefined) {
+              const disabledSkills = new Set(stored.presetSkills[preset.id] ?? []);
+              skillRows = await presetSkillRows(skills, scope, disabledSkills, cwd, presetDirs);
+            }
+          });
         } catch (error) {
           mountError = errorMessage(error);
         }
@@ -243,7 +274,9 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
       return {
         id: preset.id,
         name: preset.name ?? preset.id,
-        trust: preset.trust,
+        // dsh ≤ 0.1.6 rows carry trust; the 0.1.7 roster dropped it. Forward
+        // it when present, omit (never invent) when the host no longer says.
+        ...(preset.trust === undefined ? {} : { trust: preset.trust }),
         ...(preset.description === undefined ? {} : { description: preset.description }),
         ...(preset.broken !== undefined
           ? { broken: preset.broken }
@@ -341,8 +374,9 @@ export function createPresetToolController(ctx: HostServices, access: ToolkitSet
       if (preset.broken !== undefined) throw new HttpError(409, `preset "${presetId}" is broken: ${preset.broken}`);
       let visible: PresetSkillRow[];
       try {
-        const scope = await agentPresets.standingKeyFor(presetId);
-        visible = await presetSkillRows(skills, scope, new Set(), process.cwd());
+        visible = await withPresetScope(agentPresets, presetId, (scope) =>
+          presetSkillRows(skills, scope, new Set(), process.cwd()),
+        );
       } catch (error) {
         throw new HttpError(503, `preset "${presetId}" skills are unavailable: ${errorMessage(error)}`);
       }

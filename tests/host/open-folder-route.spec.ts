@@ -301,6 +301,14 @@ describe('open-folder route', () => {
     expect(result.status).toBe(404);
   });
 
+  // dsh 0.1.7's roster dropped `path`: a matching preset with no directory to
+  // open is an honest 404, never a crash on undefined.
+  it('returns 404 for a path-less preset row (dsh 0.1.7 roster)', async () => {
+    const fx = fixture({ agentPresetsList: [{ id: 'x', name: 'my-preset' }] });
+    const result = await call(fx, { source: 'my-preset' });
+    expect(result.status).toBe(404);
+  });
+
   it('returns 404 when the preset registry is unavailable', async () => {
     const fx = fixture({ noAgentPresetsService: true });
     const result = await call(fx, { source: 'nope' });

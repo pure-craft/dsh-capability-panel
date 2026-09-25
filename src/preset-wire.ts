@@ -68,7 +68,10 @@ export function parsePresetToolPayload(value: unknown): PresetToolPayload | null
   for (const raw of rawPresets) {
     if (!isRecord(raw)) return null;
     const { id, name, description, broken, trust, skills: rawSkills, mcp: rawMcp, systemTools: rawSystem } = raw;
-    if (typeof id !== 'string' || typeof name !== 'string' || (trust !== 'system' && trust !== 'user')) return null;
+    if (typeof id !== 'string' || typeof name !== 'string') return null;
+    // Optional since dsh 0.1.7 dropped it from the roster; when present it is
+    // still a closed enum — an unexpected value means a different payload.
+    if (trust !== undefined && trust !== 'system' && trust !== 'user') return null;
     if (!Array.isArray(rawMcp) || !Array.isArray(rawSystem) || !Array.isArray(rawSkills)) return null;
     if (description !== undefined && typeof description !== 'string') return null;
     if (broken !== undefined && typeof broken !== 'string') return null;
@@ -102,7 +105,7 @@ export function parsePresetToolPayload(value: unknown): PresetToolPayload | null
       name,
       ...(description === undefined ? {} : { description }),
       ...(broken === undefined ? {} : { broken }),
-      trust,
+      ...(trust === undefined ? {} : { trust }),
       skills,
       mcp,
       systemTools,

@@ -6,10 +6,14 @@ import { HttpError } from '../../src/host/errors.js';
 
 interface FixtureOptions {
   settings?: boolean;
+  /** 'forms' models the dsh 0.1.7 settings rewrite: describe/replace, no register. */
+  settingsShape?: 'legacy' | 'forms';
   agentPresets?: boolean;
   tools?: boolean;
   broken?: boolean;
   standingError?: unknown;
+  /** 'lease' models the dsh 0.1.7 shape: acquireScope only, no standingKeyFor. */
+  agentPresetsShape?: 'legacy' | 'lease';
   presetMetadata?: boolean;
   skills?: boolean;
   disabledSkills?: string[];
@@ -38,6 +42,31 @@ function fixture(options: FixtureOptions = {}) {
     return Promise.resolve();
   });
   const registrations: unknown[][] = [];
+  // One settings INSTANCE per shape; the access caches its binding against it,
+  // and an HMR swap (a new instance) must rebind rather than reuse.
+  const legacySettings = {
+    writable: true,
+    register(...args: unknown[]) {
+      registrations.push(args);
+      return {
+        get: () => {
+          if (options.storedGetThrows === true) throw new Error('stored section is corrupt');
+          return values;
+        },
+        replace: update,
+      };
+    },
+  };
+  const formsSettings = {
+    writable: true,
+    describe: () => [{
+      ns: TOOLKIT_SETTINGS_NAMESPACE,
+      value: options.storedGetThrows === true
+        ? (() => { throw new Error('stored section is corrupt'); })()
+        : values,
+    }, { ns: 'other-entry', value: {} }],
+    replace: update,
+  };
   const services: Record<string, unknown> = {};
   if (options.settingsRegisterThrows === true) {
     services['settings'] = {
@@ -47,27 +76,35 @@ function fixture(options: FixtureOptions = {}) {
       },
     };
   } else if (options.settings !== false) {
-    services.settings = {
-      writable: true,
-      register(...args: unknown[]) {
-        registrations.push(args);
-        return {
-          get: () => {
-            if (options.storedGetThrows === true) throw new Error('stored section is corrupt');
-            return values;
-          },
-          replace: update,
-        };
-      },
-    };
+    services.settings = options.settingsShape === 'forms' ? formsSettings : legacySettings;
   }
   if (options.agentPresets !== false) {
-    services.agentPresets = {
-      list: () => Promise.resolve([{ id: 'alpha', trust: 'system', ...(options.presetMetadata === false ? {} : { name: 'Alpha', description: 'primary' }), ...(options.broken ? { broken: 'bad yaml' } : {}), ...(options.presetPath === undefined ? {} : { path: options.presetPath }) }]),
-      standingKeyFor: () => options.standingError === undefined
-        ? Promise.resolve({ preset: 'alpha' })
-        : Promise.reject(options.standingError instanceof Error ? options.standingError : new Error('offline')),
-    };
+    const standing = () => options.standingError === undefined
+      ? Promise.resolve({ preset: 'alpha' })
+      : Promise.reject(options.standingError instanceof Error ? options.standingError : new Error('offline'));
+    // The lease shape records disposal so tests can prove the controller
+    // releases every acquired scope — a leaked lease pins a generation.
+    const leases: { disposed: boolean }[] = [];
+    services.agentPresets = options.agentPresetsShape === 'lease'
+      ? {
+          list: () => Promise.resolve([{ id: 'alpha', ...(options.presetMetadata === false ? {} : { name: 'Alpha', description: 'primary' }), ...(options.broken ? { broken: 'bad yaml' } : {}), ...(options.presetPath === undefined ? {} : { path: options.presetPath }) }]),
+          acquireScope: () => standing().then((key) => {
+            const lease = { key, disposed: false };
+            leases.push(lease);
+            return {
+              key,
+              [Symbol.asyncDispose]: () => {
+                lease.disposed = true;
+                return Promise.resolve();
+              },
+            };
+          }),
+        }
+      : {
+          list: () => Promise.resolve([{ id: 'alpha', trust: 'system', ...(options.presetMetadata === false ? {} : { name: 'Alpha', description: 'primary' }), ...(options.broken ? { broken: 'bad yaml' } : {}), ...(options.presetPath === undefined ? {} : { path: options.presetPath }) }]),
+          standingKeyFor: standing,
+        };
+    (services.agentPresets as Record<string, unknown>)['leases'] = leases;
   }
   if (options.tools !== false) {
     services.tools = {
@@ -108,11 +145,18 @@ function fixture(options: FixtureOptions = {}) {
       ? { entries: () => options.loaderEntries as never }
       : services[name]),
   };
+  const access = createToolkitSettingsAccess(ctx as never);
   return {
-    controller: createPresetToolController(ctx as never, createToolkitSettingsAccess(ctx as never)),
+    controller: createPresetToolController(ctx as never, access),
     values,
     update,
     registrations,
+    access,
+    settingsService: services['settings'] as object | undefined,
+    replaceService(next: object) {
+      services['settings'] = next;
+    },
+    agentPresets: services['agentPresets'] as { leases?: { disposed: boolean }[] } | undefined,
   };
 }
 
@@ -122,6 +166,53 @@ function expectHttp(error: unknown, status: number, message: string): void {
 }
 
 describe('preset tool settings', () => {
+  // dsh 0.1.7 rewrote the settings service around plugin-entry forms: no
+  // register(), values off describe(), writes through replace(ns, section).
+  // The access layer probes both shapes; this pins the new one end to end.
+  describe('forms host shape (dsh 0.1.7)', () => {
+    it('reads stored defaults through describe and persists through replace', async () => {
+      const host = fixture({ settingsShape: 'forms' });
+      const payload = await host.controller.list();
+      expect(payload.presets[0]?.systemTools.find((tool) => tool.name === 'bash')?.enabled).toBe(false);
+      await host.controller.set('alpha', 'mcp__search__web', false);
+      // The forms replace carries the entry id as its first argument; the
+      // section itself is the shared read-modify-write payload.
+      expect(host.update).toHaveBeenLastCalledWith(TOOLKIT_SETTINGS_NAMESPACE, {
+        presets: { alpha: ['bash', 'mcp__search__web'] },
+        presetSkills: {},
+        sessions: {},
+      });
+    });
+
+    it('degrades when the namespace has no descriptor to read', () => {
+      const services: Record<string, unknown> = {
+        settings: { writable: true, describe: () => [], replace: () => Promise.resolve() },
+      };
+      const ctx = { get: (name: string) => services[name] };
+      const access = createToolkitSettingsAccess(ctx as never);
+      expect(access.scope()).toBeDefined();
+      expect(() => access.scope()!.get()).toThrow('settings entry "capability-panel" is not configurable');
+    });
+
+    // The cached binding keys on the service INSTANCE: an HMR reload publishes
+    // a new one, and reads must flow through the fresh service — reusing the
+    // old closure would serve stale values forever.
+    it('rebinds when the settings service instance is replaced', async () => {
+      const host = fixture({ settingsShape: 'forms' });
+      await host.controller.list();
+      const swapped = {
+        writable: true,
+        describe: () => [{ ns: TOOLKIT_SETTINGS_NAMESPACE, value: { presets: {}, presetSkills: {}, sessions: {} } }],
+        replace: () => Promise.resolve(),
+      };
+      host.replaceService(swapped);
+      const payload = await host.controller.list();
+      // The old instance stored alpha:["bash"]; the swap stores nothing, so
+      // every tool now lists enabled — proof the read came from `swapped`.
+      expect(payload.presets[0]?.systemTools.every((tool) => tool.enabled)).toBe(true);
+    });
+  });
+
   it('registers a live settings namespace and lists complete preset tools', async () => {
     const host = fixture();
     // Registration is deferred to first use, so nothing is registered yet.
@@ -485,5 +576,48 @@ describe('declared-but-offline servers in the preset listing', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).not.toHaveProperty('unavailable');
     expect(rows[0]).toMatchObject({ reconnectable: true });
+  });
+
+  // dsh 0.1.7 replaced standingKeyFor with acquireScope (a retained lease the
+  // reader must dispose). The controller probes whichever the live service
+  // offers, so one build serves both hosts.
+  describe('acquireScope host shape (dsh 0.1.7)', () => {
+    it('lists through a lease, disposes it, and omits the dropped trust field', async () => {
+      const host = fixture({ agentPresetsShape: 'lease' });
+      const payload = await host.controller.list();
+      // The 0.1.7 roster dropped trust; the entry honestly omits it.
+      expect(payload.presets[0]).not.toHaveProperty('trust');
+      expect(payload.presets[0]!.systemTools.length).toBeGreaterThan(0);
+      expect(host.agentPresets!.leases!.length).toBeGreaterThan(0);
+      expect(host.agentPresets!.leases!.every((lease) => lease.disposed)).toBe(true);
+    });
+
+    it('releases every lease a set/setSkill read acquires', async () => {
+      const host = fixture({ agentPresetsShape: 'lease' });
+      await host.controller.set('alpha', 'bash', false); // presetAndTools + trailing list()
+      await host.controller.setSkill('alpha', 'writing', false); // skill read + trailing list()
+      expect(host.agentPresets!.leases!.length).toBe(4);
+      expect(host.agentPresets!.leases!.every((lease) => lease.disposed)).toBe(true);
+    });
+
+    it('surfaces a lease acquisition failure as the same 503', async () => {
+      const host = fixture({ agentPresetsShape: 'lease', standingError: new Error('offline') });
+      await expect(host.controller.set('alpha', 'bash', false))
+        .rejects.toSatisfy((error) => { expectHttp(error, 503, 'preset "alpha" tools are unavailable: offline'); return true; });
+    });
+  });
+
+  // A service offering neither API (a future host rename) must degrade to the
+  // existing 503 channel, not throw a TypeError across the route boundary.
+  it('reports 503 when the host exposes neither scope API', async () => {
+    const settings = { register: () => ({ get: () => ({ presets: {}, presetSkills: {}, sessions: {} }), replace: () => Promise.resolve() }) };
+    const bare = {
+      list: () => Promise.resolve([{ id: 'alpha', name: 'Alpha' }]),
+      composedPreset: () => undefined,
+    };
+    const ctx = { get: (name: string) => name === 'agentPresets' ? bare : name === 'settings' ? settings : name === 'tools' ? { schemas: () => [] } : undefined };
+    const controller = createPresetToolController(ctx as never, createToolkitSettingsAccess(ctx as never));
+    await expect(controller.set('alpha', 'bash', false))
+      .rejects.toSatisfy((error) => { expectHttp(error, 503, 'preset "alpha" tools are unavailable: host exposes neither acquireScope nor standingKeyFor'); return true; });
   });
 });

@@ -368,6 +368,10 @@ export async function buildPayload(
   if (agent !== undefined) {
     const presetId = services.get('agentPresets')?.composedPreset(agent.ctx);
     try {
+      // dsh 0.1.7 dropped `path` from roster rows; the filters below already
+      // treat a missing path as "no directory to show", so preset grouping
+      // and folder-open degrade silently on newer hosts while names still
+      // resolve.
       const presets = await services.get('agentPresets')?.list();
       presetDirs = (presets ?? [])
         .filter((p) => typeof p.path === 'string' && p.path !== '')

@@ -388,6 +388,44 @@ describe('buildPayload MCP source with preset', () => {
     expect(payload.sessionId).toBe('s1');
   });
 
+  // dsh 0.1.7's roster rows carry no path and no trust. The session payload
+  // must still resolve the preset NAME (labels keep working) while every
+  // path-derived affordance — MCP row paths, preset skill grouping — simply
+  // has nothing to show.
+  it('reads a path-less 0.1.7 preset row without degrading the name', async () => {
+    const agent = { ctx: {} };
+    const agents = { get: () => agent };
+    const skills = {
+      list: () => [
+        { name: 'custom-skill', description: '', source: 'custom', provider: 'filesystem', resourceBase: { kind: 'directory', path: '/presets/mine/skills/custom-skill' }, invocation: { modelInvocable: true, userInvocable: true } },
+      ],
+    };
+    const tools = {
+      // Global schemas() knows nothing of `mine`; the agent-scoped view does —
+      // a preset-scoped server, exactly what carries the preset's path.
+      schemas: (scope?: unknown) => scope === undefined ? [] : [{ name: 'mcp__mine__tool' }],
+    };
+    const agentPresets = {
+      composedPreset: () => 'mine',
+      list: () => [{ id: 'mine', name: 'Mine' }],
+    };
+    const services = {
+      get(name: string) {
+        if (name === 'agents') return agents;
+        if (name === 'skills') return skills;
+        if (name === 'tools') return tools;
+        if (name === 'agentPresets') return agentPresets;
+        return undefined;
+      },
+    };
+    const payload = await buildPayload(services as never, 's1', EMPTY_STATE);
+    const server = payload.mcp.find((s) => s.server === 'mine');
+    expect(server?.source).toBe('Mine');
+    expect(server).not.toHaveProperty('path');
+    // No preset dirs are known, so the custom skill keeps plain provenance.
+    expect(payload.skills.find((s) => s.name === 'custom-skill')).not.toHaveProperty('group');
+  });
+
   it('falls back to "unknown" when skill source or provider is not a string', async () => {
     const agent = { ctx: {} };
     const agents = { get: () => agent };

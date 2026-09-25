@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Switch } from '@base-ui/react/switch';
+import * as primitives from '@deepseek-ai/dsh-client-ui-primitives';
 import { TOK } from './styles.js';
 
 export interface CapabilitySwitchOptions {
@@ -12,17 +13,38 @@ export interface CapabilitySwitchOptions {
   readonly onCheckedChange: (checked: boolean) => void;
 }
 
+/** The 0.1.7 design-system Switch, as far as this panel reads its props. */
+interface HostSwitchProps {
+  readonly checked: boolean;
+  readonly onChange: (next: boolean) => void;
+  readonly label: string;
+  readonly disabled?: boolean;
+  readonly title?: string;
+  readonly className?: string;
+}
+type HostSwitchComponent = (props: HostSwitchProps) => React.ReactElement;
+
 /**
  * The capability switch, in one place for both panels.
  *
- * The two panels each had their own copy, and the copies had already drifted:
- * the thumb was a circle in one and a pill in the other, with different
- * transition durations and shadows. Nobody noticed, which is the point --
- * "how a control looks" belongs to the design system, while "what a row is
- * made of" belongs to each panel, so only the latter is written twice.
+ * dsh 0.1.7 ships a design-system `Switch` (36×20 capsule, brand-primary on
+ * state, its own disabled dimming and focus ring) — using it keeps the panel's
+ * toggles pixel-identical to every settings page the host ships, which is the
+ * alignment this file exists for. Hosts older than that export fall back to
+ * the local Base UI rendition below, so one build still serves both
+ * generations; the probe runs per call, the same way the icon table resolves.
  */
 export function capabilitySwitch(options: CapabilitySwitchOptions): React.ReactElement {
   const inert = options.disabled || options.busy;
+  const HostSwitch = (primitives as unknown as { Switch?: HostSwitchComponent }).Switch;
+  if (HostSwitch !== undefined) {
+    return React.createElement(HostSwitch, {
+      checked: options.checked,
+      onChange: options.onCheckedChange,
+      label: options.label,
+      disabled: inert,
+    });
+  }
   return React.createElement(
     Switch.Root,
     {

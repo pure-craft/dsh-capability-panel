@@ -76,7 +76,12 @@ export interface PresetSkillRow {
 export interface PresetToolEntry {
   readonly id: string;
   readonly name: string;
-  readonly trust: 'system' | 'user';
+  /**
+   * Present only when the host's preset roster still reports it (dsh ≤ 0.1.6).
+   * The 0.1.7 registry split dropped `trust` from `list()` rows, so a newer
+   * host omits it entirely — consumers must not branch on its absence.
+   */
+  readonly trust?: 'system' | 'user';
   readonly description?: string;
   readonly broken?: string;
   /**

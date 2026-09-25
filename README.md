@@ -5,9 +5,9 @@
 
 [English](README.en.md) | 中文 | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-**看清你的 DeepSeek Harness agent 此刻真正能触达什么——并且随时开关，按会话或按 preset。**
+**管理你的 DeepSeek Harness agent 的技能（Skills）、MCP 服务器与工具（Tools）：看清此刻真正能触达什么，并随时开关——按会话或按 preset。**
 
-一个面向当前对话能力面的面板：每个技能、每个 MCP 服务器、每个系统工具，都有真实的"在不在上下文里"状态，和一个从下一步模型调用就生效的开关。
+一个技能与 MCP 管理面板：每个技能、每个 MCP 服务器、每个系统工具，都有真实的"在不在上下文里"状态，和一个从下一步模型调用就生效的开关。
 
 ![会话中的能力面板:技能带加载状态、MCP 按服务器分组、每行一个开关](docs/images/panel-session.png)
 
@@ -17,11 +17,11 @@
 
 | | |
 |---|---|
-| 是什么 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`)的 web 插件:一个面板,列出当前会话的技能、MCP 服务器、系统工具及其真实的在不在上下文状态,并能逐项开关 |
+| 是什么 | [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)(`dsh`)的 web 插件：一个技能与 MCP 管理面板，列出当前会话的技能（skills）、MCP 服务器（MCP servers）与系统工具（tools）及其真实的在不在上下文状态，并能逐项开关 |
 | 什么时候用 | 回答"为什么 agent 不知道这个技能";看一个加载过的技能是否挺过了剪枝/压缩;只在当前会话里关掉某个工具或 MCP 服务器;为 preset 设置默认能力集合;统计关闭后被拦截的调用次数 |
 | 安装 | `dsh plugin --profile web add dsh-capability-panel`(然后重启 dsh) |
-| 要求 | dsh web profile,dsh ≥ 0.1.2-alpha.4(更早版本可运行,但加载状态降级显示);`@deepseek-ai/*` peer 全部由宿主提供 |
-| 数据 | `$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间;统计在 `$DSH_HOME/capability-panel/stats.jsonl`;loopback API `/api/capability-panel` |
+| 要求 | dsh web profile,dsh ≥ 0.1.2-alpha.4(更早版本可运行,但加载状态降级显示;0.1.7+ 起预设目录打开随宿主 API 演进降级);`@deepseek-ai/*` peer 全部由宿主提供 |
+| 数据 | 设置区段:dsh 0.1.7+ 存在当前 profile 补丁中本插件条目的 Config(按条目 id 寻址),≤ 0.1.6 在 `$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间;统计在 `$DSH_HOME/capability-panel/stats.jsonl`;loopback API `/api/capability-panel` |
 | 包 | npm 上的 `dsh-capability-panel`;bundle id `capability-panel` |
 
 ## 为什么
@@ -32,11 +32,11 @@
 
 这个插件把这两件事变成输入框右侧的一个面板。
 
-## 功能
+## 功能：Skills、MCP 与工具管理
 
 - **真实的加载状态。** 每个技能报告的是模型在下一次请求里实际能看到什么：`已加载`（完整指令在上下文里）/ `已截断`（剪枝器留下首尾、挖掉中间）/ `已挤出`（被压缩整体吞掉）/ `未加载`——外加累计加载次数，被挤出后重新加载的技能读作"已加载 ×2"。
 - **重启不丢的会话级开关。** 关掉当前会话里的一个技能、一个工具或一整个 MCP 服务器：从下一次提示组装生效，重启 dsh 后随该会话恢复，且绝不碰其他会话、绝不动对话历史。
-- **Preset 默认。** 设置 → 能力面板，为每个 agent preset 存一份默认能力集合；之后新建或恢复的会话继承它。与会话面板同一套筛选、分组和开关——preset 默认只是起点，会话里仍然可以覆盖。
+- **Preset 默认。** 设置 → 能力面板，为每个 agent preset 存一份默认能力集合；之后新建或恢复的会话继承它。全部 / 技能 / MCP / 工具分类切换、可折叠分组、与会话面板同一套筛选和开关——preset 默认只是起点，会话里仍然可以覆盖。
 - **MCP 按服务器分组。** 两个服务器挂着两百个工具也能扫得过来：折叠成每服务器一行，一次开关整组。
 - **离线服务器照常列出。** 宿主配置里声明了、但当前没注册任何工具的 MCP 服务器（比如没启动的本地按需服务）仍会显示一行——如实标注「无已注册工具」，列出已存的关闭项，并附一个「重载」按钮立即重试连接。会话中途才注册上来的工具也会自动继承已存的默认。
 - **按来源分组。** 技能和 MCP 服务器在带标签的分隔线下聚类：preset 自带的条目标注它来自哪个 preset，其余显示真实目录（`~/.dsh/skills`、项目相对路径，过长时中间省略）——"这个技能是从哪来的"一眼即有答案。
@@ -44,20 +44,18 @@
 - **拦截计数。** 模型在你关掉某项之后仍然尝试调用，面板会计数——这是"模型在凭记忆行动、开关需要更响亮的告知"的信号。
 - **一键填入命令。** 技能行上的纸飞机按钮把 `/skill-name` 放进输入框，等你自己的回车。
 - **快速筛选。** 按名称、描述或状态文案匹配（搜"已截断"或"truncated"都可以），命中时描述自动展开。
-- **轻量。** 零运行时依赖、零拷贝读取、无后台工作——面板只在打开时读一次。
-- **跟随界面语言。** 面板文案随宿主在中英文之间切换。
 
 ## 工程品质
 
-- **测试完备**:390+ 测试,typecheck + 类型感知 lint + 100% 覆盖率门槛(语句/分支/函数/行)在 CI 上对每次 push 和 PR 强制执行。
+- **测试完备**:580+ 测试,typecheck + 类型感知 lint + 100% 覆盖率门槛(语句/分支/函数/行)在 CI 上对每次 push 和 PR 强制执行。
 - **失败诚实**:任何一环读不到(技能注册表、会话视图、设置存储),面板显示部分数据加明确的降级提示——绝不把"读失败"伪装成"列表为空"。
 - **写入不竞态**:preset 默认和会话开关共享一条串行写队列,两个面板同时写也互不覆盖。
 - **不拖累宿主**:agent 创建监听做了完整的失败隔离——插件的任何异常都不会阻止你的会话启动。
-- **本地优先，零网络**:数据路由只接受 loopback,插件没有外呼、没有遥测、没有第三方服务——所有状态只留在本机的 settings.yaml 和一个 JSONL 里。
+- **本地优先，零网络**:数据路由只接受 loopback,插件没有外呼、没有遥测、没有第三方服务——设置与统计只留在本机 `$DSH_HOME`(见"数据存放")。
 - **长会话依然秒开**:6 万事件、几十 MB 日志的会话上,面板即点即开:零拷贝 surface 直读,打开时才读一次,没有轮询和后台任务。
 - **历史保留式开关**:开关永不改写对话历史——被关掉的能力在日志里原样保留,"已关闭"告知在每次组装时现算。每个开关都是可后悔的决定,不是不可逆的手术。
 - **只走官方扩展点**:全部能力来自 dsh 的正式接缝(`tools.restrict`、`system-prompt/assemble`、settings 命名空间、UI slots),没有猴子补丁,宿主升级时更不容易碎。
-- **主题免费**:颜色全部走宿主 design token,图标用宿主图标库——浅色/深色、语言切换都自动跟随,不需要自己维护主题。
+- **主题免费**:颜色全部走宿主 design token,图标、开关与分段控件直接用宿主组件库——浅色/深色、语言切换都自动跟随,不需要自己维护主题。
 - **国际化友好**:面板文案跟随宿主界面语言(中/英),文档四种语言逐节对齐。
 
 ## 安装
@@ -72,7 +70,7 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 
 安装后需要重启 dsh 才生效。
 
-要求 DeepSeek Harness 的 web profile(`dsh web`),dsh ≥ 0.1.2-alpha.4(加载状态经由该版本引入的 `session.snapshotEvents` 读取;更早版本面板仍可运行,加载状态降级显示并在 payload 中注明)。所有 `@deepseek-ai/*` 运行时件都由宿主以 peer 依赖形式提供——没有别的要装。
+要求 DeepSeek Harness 的 web profile(`dsh web`),dsh ≥ 0.1.2-alpha.4(更早版本可运行,加载状态降级显示)。同一构建兼容到最新 0.1.7;仅「按预设名打开其目录」在 0.1.7+ 不可用(新版花名册不再携带路径),其余功能全量保留。所有 `@deepseek-ai/*` 运行时件都由宿主以 peer 依赖形式提供——没有别的要装。
 
 **安装即用，不需要任何配置**——插件没有配置项。重启后你会在两个地方看到它：
 
@@ -91,6 +89,7 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 - 顶部筛选框匹配名称、描述或状态文案，下方有 `X / Y` 命中计数
 - 分隔线把每个分区按来源归类：preset 自带条目显示 preset 名，其余显示磁盘上的目录——悬停分隔线查看完整路径，点击即在文件管理器中打开该文件夹
 - 被关闭的行变暗，同时模型的系统提示里会被告知"用户关闭了这些能力"
+- 底部固定底栏常驻：左侧「全局配置」直达设置 → 能力面板页，右侧「反馈问题」直达 issue 页
 
 `run_code` 是保留的 Code Mode 传输通道——注册表禁止遮罩它，所以它的开关锁定为开。
 
@@ -106,7 +105,7 @@ dsh plugin --profile web add github:pure-craft/dsh-capability-panel
 
 ## 数据存放
 
-- Preset 默认值与会话绑定的开关位置：`$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间（会话开关在 `sessions.<sessionId>` 下，最多保留 200 个会话、最旧的先淘汰）。宿主从不丢弃未加载插件的分节，所以卸载后它们还在，直到你手动删除该段。
+- Preset 默认值与会话绑定的开关位置：dsh 0.1.7+ 存在当前 profile 补丁（`~/.dsh/profiles/<profile>/cordis.patch.yml`）中本插件条目的 Config（按条目 id 寻址）；dsh ≤ 0.1.6 存在 `$DSH_HOME/settings.yaml` 的 `capability-panel` 命名空间。会话开关在 `sessions.<sessionId>` 下，最多保留 200 个会话、最旧的先淘汰。宿主从不丢弃未加载插件的分节，所以卸载后它们还在，直到你手动删除该段。
 - 拦截统计：`$DSH_HOME/capability-panel/stats.jsonl`，可直接读取：`curl 'http://127.0.0.1:3080/api/capability-panel/stats'`。
 
 数据路由只接受 loopback 请求，判定依据是连接对端地址。

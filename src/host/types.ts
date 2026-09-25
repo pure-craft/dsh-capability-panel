@@ -30,6 +30,13 @@ export interface LoaderEntryLike {
 
 export interface LoaderLike {
   entries(): Iterable<LoaderEntryLike>;
+  /**
+   * Resolves once the initial load of every entry has settled. Optional: it is
+   * how dsh-settings defers its own legacy import, and the temporary recovery
+   * in `legacy-import.ts` probes it the same way; hosts whose loader predates
+   * it simply run the recovery immediately.
+   */
+  await?(): Promise<unknown>;
 }
 
 export interface SessionCapabilityState {
@@ -55,16 +62,43 @@ export interface AgentsService {
 
 export interface AgentPresetLike {
   readonly id: string;
-  readonly trust: 'system' | 'user';
+  /**
+   * Present on dsh ≤ 0.1.6 (`dsh-agent-preset`); the 0.1.7 registry split
+   * dropped it from `list()` rows, so consumers must treat its absence as
+   * "unknown" rather than a shape violation.
+   */
+  readonly trust?: 'system' | 'user';
+  /** Same story as {@link trust}: the 0.1.7 roster no longer carries paths. */
   readonly path?: string;
   readonly name?: string;
   readonly description?: string;
   readonly broken?: string;
 }
 
+/**
+ * The revision lease `acquireScope` hands back: the scope key to read with,
+ * plus async disposal that releases the mount's user count. Disposal is part
+ * of the contract — skipping it pins a generation against collection forever.
+ */
+export interface ScopeLeaseLike {
+  readonly key: unknown;
+  [Symbol.asyncDispose](): Promise<void>;
+}
+
 export interface AgentPresetsService {
   list(): Promise<AgentPresetLike[]>;
-  standingKeyFor(id?: string): Promise<unknown>;
+  /**
+   * Read one preset's standing scope without starting an agent (dsh ≤ 0.1.6).
+   * Removed in 0.1.7 in favour of {@link acquireScope}; declared optional so
+   * the call site probes whichever the live service offers.
+   */
+  standingKeyFor?(id?: string): Promise<unknown>;
+  /**
+   * 0.1.7 replacement: retain the preset's current generation and hand back
+   * its scope key behind a lease. The caller MUST dispose the lease when the
+   * scoped read completes.
+   */
+  acquireScope?(id?: string): Promise<ScopeLeaseLike>;
   composedPreset(agentCtx: unknown): string | undefined;
 }
 
@@ -104,9 +138,41 @@ export interface SettingsScopeLike<T> {
   replace(section: object): Promise<void>;
 }
 
+/** One row of the 0.1.7 settings form inventory, as far as this plugin reads it. */
+export interface SettingsDescriptor {
+  readonly ns?: unknown;
+  readonly value?: unknown;
+}
+
+/**
+ * The settings service across BOTH host generations.
+ *
+ * `register` is the ≤0.1.6 contract and is still optional here so the type spans
+ * both: 0.1.7 deleted it, and a plugin that hard-required it would fail to
+ * compile against the new host while shipping one bundle that must serve both.
+ * The 0.1.7 trio is likewise optional, since a ≤0.1.6 host has none of it.
+ * Every member is therefore probed at runtime in `bindSection` rather than
+ * assumed, which is also why this stays a structural type with no static import
+ * from `@deepseek-ai/dsh-settings`.
+ */
 export interface SettingsService {
-  readonly writable: boolean;
-  register<T>(namespace: string, schema: unknown, options?: { applies?: 'live' | 'restart' }): SettingsScopeLike<T>;
+  /**
+   * Whether the surface accepts writes. A getter on 0.1.7 (unconditionally
+   * true); read only through the lazy non-strict path, never cached.
+   */
+  readonly writable?: boolean;
+  register?<T>(namespace: string, schema: unknown, options?: { applies?: 'live' | 'restart' }): SettingsScopeLike<T>;
+  /**
+   * The live form inventory. Only entries whose Config declares a volatile
+   * field appear here, which is precisely why this plugin declares one.
+   */
+  describe?(options?: { redactSecrets?: boolean }): readonly SettingsDescriptor[];
+  /** Reset every live field of the namespace, then apply `section`. */
+  replace?(namespace: string, section: object, expectedRevision?: number): Promise<void>;
+  /** Recursive merge into the current section; cannot remove a key. */
+  update?(namespace: string, section: object, expectedRevision?: number): Promise<void>;
+  /** Ordered write operations against one namespace. */
+  mutate?(namespace: string, operations: readonly object[], expectedRevision?: number): Promise<void>;
 }
 
 export type {
@@ -136,6 +202,16 @@ export interface AgentCreatedPayload {
 }
 
 export interface HostServices {
+  /**
+   * This plugin's own cordis fiber, read for the profile entry id that 0.1.7
+   * keys settings by. Optional because a plugin mounted without the Loader (a
+   * bare `ctx.plugin`) has no entry, and because the field is a Loader
+   * decoration rather than part of cordis's own Context type — so it is probed,
+   * never assumed.
+   */
+  readonly fiber?: {
+    readonly entry?: { readonly options?: { readonly id?: unknown } };
+  };
   readonly webServer?: {
     register(spec: {
       kind: 'prefix';

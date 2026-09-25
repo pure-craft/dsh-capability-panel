@@ -45,7 +45,7 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        'src/client/{store,preset-filter,preset-store,filter,filter-core,disclosure,disclosure-row,switch,locale,styles}.ts': {
+        'src/client/{store,preset-filter,preset-store,filter,filter-core,disclosure,disclosure-row,switch,locale,styles,icons}.ts': {
           statements: 100,
           branches: 100,
           functions: 100,
