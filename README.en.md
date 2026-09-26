@@ -5,7 +5,7 @@
 
 English | [中文](README.md) | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-**Manage your DeepSeek Harness agent's skills, MCP servers, and tools: see what it can actually reach right now, and switch any of them — per session or per preset.**
+**One panel to manage MCP servers, skills, and tools for your DeepSeek Harness agent — see what it can actually reach right now, and switch any of them per session or per preset.**
 
 A skills & MCP management panel: every skill, every MCP server, and every system tool carries its true in-context state, plus a switch that takes effect on the very next model step.
 

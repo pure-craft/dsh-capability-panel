@@ -5,7 +5,7 @@
 
 [English](README.en.md) | 中文 | [日本語](README.ja.md) | [한국어](README.ko.md)
 
-**管理你的 DeepSeek Harness agent 的技能（Skills）、MCP 服务器与工具（Tools）：看清此刻真正能触达什么，并随时开关——按会话或按 preset。**
+**一站式管理 MCP 服务器、技能（Skills）与工具（Tools）：看清 DeepSeek Harness agent 此刻真正能触达什么，并随时开关——按会话或按 preset。**
 
 一个技能与 MCP 管理面板：每个技能、每个 MCP 服务器、每个系统工具，都有真实的"在不在上下文里"状态，和一个从下一步模型调用就生效的开关。
 
