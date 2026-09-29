@@ -54,7 +54,7 @@ const LEGACY_DOC = [
 describe('legacySettingsDir', () => {
   it('honors DSH_HOME and falls back to the home directory', () => {
     expect(legacySettingsDir({ DSH_HOME: '/custom' })).toBe('/custom');
-    expect(legacySettingsDir({}, '/home/u')).toBe('/home/u/.dsh');
+    expect(legacySettingsDir({}, '/home/u').replace(/\\/g, '/')).toBe('/home/u/.dsh');
   });
 });
 
