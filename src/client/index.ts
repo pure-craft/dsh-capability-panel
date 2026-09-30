@@ -1,7 +1,7 @@
 /**
  * Browser half: a toolbar button in the composer trailing row, and the panel
  * it opens. The trigger keeps ContextMeter's chrome (28×28 ghost button,
- * pill radius, hover wash, 14px layers glyph, Tooltip 200ms); the panel
+ * pill radius, hover wash, 14px sliders glyph, Tooltip 200ms); the panel
  * itself is a Base UI Popover with enter/exit animation and proper focus
  * management, anchored `side=top align=end` to the trigger.
  *
@@ -51,17 +51,17 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
 // Icon names differ across host generations (pixel-suffixed before 0.1.7,
 // stroke-weight variants since); icons.ts resolves whichever the host has.
 import {
-  IconContextInjection,
+  IconSliders,
   IconFolderClose,
-  IconSend,
+  IconPlus,
   IconSearch,
   IconRefresh,
-  IconRightUp,
+  IconPanelLeft,
   IconSettings,
   HOST_HAS_MODERN_SHELL,
 } from './icons.js';
-// The host glyph each kind of row leads with: skills, tools (by variant), and
-// extension servers. See row-icon.ts for the host surfaces each name comes from.
+// The host glyph each kind of row leads with: skills, tools, and extension
+// servers. See row-icon.ts for the host surfaces each name comes from.
 import { serverRowIcon, skillRowIcon, toolRowIcon } from './row-icon.js';
 // Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
 // the host instance, exactly like our own (verified against shipped bundles).
@@ -248,21 +248,28 @@ export function apply(ctx: SlotContext): void {
     return () => { style.remove(); };
   }, 'capability-panel: stylesheet');
 
-  /** Host iconography: the panel inspects what lands in the session's context. */
-  const layersIcon = (size: number) => h(IconContextInjection, { size });
+  /** The trigger's mark: the host's sliders artwork, the same family its own
+   *  option popovers wear (ui-workspace draws the two-row sibling). The panel
+   *  is a set of per-session switches, and the glyph it replaced — the host's
+   *  context-injection box — read as one more box-with-an-arrow. */
+  const slidersIcon = (size: number) => h(IconSliders, { size });
 
   /** Magnifier sitting inside the filter input. */
   const searchIcon = (size: number) => h(IconSearch, { size });
 
-  /** Paper plane: the row action lands the command in the composer,
-   *  ready for the user's own Enter. */
-  const insertIcon = (size: number) => h(IconSend, { size });
+  /** Plus: the row action adds the skill's slash command to the composer draft.
+   *  The host uses this glyph for "add" everywhere (model, workspace, task), and
+   *  unlike the send arrow it makes no promise that anything is submitted. */
+  const insertIcon = (size: number) => h(IconPlus, { size });
 
   /** Circular arrows: pull a declared-but-offline server's connection up now. */
   const reconnectIcon = (size: number) => h(IconRefresh, { size });
 
-  /** Arrow out of the row: show this skill's file in the Host's side panel. */
-  const previewIcon = (size: number) => h(IconRightUp, { size });
+  /** Panel mark: the destination of the row action, so it wears the glyph both
+   *  host sidebars draw for the side panel (ui-sidebar-right's expand/collapse).
+   *  The arrow it replaced (↗) meant "open elsewhere" and sat beside a second
+   *  arrow. */
+  const previewIcon = (size: number) => h(IconPanelLeft, { size });
 
   /** The GitHub mark. Not in the host icon set (brand logos are not shipped
    *  there), so this one path is inlined for the feedback link's recognizability. */
@@ -771,7 +778,7 @@ export function apply(ctx: SlotContext): void {
         disclosureRow(`mcp-tool:${tool.name}`, tool.enabled, tool.label, tool.description, [
           blockedChip(blocked[tool.name] ?? 0),
           serverEnabled ? switchControl('mcp-tool', tool.name, tool.enabled) : null,
-        ], MCP_TOOL_ROOT_CLASS, undefined, toolRowIcon(tool.name));
+        ], MCP_TOOL_ROOT_CLASS, undefined, toolRowIcon());
 
       const serverRow = (server: McpServerEntry) => {
         const serverBlocked = server.tools.reduce((sum, tool) => sum + (blocked[tool.name] ?? 0), 0);
@@ -879,7 +886,7 @@ export function apply(ctx: SlotContext): void {
           // run_code is the reserved Code Mode transport: the registry
           // refuses to restrict it, so no switch.
           tool.reserved === true ? null : switchControl('system-tool', tool.name, tool.enabled),
-        ], ROW_ROOT_CLASS, undefined, toolRowIcon(tool.name));
+        ], ROW_ROOT_CLASS, undefined, toolRowIcon());
 
       const emptyNote = (text: string) =>
         h('div', { key: `empty:${text}`, style: { color: TOK.textTertiary, padding: '8px 2px' } }, text);
@@ -996,7 +1003,7 @@ export function apply(ctx: SlotContext): void {
                 font: 'inherit',
               },
             },
-            layersIcon(14),
+            slidersIcon(14),
           ),
         ),
         h(

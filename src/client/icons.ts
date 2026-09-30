@@ -52,24 +52,31 @@ export const ICON_NAME_PAIRS = {
   // The row-leading marks, each one the glyph the host's own surface for that
   // subject already uses — never a lookalike:
   //  - a SKILL row: `dsh-client-ui-skill`'s SkillRow leads with IconSkill at 14px;
-  //  - a TOOL row: the host's GenericToolCard variant table (its `VARIANT_ICONS`)
-  //    gives bash IconApi, read IconBrowse, write/edit IconEdit, code IconCode,
-  //    search IconSearch and every other tool IconSparkle, all at 14px;
+  //  - a TOOL row: the host's `others` fallback, IconSparkle — the glyph
+  //    `dsh-client-ui-tool` gives a tool its own name table cannot classify
+  //    (which is every tool that is not one of the host's built-ins; see
+  //    row-icon.ts for why the panel does not guess tool types from names);
   //  - an extension/server row: `dsh-client-ui-cordis` marks a loaded extension
   //    with IconCordisPlugin;
-  //  - the panel's own trigger keeps IconContextInjection, the host's
-  //    context-injection glyph, which is what the panel inspects.
+  //  - the panel's own trigger takes the host's sliders artwork — the family the
+  //    host's own option popovers use (ui-workspace draws its two-row sibling
+  //    for view options) — because the panel IS a set of per-session switches.
+  //    The host ships this artwork under its `Personalization` name and no host
+  //    surface renders it, so the trigger collides with nothing;
+  //  - a row action: PanelLeft is the glyph both host sidebars use for the side
+  //    panel (ui-sidebar-right draws it for expand/collapse), so "open this
+  //    skill's instruction file in the side panel" wears the host's own mark for
+  //    that destination; Plus is the host's plain "add" (add model, add
+  //    workspace, add task), which reads as "put /name into the composer".
+  //    Both replaced arrow glyphs (RightUp ↗, Send ↑) that sat next to each other
+  //    reading as two near-identical arrows.
   IconSkill: { modern: 'IconSkillOutlineRegular', legacy: 'IconSkillOutline16' },
-  IconApi: { modern: 'IconApiOutlineRegular', legacy: 'IconApiOutline14' },
-  IconBrowse: { modern: 'IconBrowseOutlineRegular', legacy: 'IconBrowseOutline16' },
-  IconCode: { modern: 'IconCodeOutlineRegular', legacy: 'IconCodeOutline16' },
-  IconEdit: { modern: 'IconEditOutlineRegular', legacy: 'IconEditOutline16' },
   IconSparkle: { modern: 'IconSparkleRegular', legacy: 'IconSparkle16' },
   IconCordisPlugin: { modern: 'IconCordisPluginOutlineRegular', legacy: 'IconCordisPluginOutline14' },
-  IconContextInjection: { modern: 'IconContextInjectionOutlineRegular', legacy: 'IconContextInjectionOutline16' },
+  IconSliders: { modern: 'IconPersonalizationOutlineRegular', legacy: 'IconPersonalizationOutline16' },
+  IconPanelLeft: { modern: 'IconPanelLeftOutlineRegular', legacy: 'IconPanelLeftOutline16' },
+  IconPlus: { modern: 'IconPlusOutlineRegular', legacy: 'IconPlusOutline16' },
   IconFolderClose: { modern: 'IconFolderCloseRegular', legacy: 'IconFolderClose16' },
-  IconSend: { modern: 'IconSendOutlineRegular', legacy: 'IconSendOutline14' },
-  IconRightUp: { modern: 'IconRightUpOutlineRegular', legacy: 'IconRightUpOutline14' },
   IconSearch: { modern: 'IconSearchOutlineRegular', legacy: 'IconSearchOutline16' },
   IconRefresh: { modern: 'IconRefreshOutlineRegular', legacy: 'IconRefreshOutline14' },
   IconChevronDown: { modern: 'IconChevronDownOutlineRegular', legacy: 'IconChevronDownOutline14' },
@@ -84,16 +91,12 @@ function resolveIcon(pair: { modern: string; legacy: string }): IconComponent {
 }
 
 export const IconSkill = resolveIcon(ICON_NAME_PAIRS.IconSkill);
-export const IconApi = resolveIcon(ICON_NAME_PAIRS.IconApi);
-export const IconBrowse = resolveIcon(ICON_NAME_PAIRS.IconBrowse);
-export const IconCode = resolveIcon(ICON_NAME_PAIRS.IconCode);
-export const IconEdit = resolveIcon(ICON_NAME_PAIRS.IconEdit);
 export const IconSparkle = resolveIcon(ICON_NAME_PAIRS.IconSparkle);
 export const IconCordisPlugin = resolveIcon(ICON_NAME_PAIRS.IconCordisPlugin);
-export const IconContextInjection = resolveIcon(ICON_NAME_PAIRS.IconContextInjection);
+export const IconSliders = resolveIcon(ICON_NAME_PAIRS.IconSliders);
+export const IconPanelLeft = resolveIcon(ICON_NAME_PAIRS.IconPanelLeft);
+export const IconPlus = resolveIcon(ICON_NAME_PAIRS.IconPlus);
 export const IconFolderClose = resolveIcon(ICON_NAME_PAIRS.IconFolderClose);
-export const IconSend = resolveIcon(ICON_NAME_PAIRS.IconSend);
-export const IconRightUp = resolveIcon(ICON_NAME_PAIRS.IconRightUp);
 export const IconSearch = resolveIcon(ICON_NAME_PAIRS.IconSearch);
 export const IconRefresh = resolveIcon(ICON_NAME_PAIRS.IconRefresh);
 export const IconChevronDown = resolveIcon(ICON_NAME_PAIRS.IconChevronDown);

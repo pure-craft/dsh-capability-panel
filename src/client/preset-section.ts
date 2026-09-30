@@ -281,7 +281,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
         className: 'ci-preset-disclosure',
         headerClassName: 'ci-row-head ci-preset-tool-row',
         spacerClassName: 'ci-preset-spacer',
-        icon: toolRowIcon(tool.name),
+        icon: toolRowIcon(),
         heading: React.createElement('span', { className: 'ci-preset-tool-name' }, tool.label),
         actions: [toggle(tool, presetId)],
         ...(tool.description === undefined

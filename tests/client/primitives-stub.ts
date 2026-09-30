@@ -11,21 +11,17 @@
  * mock throws on any export the mocked module does not define.
  */
 const NAMES = [
-  'IconApiOutlineRegular', 'IconApiOutline14',
-  'IconBrowseOutlineRegular', 'IconBrowseOutline16',
-  'IconCodeOutlineRegular', 'IconCodeOutline16',
   'IconCordisPluginOutlineRegular', 'IconCordisPluginOutline14',
-  'IconEditOutlineRegular', 'IconEditOutline16',
   'IconSkillOutlineRegular', 'IconSkillOutline16',
   'IconSparkleRegular', 'IconSparkle16',
   'IconChevronDownOutlineRegular', 'IconChevronDownOutline14',
   'IconChevronUpOutlineRegular', 'IconChevronUpOutline14',
-  'IconContextInjectionOutlineRegular', 'IconContextInjectionOutline16',
   'IconFolderCloseRegular', 'IconFolderClose16',
+  'IconPanelLeftOutlineRegular', 'IconPanelLeftOutline16',
+  'IconPersonalizationOutlineRegular', 'IconPersonalizationOutline16',
+  'IconPlusOutlineRegular', 'IconPlusOutline16',
   'IconRefreshOutlineRegular', 'IconRefreshOutline14',
-  'IconRightUpOutlineRegular', 'IconRightUpOutline14',
   'IconSearchOutlineRegular', 'IconSearchOutline16',
-  'IconSendOutlineRegular', 'IconSendOutline14',
   'IconSettingsOutlineMedium', 'IconSettingsOutlineRegular', 'IconSettingsOutline16',
   'IconTriangleRightFillRegular', 'IconTriangleRightFill14',
 ] as const;

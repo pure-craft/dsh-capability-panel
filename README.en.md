@@ -74,14 +74,14 @@ Requires a DeepSeek Harness web profile (`dsh web`), dsh ≥ 0.1.2-alpha.4 (olde
 
 **Zero configuration** — the plugin has no settings of its own. After the restart you will find it in two places:
 
-- the **context icon** at the right of any conversation's composer — that opens the session panel
+- the **panel icon** at the right of any conversation's composer — that opens the session panel
 - **Settings → Capability Panel** — the per-preset default capabilities
 
 `--profile web` is the profile your `dsh web` GUI already uses, so the command applies verbatim. You can also search "capability panel" in the marketplace UI for a one-click install. Uninstall with `dsh plugin --profile web remove dsh-capability-panel`; settings and stats stay in `$DSH_HOME` (see "Where data lives").
 
 ## Usage
 
-Open any conversation and click the context icon at the right of the composer; the panel opens upward.
+Open any conversation and click the panel icon at the right of the composer; the panel opens upward.
 
 - Three tabs across the top: **Skills N** / **MCP N** / **Tools N**, each with its live count
 - The switch at the right of each row takes effect immediately — no refresh, no restart
