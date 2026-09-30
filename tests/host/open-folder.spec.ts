@@ -36,7 +36,7 @@ describe('openFolder', () => {
   it('runs `start` on Windows', async () => {
     stubPlatform('win32');
     const pending = openFolder('C:\\demo');
-    expect(execMock).toHaveBeenCalledWith('start "C:\\demo"', expect.any(Function));
+    expect(execMock).toHaveBeenCalledWith('start "" "C:\\demo"', expect.any(Function));
     settle();
     await expect(pending).resolves.toBeUndefined();
   });

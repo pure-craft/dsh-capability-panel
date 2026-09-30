@@ -6,6 +6,12 @@ All notable changes to this project will be documented here. The format follows 
 - 每条一行,从用户视角写(他得到/失去什么),不复制 commit message。
 - 发版流程:Unreleased 切段 → 版本号 + 日期 → `git tag vX.Y.Z` → `npm publish` → `gh release create`。
 
+## [Unreleased]
+
+### Fixed
+
+- Windows 下点击来源分组的分隔线现在真的会打开文件夹：此前只在后台闪出一个空控制台，资源管理器没有任何反应。macOS 与 Linux 不受影响。
+
 ## [1.3.0] - 2026-09-26
 
 dsh 0.1.7 兼容与 UI 全面升级：设置存储迁移到插件条目自身的 volatile Config（两代宿主通吃）、控件换装宿主设计系统、设置页对齐内置插件页、新增全局配置入口与遗留数据自动恢复。
