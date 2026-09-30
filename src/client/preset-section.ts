@@ -7,7 +7,7 @@ import { Tabs } from '@base-ui/react/tabs';
 import { Menu } from '@deepseek-ai/dsh-client-ui-primitives';
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives';
 // Icon names differ across host generations; icons.ts resolves whichever exists.
-import { IconApi, IconChevronDown, IconFolderClose, IconRefresh, IconSearch, IconSkill } from './icons.js';
+import { IconChevronDown, IconFolderClose, IconRefresh, IconSearch } from './icons.js';
 
 /** The 0.1.7 design-system SegmentedControl, as far as this panel reads it. */
 type SegmentedKind = 'all' | 'skills' | 'mcp' | 'system';
@@ -21,7 +21,8 @@ type SegmentedControlComponent = (props: {
   className?: string;
 }) => React.ReactElement;
 import { resolveDisclosure } from './disclosure.js';
-import { chevronIcon, disclosureRow } from './disclosure-row.js';
+import { disclosureRow, leadingFor } from './disclosure-row.js';
+import { serverRowIcon, skillRowIcon, toolRowIcon } from './row-icon.js';
 import { capabilitySwitch } from './switch.js';
 import { IconTriangleRight } from './icons.js';
 import { filterPreset } from './preset-filter.js';
@@ -237,8 +238,9 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
         headerClassName: 'ci-row-head ci-preset-tool-row',
         spacerClassName: 'ci-preset-spacer',
         // The host's own rows lead with a domain glyph; without one this list
-        // is a column of chevrons. See disclosure-row.ts for the slot itself.
-        icon: React.createElement(IconSkill, { size: 14 }),
+        // is a column of chevrons. See disclosure-row.ts for the slot itself
+        // and row-icon.ts for which host glyph each kind takes.
+        icon: skillRowIcon(),
         heading: React.createElement(
           'span',
           { className: 'ci-preset-tool-name' },
@@ -279,7 +281,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
         className: 'ci-preset-disclosure',
         headerClassName: 'ci-row-head ci-preset-tool-row',
         spacerClassName: 'ci-preset-spacer',
-        icon: React.createElement(IconApi, { size: 14 }),
+        icon: toolRowIcon(tool.name),
         heading: React.createElement('span', { className: 'ci-preset-tool-name' }, tool.label),
         actions: [toggle(tool, presetId)],
         ...(tool.description === undefined
@@ -381,7 +383,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                 className: 'ci-disclosure-trigger ci-preset-server-trigger',
                 disabled: disclosure.disabled,
               },
-              React.createElement('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon(disclosure.open)),
+              leadingFor(serverRowIcon(), disclosure.open),
               React.createElement(
                 'span',
                 { className: 'ci-preset-tool-copy' },

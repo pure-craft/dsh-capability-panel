@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 // (0.1.7 stroke-weight) name first, so both generations' names are provided.
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => (await import('./primitives-stub.js')).primitivesStub);
 
-import { pickIcon, MissingIcon, hasModernShell, HOST_HAS_MODERN_SHELL, ICON_NAME_PAIRS, type IconComponent, IconApi, IconChevronDown, IconChevronUp, IconContextInjection, IconFolderClose, IconRefresh, IconRightUp, IconSearch, IconSend, IconSettings, IconSkill, IconTriangleRight } from '../../src/client/icons.js';
+import { pickIcon, MissingIcon, hasModernShell, HOST_HAS_MODERN_SHELL, ICON_NAME_PAIRS, type IconComponent, IconApi, IconBrowse, IconChevronDown, IconChevronUp, IconCode, IconContextInjection, IconCordisPlugin, IconEdit, IconFolderClose, IconRefresh, IconRightUp, IconSearch, IconSend, IconSettings, IconSkill, IconSparkle, IconTriangleRight } from '../../src/client/icons.js';
 
 const Modern: IconComponent = () => null;
 const Legacy: IconComponent = () => null;
@@ -57,8 +57,9 @@ function frozenLegacyIconExports(): string[] {
 
 describe('resolved icon constants', () => {
   const resolved: Record<string, IconComponent> = {
-    IconApi, IconChevronDown, IconChevronUp, IconContextInjection, IconFolderClose,
-    IconRefresh, IconRightUp, IconSearch, IconSend, IconSettings, IconSkill, IconTriangleRight,
+    IconApi, IconBrowse, IconChevronDown, IconChevronUp, IconCode, IconContextInjection,
+    IconCordisPlugin, IconEdit, IconFolderClose, IconRefresh, IconRightUp, IconSearch,
+    IconSend, IconSettings, IconSkill, IconSparkle, IconTriangleRight,
   };
 
   it('resolves every name pair to a live host icon, never the sentinel', () => {

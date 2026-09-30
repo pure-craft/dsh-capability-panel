@@ -12,7 +12,12 @@
  */
 const NAMES = [
   'IconApiOutlineRegular', 'IconApiOutline14',
+  'IconBrowseOutlineRegular', 'IconBrowseOutline16',
+  'IconCodeOutlineRegular', 'IconCodeOutline16',
+  'IconCordisPluginOutlineRegular', 'IconCordisPluginOutline14',
+  'IconEditOutlineRegular', 'IconEditOutline16',
   'IconSkillOutlineRegular', 'IconSkillOutline16',
+  'IconSparkleRegular', 'IconSparkle16',
   'IconChevronDownOutlineRegular', 'IconChevronDownOutline14',
   'IconChevronUpOutlineRegular', 'IconChevronUpOutline14',
   'IconContextInjectionOutlineRegular', 'IconContextInjectionOutline16',

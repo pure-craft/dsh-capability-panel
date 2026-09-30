@@ -49,12 +49,23 @@ const table = primitives as unknown as Readonly<Record<string, unknown>>;
  * against the last release that still had them.
  */
 export const ICON_NAME_PAIRS = {
-  // The three row-leading marks. The host's own records put a domain glyph in
-  // that slot — `IconApi` is literally what its bash/command rows pass, at 14px
-  // inside the 16px leading box — and `IconSkill` is the primitives set's own
-  // glyph for a skill.
+  // The row-leading marks, each one the glyph the host's own surface for that
+  // subject already uses — never a lookalike:
+  //  - a SKILL row: `dsh-client-ui-skill`'s SkillRow leads with IconSkill at 14px;
+  //  - a TOOL row: the host's GenericToolCard variant table (its `VARIANT_ICONS`)
+  //    gives bash IconApi, read IconBrowse, write/edit IconEdit, code IconCode,
+  //    search IconSearch and every other tool IconSparkle, all at 14px;
+  //  - an extension/server row: `dsh-client-ui-cordis` marks a loaded extension
+  //    with IconCordisPlugin;
+  //  - the panel's own trigger keeps IconContextInjection, the host's
+  //    context-injection glyph, which is what the panel inspects.
   IconSkill: { modern: 'IconSkillOutlineRegular', legacy: 'IconSkillOutline16' },
   IconApi: { modern: 'IconApiOutlineRegular', legacy: 'IconApiOutline14' },
+  IconBrowse: { modern: 'IconBrowseOutlineRegular', legacy: 'IconBrowseOutline16' },
+  IconCode: { modern: 'IconCodeOutlineRegular', legacy: 'IconCodeOutline16' },
+  IconEdit: { modern: 'IconEditOutlineRegular', legacy: 'IconEditOutline16' },
+  IconSparkle: { modern: 'IconSparkleRegular', legacy: 'IconSparkle16' },
+  IconCordisPlugin: { modern: 'IconCordisPluginOutlineRegular', legacy: 'IconCordisPluginOutline14' },
   IconContextInjection: { modern: 'IconContextInjectionOutlineRegular', legacy: 'IconContextInjectionOutline16' },
   IconFolderClose: { modern: 'IconFolderCloseRegular', legacy: 'IconFolderClose16' },
   IconSend: { modern: 'IconSendOutlineRegular', legacy: 'IconSendOutline14' },
@@ -74,6 +85,11 @@ function resolveIcon(pair: { modern: string; legacy: string }): IconComponent {
 
 export const IconSkill = resolveIcon(ICON_NAME_PAIRS.IconSkill);
 export const IconApi = resolveIcon(ICON_NAME_PAIRS.IconApi);
+export const IconBrowse = resolveIcon(ICON_NAME_PAIRS.IconBrowse);
+export const IconCode = resolveIcon(ICON_NAME_PAIRS.IconCode);
+export const IconEdit = resolveIcon(ICON_NAME_PAIRS.IconEdit);
+export const IconSparkle = resolveIcon(ICON_NAME_PAIRS.IconSparkle);
+export const IconCordisPlugin = resolveIcon(ICON_NAME_PAIRS.IconCordisPlugin);
 export const IconContextInjection = resolveIcon(ICON_NAME_PAIRS.IconContextInjection);
 export const IconFolderClose = resolveIcon(ICON_NAME_PAIRS.IconFolderClose);
 export const IconSend = resolveIcon(ICON_NAME_PAIRS.IconSend);

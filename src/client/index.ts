@@ -51,7 +51,6 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
 // Icon names differ across host generations (pixel-suffixed before 0.1.7,
 // stroke-weight variants since); icons.ts resolves whichever the host has.
 import {
-  IconApi,
   IconContextInjection,
   IconFolderClose,
   IconSend,
@@ -59,9 +58,11 @@ import {
   IconRefresh,
   IconRightUp,
   IconSettings,
-  IconSkill,
   HOST_HAS_MODERN_SHELL,
 } from './icons.js';
+// The host glyph each kind of row leads with: skills, tools (by variant), and
+// extension servers. See row-icon.ts for the host surfaces each name comes from.
+import { serverRowIcon, skillRowIcon, toolRowIcon } from './row-icon.js';
 // Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
 // the host instance, exactly like our own (verified against shipped bundles).
 import { Collapsible } from '@base-ui/react/collapsible';
@@ -764,13 +765,13 @@ export function apply(ctx: SlotContext): void {
           insertButton(skill.name),
           blockedChip(blocked[skill.name] ?? 0),
           switchControl('skill', skill.name, skill.enabled),
-        ], ROW_ROOT_CLASS, undefined, h(IconSkill, { size: 14 }));
+        ], ROW_ROOT_CLASS, undefined, skillRowIcon());
 
       const mcpToolRow = (tool: McpServerEntry['tools'][number], serverEnabled: boolean) =>
         disclosureRow(`mcp-tool:${tool.name}`, tool.enabled, tool.label, tool.description, [
           blockedChip(blocked[tool.name] ?? 0),
           serverEnabled ? switchControl('mcp-tool', tool.name, tool.enabled) : null,
-        ], MCP_TOOL_ROOT_CLASS, undefined, h(IconApi, { size: 14 }));
+        ], MCP_TOOL_ROOT_CLASS, undefined, toolRowIcon(tool.name));
 
       const serverRow = (server: McpServerEntry) => {
         const serverBlocked = server.tools.reduce((sum, tool) => sum + (blocked[tool.name] ?? 0), 0);
@@ -811,7 +812,7 @@ export function apply(ctx: SlotContext): void {
                   font: 'inherit',
                 },
               },
-              leadingFor(h(IconContextInjection, { size: 14 }) as React.ReactNode, disclosure.open),
+              leadingFor(serverRowIcon(), disclosure.open),
             ),
             nameText(server.server),
             server.unavailable === true
@@ -878,7 +879,7 @@ export function apply(ctx: SlotContext): void {
           // run_code is the reserved Code Mode transport: the registry
           // refuses to restrict it, so no switch.
           tool.reserved === true ? null : switchControl('system-tool', tool.name, tool.enabled),
-        ], ROW_ROOT_CLASS, undefined, h(IconApi, { size: 14 }));
+        ], ROW_ROOT_CLASS, undefined, toolRowIcon(tool.name));
 
       const emptyNote = (text: string) =>
         h('div', { key: `empty:${text}`, style: { color: TOK.textTertiary, padding: '8px 2px' } }, text);
