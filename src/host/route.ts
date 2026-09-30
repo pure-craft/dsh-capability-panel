@@ -4,6 +4,7 @@ import type { CapabilityController } from './capabilities.js';
 import { errorMessage, HttpError } from './errors.js';
 import { restartMcpServer } from './mcp-connections.js';
 import { openFolder } from './open-folder.js';
+import { openSourceFolder } from './open-source-folder.js';
 import type { PresetToolController } from './preset-tools.js';
 import type { SessionOverrideStore } from './session-overrides.js';
 import type { StatsStore } from './stats-store.js';
@@ -245,7 +246,16 @@ export function createRouteHandler(
           return;
         }
         try {
-          await openFolder(folderPath);
+          // The Host's Session controller opens this path itself when the
+          // composition mounts one: it carries the shell-free per-platform
+          // opener and the deployment's native-opening policy. Our own opener
+          // stays the answer for a composition without it, and for a path the
+          // Host refuses to verify.
+          const outcome = await openSourceFolder(services.get('sessionController', false), folderPath, openFolder);
+          if (outcome === 'unsupported') {
+            json(res, 500, { error: 'this deployment cannot open folders on a desktop' });
+            return;
+          }
           json(res, 200, { ok: true });
         } catch (error) {
           json(res, 500, { error: `failed to open folder: ${errorMessage(error)}` });

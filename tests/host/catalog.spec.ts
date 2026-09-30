@@ -479,6 +479,58 @@ describe('buildPayload MCP source with preset', () => {
     expect(payload.skills.find((s) => s.name === 'no-base')).not.toHaveProperty('path');
   });
 
+  it('carries the right-sidebar address of each skill instruction file', async () => {
+    const agent = { ctx: {}, session: { header: { cwd: '/ws' } } };
+    const agents = { get: () => agent };
+    const skills = {
+      list: () => [
+        { name: 'in-workspace', description: '', source: 'project-dsh', provider: 'filesystem', path: '/ws/.dsh/skills/in-workspace/SKILL.md', invocation: { modelInvocable: true, userInvocable: true } },
+        { name: 'outside', description: '', source: 'user-dsh', provider: 'filesystem', path: '/home/u/.dsh/skills/outside/SKILL.md', invocation: { modelInvocable: true, userInvocable: true } },
+        // A virtual skill: the runtime registered it in memory, so there is no
+        // file to show and the row must carry no entry at all.
+        { name: 'virtual', description: '', source: 'runtime', provider: 'plugin', invocation: { modelInvocable: true, userInvocable: true } },
+        { name: 'empty-file', description: '', source: 'runtime', provider: 'plugin', path: '', invocation: { modelInvocable: true, userInvocable: true } },
+        // Switched off in this session by the panel itself, but still a skill
+        // with a file on disk: the address must survive the switch, or closing a
+        // skill would also take away the way to read it.
+        { name: 'switched-off', description: '', source: 'user-dsh', provider: 'filesystem', path: '/home/u/.dsh/skills/switched-off/SKILL.md', invocation: { modelInvocable: true, userInvocable: true } },
+      ],
+    };
+    const tools = {
+      schemas() { return []; },
+    };
+    const services = {
+      get(name: string) {
+        if (name === 'agents') return agents;
+        if (name === 'skills') return skills;
+        if (name === 'tools') return tools;
+        return undefined;
+      },
+    };
+    const payload = await buildPayload(services as never, 's1', {
+      ...EMPTY_STATE,
+      // A key in this map is a skill the panel switched off in this session; the
+      // value is the undo callback the session holds for it.
+      skills: new Map([['switched-off', () => {}]]),
+    });
+    // A file under the session workspace rides the address workspace-relative;
+    // one outside it stays absolute in that session's address — which is how a
+    // user-level skill, the common case, is named.
+    expect(payload.skills.find((s) => s.name === 'in-workspace')?.fileAddress)
+      .toBe('dsh-resource://file/session/s1/.dsh/skills/in-workspace/SKILL.md');
+    expect(payload.skills.find((s) => s.name === 'outside')?.fileAddress)
+      .toBe('dsh-resource://file/session/s1//home/u/.dsh/skills/outside/SKILL.md');
+    expect(payload.skills.find((s) => s.name === 'virtual')).not.toHaveProperty('fileAddress');
+    expect(payload.skills.find((s) => s.name === 'empty-file')).not.toHaveProperty('fileAddress');
+    // Switching a skill off is a statement about loading it, not about reading
+    // it: as long as the listing still reports the instruction file, the row
+    // keeps its address. The shadow the switch registers is what has to keep
+    // reporting it — pinned in tests/integration/switching.spec.ts.
+    const off = payload.skills.find((s) => s.name === 'switched-off');
+    expect(off?.enabled).toBe(false);
+    expect(off?.fileAddress).toBe('dsh-resource://file/session/s1//home/u/.dsh/skills/switched-off/SKILL.md');
+  });
+
   it('groups custom skills discovered under a preset directory as that preset', async () => {
     const agent = { ctx: {} };
     const agents = { get: () => agent };
@@ -529,7 +581,7 @@ describe('buildPayload MCP source with preset', () => {
         // The shadow the panel registered: wins the same-name listing but
         // carries no meaningful provenance of its own.
         { name: 'lark-base', description: '', source: 'custom', provider: 'capability-panel', invocation: { modelInvocable: false, userInvocable: true } },
-        { name: 'lark-base', description: 'original', source: 'user-agents', provider: 'filesystem', resourceBase: { kind: 'directory', path: '/agents/skills' }, invocation: { modelInvocable: true, userInvocable: true } },
+        { name: 'lark-base', description: 'original', source: 'user-agents', provider: 'filesystem', resourceBase: { kind: 'directory', path: '/agents/skills' }, path: '/agents/skills/lark-base/SKILL.md', invocation: { modelInvocable: true, userInvocable: true } },
         // Same swap, but the original carries no directory — nothing to copy.
         { name: 'lark-doc', description: '', source: 'custom', provider: 'capability-panel', invocation: { modelInvocable: false, userInvocable: true } },
         { name: 'lark-doc', description: 'original', source: 'user-agents', provider: 'filesystem', invocation: { modelInvocable: true, userInvocable: true } },
@@ -560,10 +612,14 @@ describe('buildPayload MCP source with preset', () => {
     expect(skill?.source).toBe('user-agents');
     expect(skill?.provider).toBe('filesystem');
     expect(skill?.path).toBe('/agents');
+    // The instruction file's address follows the same swap: the shadow carries
+    // no file of its own, so a merged row that dropped it would lose the entry.
+    expect(skill?.fileAddress).toBe('dsh-resource://file/session/s1//agents/skills/lark-base/SKILL.md');
     expect(skill?.enabled).toBe(false);
     const noPath = payload.skills.find((s) => s.name === 'lark-doc');
     expect(noPath?.source).toBe('user-agents');
     expect(noPath).not.toHaveProperty('path');
+    expect(noPath).not.toHaveProperty('fileAddress');
     const presetSkill = payload.skills.find((s) => s.name === 'preset-skill');
     expect(presetSkill?.source).toBe('custom');
     expect(presetSkill?.group).toBe('preset:Cordis');

@@ -4,6 +4,7 @@ import type { RawEvent } from '../load-state.js';
 import type { AgentLike, HostServices, SessionCapabilityState } from './types.js';
 import { RESERVED_TOOL } from './reserved.js';
 import { readConfiguredMcpServers } from './mcp-connections.js';
+import { loadFileAddressFor, previewAddressFor } from './skill-preview.js';
 
 /** Coerce a skill summary field to a string, falling back when the runtime shape is wrong. */
 export function coerceString(value: unknown, fallback: string): string {
@@ -74,6 +75,10 @@ async function readAvailable(
     }
     const cwd = agent.session?.header?.cwd;
     const list = await skills.list({ ...(cwd === undefined ? {} : { cwd }), scope: agent });
+    // Resolved once per read rather than per skill: the probe cannot change
+    // while the process lives. `undefined` means this Host ships no right-sidebar
+    // addressing, and then no row carries a preview entry at all.
+    const forFile = await loadFileAddressFor();
     // A masked skill is listed twice: the original entry and the same-name
     // shadow that withdrew model invocation. Both this panel's own switches and
     // the preset panel's produce such a shadow, so a shadow is recorded as
@@ -81,8 +86,8 @@ async function readAvailable(
     // vanish from this panel entirely, leaving the user unable to see it, and
     // unable to switch it back on. Keeping the first entry per name preserves
     // the richer original description.
-    const out: { name: string; description?: string; masked?: boolean; source: string; provider: string; path?: string; group?: string }[] = [];
-    const seen = new Map<string, { name: string; description?: string; masked?: boolean; source: string; provider: string; path?: string; group?: string }>();
+    const out: { name: string; description?: string; masked?: boolean; source: string; provider: string; path?: string; fileAddress?: string; group?: string }[] = [];
+    const seen = new Map<string, { name: string; description?: string; masked?: boolean; source: string; provider: string; path?: string; fileAddress?: string; group?: string }>();
     // A custom dir that lives inside a preset's own directory is that
     // preset's bundled skills (shipped presets register their skills/ via
     // customSkillDirs). Grouping is display-only; `source` stays the raw
@@ -106,6 +111,11 @@ async function readAvailable(
       const rawRoot = rawPath === '' ? '' : parentDir(rawPath);
       const path = rawRoot === '' ? '' : displayPath(rawRoot, cwd);
       const group = groupFor(source, rawRoot);
+      // The skill's instruction file, when the provider has one: what the
+      // panel's preview entry shows in the Host's right sidebar. A virtual
+      // skill reports no path, and then the entry is absent rather than broken.
+      const file = coerceString(item.path, '');
+      const fileAddress = file === '' ? undefined : previewAddressFor(forFile, sessionId, cwd, file);
       const existing = seen.get(item.name);
       if (existing !== undefined) {
         if (masked) existing.masked = true;
@@ -116,6 +126,7 @@ async function readAvailable(
           existing.source = source;
           existing.provider = provider;
           if (path !== '') existing.path = path;
+          if (fileAddress !== undefined) existing.fileAddress = fileAddress;
           if (group !== undefined) existing.group = group;
         }
         continue;
@@ -128,6 +139,7 @@ async function readAvailable(
         source,
         provider,
         ...(path === '' ? {} : { path }),
+        ...(fileAddress === undefined ? {} : { fileAddress }),
         ...(group === undefined ? {} : { group }),
       };
       seen.set(item.name, row);

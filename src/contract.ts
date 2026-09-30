@@ -61,6 +61,16 @@ export interface SkillEntry {
    */
   readonly path?: string;
   /**
+   * The Host right-sidebar address of this skill's instruction file, ready for
+   * the client's `openResource` call — the panel's "open the skill file" entry.
+   * The Host builds it from the skills service's absolute instruction file path
+   * (which directory-bundle and flat-Markdown skills both report, and virtual
+   * skills do not), so it is absent whenever there is no file to show, or when
+   * the Host predates the addressing grammar. The panel then renders no entry
+   * at all rather than one that cannot work.
+   */
+  readonly fileAddress?: string;
+  /**
    * Display grouping key, present only when it differs from `source`:
    * `preset:<name>` for skills a preset bundles through customSkillDirs
    * (the runtime reports those as `custom`). Grouping is display-only —

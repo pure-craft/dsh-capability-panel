@@ -52,7 +52,22 @@ export const PANEL_CSS = [
   '.ci-description{padding:3px 0 0 24px;line-height:18px;color:var(--dsw-alias-label-tertiary,#81858c);word-break:break-word}',
   '.ci-chevron{display:grid;place-items:center;width:18px;height:18px;flex:none;color:var(--dsw-alias-label-tertiary,#81858c);border-radius:4px}',
   '.ci-chevron svg{transition:transform .12s var(--ds-ease-in-out,ease)}',
-  '.ci-server-trigger[aria-expanded="true"] .ci-chevron svg,.ci-disclosure-trigger[aria-expanded="true"] .ci-chevron svg,.ci-preset-part-trigger[aria-expanded="true"] .ci-chevron svg{transform:rotate(90deg)}',
+  // The row-leading domain mark, laid out the way the host's own rows are: one
+  // 18px square holds both the glyph and the chevron, and hovering the row
+  // cross-fades the glyph into the chevron in place. Nothing reflows, and a long
+  // list stops reading as a column of arrows. The chevron of an OPEN row is not
+  // in a `.ci-leading` at all — the row shows it alone, as the host does.
+  '.ci-leading{position:relative;display:grid;place-items:center;width:18px;height:18px;flex:none;color:var(--dsw-alias-label-tertiary,#81858c)}',
+  '.ci-leading>.ci-row-icon{display:grid;place-items:center;opacity:1;transition:opacity .12s var(--ds-ease-in-out,ease)}',
+  '.ci-leading>.ci-chevron-hover{position:absolute;inset:0;margin:auto;display:grid;place-items:center;opacity:0;transition:opacity .12s var(--ds-ease-in-out,ease)}',
+  '.ci-row-head:hover .ci-leading>.ci-row-icon,.ci-row-head:focus-within .ci-leading>.ci-row-icon{opacity:0}',
+  '.ci-row-head:hover .ci-leading>.ci-chevron-hover,.ci-row-head:focus-within .ci-leading>.ci-chevron-hover{opacity:1}',
+  // Only the preset part header's filled grouping triangle rotates: that is the
+  // host's workspace-grouping glyph, which the host also turns a quarter turn
+  // rather than swapping. Disclosure rows swap the glyph itself (down closed,
+  // up open, the way the host's own DisclosureRow does), so they must NOT
+  // rotate — a rotated down-chevron would point sideways.
+  '.ci-preset-part-trigger[aria-expanded="true"] .ci-chevron svg{transform:rotate(90deg)}',
   // Track and active pill follow the host's SegmentedControl recipe: the track
   // is the same translucent fill as a hover state (it reads as a place, not a
   // button), and the one raised part is the active pill on an opaque layer-1

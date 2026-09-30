@@ -23,6 +23,7 @@ function parseSkillEntry(value: unknown): SkillEntry | null {
   const description = optString(value['description']);
   const path = optString(value['path']);
   const group = optString(value['group']);
+  const fileAddress = optString(value['fileAddress']);
   return {
     name: value['name'],
     state,
@@ -32,6 +33,7 @@ function parseSkillEntry(value: unknown): SkillEntry | null {
     provider: value['provider'],
     ...(description === undefined ? {} : { description }),
     ...(path === undefined ? {} : { path }),
+    ...(fileAddress === undefined ? {} : { fileAddress }),
     ...(group === undefined ? {} : { group }),
   };
 }

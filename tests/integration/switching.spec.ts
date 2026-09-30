@@ -637,6 +637,23 @@ describe('capability paths with partial hosts', () => {
     expect((rec.registeredSkills[0] as { resourceBase?: unknown } | undefined)?.resourceBase).toEqual(resourceBase);
   });
 
+  it('carries the instruction-file path through to the shadow, so a switched-off skill stays readable', async () => {
+    // The shadow replaces the original in the listing outright. If it dropped
+    // this path, switching a skill off would also remove the panel's only way
+    // to open its instruction file — the row would lose its entry exactly when
+    // the user is deciding whether to switch it back on.
+    const { route, rec } = bootHost({
+      skills: {
+        list: () => Promise.resolve([{ name: 'find-skills', description: 'd' }]),
+        get: (name: string) => Promise.resolve({ name, description: 'd', content: 'c', path: '/skills/find-skills/SKILL.md' }),
+      },
+    });
+    const { status } = await post(route.handler, { kind: 'skill', name: 'find-skills', enabled: false });
+
+    expect(status).toBe(200);
+    expect((rec.registeredSkills[0] as { path?: unknown } | undefined)?.path).toBe('/skills/find-skills/SKILL.md');
+  });
+
   it('cannot expand a server mask while the global tools service is absent', async () => {
     // The scoped registry may exist on the agent even when the host-level
     // tools service is gone; without the global view there is no honest list

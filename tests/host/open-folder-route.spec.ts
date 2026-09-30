@@ -19,6 +19,7 @@ interface FixtureOptions {
   agentPresetsList?: unknown[] | undefined;
   agentPresetsListThrows?: boolean;
   noAgentPresetsService?: boolean;
+  sessionController?: unknown;
 }
 
 function fixture(options: FixtureOptions = {}) {
@@ -40,6 +41,7 @@ function fixture(options: FixtureOptions = {}) {
       if (name === 'skills') return options.noSkillsService === true ? undefined : skills;
       if (name === 'agents') return options.noAgentsService === true ? undefined : { get: () => options.agent };
       if (name === 'agentPresets') return options.noAgentPresetsService === true ? undefined : agentPresets;
+      if (name === 'sessionController') return options.sessionController;
       return undefined;
     },
   };
@@ -388,5 +390,47 @@ describe('open-folder route', () => {
     const result = await call(fixture(), { source: 'user-dsh' });
     expect(result.status).toBe(500);
     expect(result.json()).toEqual({ error: 'failed to open folder: cannot open' });
+  });
+
+  // The Host's Session controller owns path opening wherever a composition
+  // mounts one: it carries the shell-free per-platform opener and the
+  // deployment's native-opening policy. These pin its three answers.
+  it('opens through the Host and leaves the local opener alone', async () => {
+    const openWorkspacePath = vi.fn(() => Promise.resolve(undefined));
+    const result = await call(
+      fixture({ sessionController: { canOpenWorkspacePath: () => true, openWorkspacePath } }),
+      { source: 'user-dsh' },
+    );
+    expect(result.status).toBe(200);
+    expect(openWorkspacePath).toHaveBeenCalledWith({ path: '/dsh-home/skills' }, expect.any(AbortSignal));
+    expect(openFolderMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the local opener for a path the Host will not verify', async () => {
+    const openWorkspacePath = vi.fn(() => Promise.reject(new Error('Path has no verified Host path')));
+    const result = await call(
+      fixture({ sessionController: { canOpenWorkspacePath: () => true, openWorkspacePath } }),
+      { source: 'user-dsh' },
+    );
+    expect(result.status).toBe(200);
+    expect(openFolderMock).toHaveBeenCalledWith('/dsh-home/skills');
+  });
+
+  it('refuses without opening anything when the deployment reports no desktop', async () => {
+    const openWorkspacePath = vi.fn(() => Promise.resolve(undefined));
+    const result = await call(
+      fixture({ sessionController: { canOpenWorkspacePath: () => false, openWorkspacePath } }),
+      { source: 'user-dsh' },
+    );
+    expect(result.status).toBe(500);
+    expect(result.json()).toEqual({ error: 'this deployment cannot open folders on a desktop' });
+    expect(openWorkspacePath).not.toHaveBeenCalled();
+    expect(openFolderMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps using the local opener when the composition mounts no Session controller', async () => {
+    const result = await call(fixture(), { source: 'user-dsh' });
+    expect(result.status).toBe(200);
+    expect(openFolderMock).toHaveBeenCalledWith('/dsh-home/skills');
   });
 });

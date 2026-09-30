@@ -201,6 +201,31 @@ export interface AgentCreatedPayload {
   };
 }
 
+/**
+ * The Host's Session controller, as far as this plugin uses it: the two
+ * members that open one path on the user's own desktop. Structural like every
+ * other service here, so nothing static is imported from
+ * `@deepseek-ai/dsh-api-session-controller` — and it spans this plugin's whole
+ * supported range, because both members exist in every generation from
+ * 0.1.2-rc.1 through 0.2.x. The richer members (`workspaceDesktop`,
+ * `workspacePathApplications`) only appear from 0.1.7-rc.2, so they stay unused
+ * rather than optional-by-extra-probing.
+ */
+export interface SessionControllerLike {
+  /**
+   * Whether this deployment can hand one path to a native desktop. `false` is
+   * an answer rather than a failure: either the deployment turned native
+   * opening off, or the platform announces no desktop at all.
+   */
+  canOpenWorkspacePath(): boolean;
+  /**
+   * Verify the path through the composed filesystem, then open it natively.
+   * Rejects with the Host's own error when no verified mapping exists, which is
+   * how a sandboxed deployment refuses a path outside its roots.
+   */
+  openWorkspacePath(request: { readonly path: string }, signal: AbortSignal): Promise<unknown>;
+}
+
 export interface HostServices {
   /**
    * This plugin's own cordis fiber, read for the profile entry id that 0.1.7
@@ -232,6 +257,7 @@ export interface HostServices {
   get(name: 'agents', strict?: boolean): AgentsService | undefined;
   get(name: 'agentPresets', strict?: boolean): AgentPresetsService | undefined;
   get(name: 'settings', strict?: boolean): SettingsService | undefined;
+  get(name: 'sessionController', strict?: boolean): SessionControllerLike | undefined;
   get(name: 'skills', strict?: boolean): SkillsService | undefined;
   get(name: 'tools', strict?: boolean): ToolsService | undefined;
   on(
@@ -316,6 +342,12 @@ export interface SkillSummary {
   readonly provider?: unknown;
   readonly invocation?: { readonly modelInvocable?: unknown };
   readonly resourceBase?: unknown;
+  /**
+   * The absolute instruction file path, when the provider supplies one —
+   * `SKILL.md` for a directory bundle, the file itself for a flat Markdown
+   * skill, absent for a virtual skill registered in memory.
+   */
+  readonly path?: unknown;
 }
 
 export interface SkillDefinitionLike {
@@ -325,6 +357,8 @@ export interface SkillDefinitionLike {
   readonly source?: unknown;
   readonly provider?: unknown;
   readonly resourceBase?: unknown;
+  /** The provider's instruction-file path, inherited by the panel's shadow. */
+  readonly path?: unknown;
 }
 
 export interface IncomingLike extends BaseIncomingLike {

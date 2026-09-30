@@ -125,7 +125,7 @@ function fixture(options: FixtureOptions = {}) {
                 ? Promise.resolve(undefined)
                 : Promise.resolve(
                     options.skillGet === undefined
-                      ? { name: 'writing', description: 'house style', content: 'body', resourceBase: '/r' }
+                      ? { name: 'writing', description: 'house style', content: 'body', resourceBase: '/r', path: '/skills/writing/SKILL.md' }
                       : options.skillGet,
                   );
             if (options.deferSkillGet !== true) return resolved;
@@ -218,6 +218,9 @@ describe('preset enforcement', () => {
       name: 'writing',
       invocation: { modelInvocable: false, userInvocable: true },
       resourceBase: '/r',
+      // Inherited for the same reason as resourceBase: a skill the preset
+      // switches off still needs its instruction file reachable from the row.
+      path: '/skills/writing/SKILL.md',
     });
   });
 

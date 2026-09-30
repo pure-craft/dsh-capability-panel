@@ -2,24 +2,12 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { describe, expect, it, vi } from 'vitest';
 
-// The real package imports CSS and cannot execute under Node. The mock must
-// define every name icons.ts touches: its resolver probes the modern
+// The real package imports CSS and cannot execute under Node. The shared stub
+// defines every name icons.ts touches: its resolver probes the modern
 // (0.1.7 stroke-weight) name first, so both generations' names are provided.
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => {
-  const stub = (): null => null;
-  return {
-    IconChevronDownOutlineRegular: stub, IconChevronDownOutline14: stub,
-    IconChevronRightOutlineRegular: stub, IconChevronRightOutline14: stub,
-    IconContextInjectionOutlineRegular: stub, IconContextInjectionOutline16: stub,
-    IconFolderCloseRegular: stub, IconFolderClose16: stub,
-    IconRefreshOutlineRegular: stub, IconRefreshOutline14: stub,
-    IconSearchOutlineRegular: stub, IconSearchOutline16: stub,
-    IconSendOutlineRegular: stub, IconSendOutline14: stub,
-    IconSettingsOutlineRegular: stub, IconSettingsOutline16: stub,
-  };
-});
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => (await import('./primitives-stub.js')).primitivesStub);
 
-import { pickIcon, MissingIcon, hasModernShell, HOST_HAS_MODERN_SHELL, type IconComponent, IconChevronDown, IconChevronRight, IconContextInjection, IconFolderClose, IconRefresh, IconSearch, IconSend, IconSettings } from '../../src/client/icons.js';
+import { pickIcon, MissingIcon, hasModernShell, HOST_HAS_MODERN_SHELL, ICON_NAME_PAIRS, type IconComponent, IconApi, IconChevronDown, IconChevronUp, IconContextInjection, IconFolderClose, IconRefresh, IconRightUp, IconSearch, IconSend, IconSettings, IconSkill, IconTriangleRight } from '../../src/client/icons.js';
 
 const Modern: IconComponent = () => null;
 const Legacy: IconComponent = () => null;
@@ -57,32 +45,47 @@ describe('hasModernShell', () => {
   });
 });
 
+/**
+ * The last primitives release that still shipped pixel-suffixed icon names,
+ * frozen as a fixture because no installable 0.2.x package contains them any
+ * more. Its provenance and re-derive command live in the file itself.
+ */
+function frozenLegacyIconExports(): string[] {
+  const file = new URL('../fixtures/primitives-0.1.5-alpha.1-icon-exports.json', import.meta.url);
+  return (JSON.parse(readFileSync(file, 'utf8')) as { icons: string[] }).icons;
+}
+
 describe('resolved icon constants', () => {
-  it('resolves every icon this panel renders to a component', () => {
-    for (const icon of [IconChevronDown, IconChevronRight, IconContextInjection, IconFolderClose, IconRefresh, IconSearch, IconSend, IconSettings]) {
-      expect(typeof icon).toBe('function');
+  const resolved: Record<string, IconComponent> = {
+    IconApi, IconChevronDown, IconChevronUp, IconContextInjection, IconFolderClose,
+    IconRefresh, IconRightUp, IconSearch, IconSend, IconSettings, IconSkill, IconTriangleRight,
+  };
+
+  it('resolves every name pair to a live host icon, never the sentinel', () => {
+    // MissingIcon is itself a function, so its absence has to be asserted by
+    // identity: a typeof check cannot tell a real host icon from a name that
+    // fell through to the degradation path.
+    expect(Object.keys(resolved).sort()).toEqual(Object.keys(ICON_NAME_PAIRS).sort());
+    for (const [name, icon] of Object.entries(resolved)) {
+      expect(icon, name).not.toBe(MissingIcon);
     }
   });
 
-  // The primitives package imports CSS, so it cannot be executed under Node;
-  // this instead pins the fallback NAME pairs against the installed package's
-  // source text — a typoed legacy name would silently resolve to MissingIcon
-  // on pre-0.1.7 hosts, which is exactly the failure this check exists to catch.
-  it('uses legacy fallback names the installed primitives package really ships', () => {
+  // The primitives package imports CSS, so it cannot be executed under Node.
+  // Each generation is therefore pinned against the export list that really
+  // ships it — a typoed name would otherwise degrade to MissingIcon *silently*
+  // on that generation, which is exactly the failure this check exists to catch:
+  //  - modern: the INSTALLED package's source text, the generation this build
+  //    is type-checked and tested against;
+  //  - legacy: the frozen 0.1.5-alpha.1 list, since 0.2.x dropped those names.
+  it('pins both name generations against the export list that really ships them', () => {
     const require = createRequire(import.meta.url);
     const entry = require.resolve('@deepseek-ai/dsh-client-ui-primitives');
     const source = readFileSync(entry, 'utf8');
-    for (const legacy of [
-      'IconChevronDownOutline14',
-      'IconChevronRightOutline14',
-      'IconContextInjectionOutline16',
-      'IconFolderClose16',
-      'IconRefreshOutline14',
-      'IconSearchOutline16',
-      'IconSendOutline14',
-      'IconSettingsOutline16',
-    ]) {
-      expect(source).toContain(legacy);
+    const legacyExports = frozenLegacyIconExports();
+    for (const [name, pair] of Object.entries(ICON_NAME_PAIRS)) {
+      expect(source, `${name}: is the installed package's ${pair.modern} present?`).toContain(pair.modern);
+      expect(legacyExports, `${name}: did 0.1.5-alpha.1 really export ${pair.legacy}?`).toContain(pair.legacy);
     }
   });
 });

@@ -192,6 +192,11 @@ export function createCapabilityController(
       source: typeof original.source === 'string' ? original.source : 'custom',
       provider: typeof original.provider === 'string' ? original.provider : 'capability-panel',
       ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
+      // The instruction file, for the same reason: the shadow IS the row the
+      // panel shows, and the row's right-sidebar entry is built from this path.
+      // A skill switched off here must stay readable — switching it back on is
+      // the point of keeping it in the list at all.
+      ...(typeof original.path === 'string' ? { path: original.path } : {}),
       invocation: { modelInvocable: false, userInvocable: true },
     }));
     ensurePromptNote(agent, state);
@@ -387,6 +392,7 @@ export function createCapabilityController(
             source: typeof original.source === 'string' ? original.source : 'custom',
             provider: typeof original.provider === 'string' ? original.provider : 'capability-panel',
             ...(original.resourceBase === undefined ? {} : { resourceBase: original.resourceBase }),
+            ...(typeof original.path === 'string' ? { path: original.path } : {}),
             invocation: { modelInvocable: false, userInvocable: true },
           });
         } catch {

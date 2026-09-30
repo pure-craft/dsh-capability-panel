@@ -26,12 +26,14 @@ import type { McpServerEntry, SkillEntry, SkillLoadState, ToolEntry } from '../c
 import { subscribe, getSnapshot, toggle, close, refresh, reportActionError, reset, setCapability } from './store.js';
 import { filterPayload } from './filter.js';
 import { MCP_TOOL_ROOT_CLASS, ROW_HEADER_CLASS, ROW_ROOT_CLASS, resolveDisclosure } from './disclosure.js';
+import { leadingFor, leadingStatic } from './disclosure-row.js';
 import { LOCALE_NS, registerLocale } from './locale.js';
 import type { LocaleService } from './locale.js';
 import { PANEL_CSS, TOK } from './styles.js';
 import { capabilitySwitch } from './switch.js';
 import { PresetToolSection } from './preset-section.js';
 import { resetPresetTools } from './preset-store.js';
+import { openPreviewResource } from './preview.js';
 
 const ROUTE = '/api/capability-panel';
 
@@ -49,13 +51,15 @@ import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
 // Icon names differ across host generations (pixel-suffixed before 0.1.7,
 // stroke-weight variants since); icons.ts resolves whichever the host has.
 import {
-  IconChevronRight,
+  IconApi,
   IconContextInjection,
   IconFolderClose,
   IconSend,
   IconSearch,
   IconRefresh,
+  IconRightUp,
   IconSettings,
+  IconSkill,
   HOST_HAS_MODERN_SHELL,
 } from './icons.js';
 // Base UI's `react`/`react/jsx-runtime` imports stay external and resolve to
@@ -79,6 +83,13 @@ interface SlotContext {
    * observable re-renders the panel on a language switch.
    */
   readonly locale: LocaleService;
+  /**
+   * The optional-service channel. One row action needs the Host's right-sidebar
+   * navigation, and `inject` gates plugin ACTIVATION in cordis — declaring a
+   * service an older Host does not provide would park this panel instead of
+   * losing that one action. `get` performs the lookup without a declaration.
+   */
+  get(name: string): unknown;
 }
 
 interface DockProps {
@@ -248,6 +259,9 @@ export function apply(ctx: SlotContext): void {
 
   /** Circular arrows: pull a declared-but-offline server's connection up now. */
   const reconnectIcon = (size: number) => h(IconRefresh, { size });
+
+  /** Arrow out of the row: show this skill's file in the Host's side panel. */
+  const previewIcon = (size: number) => h(IconRightUp, { size });
 
   /** The GitHub mark. Not in the host icon set (brand logos are not shipped
    *  there), so this one path is inlined for the feedback link's recognizability. */
@@ -428,7 +442,7 @@ export function apply(ctx: SlotContext): void {
                   },
                   // The host's own folder glyph — the same set every shipped
                   // surface draws from, so it follows theme and density for free.
-                  h(IconFolderClose, { size: 12 }),
+                  h(IconFolderClose, { size: 14 }),
                 )
               : null,
             `${label} (${count})`,
@@ -538,9 +552,6 @@ export function apply(ctx: SlotContext): void {
           },
         });
 
-      /** Right chevron the disclosure CSS rotates 90° when expanded. */
-      const chevronIcon = h(IconChevronRight, { size: 12 });
-
       const groupLabel = (text: string, first: boolean) =>
         h(
           'div',
@@ -611,6 +622,8 @@ export function apply(ctx: SlotContext): void {
         actions: readonly unknown[],
         className = ROW_ROOT_CLASS,
         sourceLabel?: string,
+        // `unknown`, like `iconAction` below: this file's `h` is untyped.
+        rowIcon?: unknown,
       ) => {
         const hasDescription = description !== undefined && description !== '';
         const disclosure = resolveDisclosure(expanded[key] === true, filtering);
@@ -626,7 +639,9 @@ export function apply(ctx: SlotContext): void {
             h(
               'div',
               { className: ROW_HEADER_CLASS },
-              h('span', { style: { width: '18px', flex: 'none' } }),
+              rowIcon === undefined
+                ? h('span', { style: { width: '18px', flex: 'none' } })
+                : leadingStatic(rowIcon as React.ReactNode),
               nameText(label, sourceLabel),
               ...actions,
             ),
@@ -651,7 +666,7 @@ export function apply(ctx: SlotContext): void {
                 disabled: disclosure.disabled,
                 'aria-label': ariaLabel,
               },
-              h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
+              leadingFor(rowIcon as React.ReactNode | undefined, disclosure.open),
               nameText(label, sourceLabel),
             ),
             ...actions,
@@ -683,15 +698,25 @@ export function apply(ctx: SlotContext): void {
         close();
       };
 
-      const insertButton = (name: string) =>
+      /**
+       * The row's hover-revealed action slot. `.ci-row-head .ci-send` keeps it
+       * invisible until the row is hovered or focused, so a row of controls stays
+       * quiet until the pointer is on it; both row actions share that slot and
+       * its 20×20 ghost chrome.
+       *
+       * The button carries `aria-label` only, no `title`: the host's own controls
+       * show a delayed `Tooltip` rather than the browser's instant native one,
+       * and the sibling action in this same slot has never had a title.
+       */
+      const iconAction = (label: string, icon: unknown, onClick: () => void, disabled = false) =>
         h(
           'button',
           {
             type: 'button',
             className: 'ci-iconbtn ci-send',
-            'aria-label': t('action.insert', { name }),
-            disabled: props.inputActions === undefined,
-            onClick: () => { insertCommand(name); },
+            'aria-label': label,
+            disabled,
+            onClick,
             style: {
               display: 'grid',
               placeItems: 'center',
@@ -702,27 +727,50 @@ export function apply(ctx: SlotContext): void {
               borderRadius: '999px',
               background: 'transparent',
               color: TOK.textTertiary,
-              cursor: props.inputActions === undefined ? 'not-allowed' : 'pointer',
+              cursor: disabled ? 'not-allowed' : 'pointer',
               flex: 'none',
               font: 'inherit',
             },
           },
-          insertIcon(12),
+          icon,
         );
+
+      const insertButton = (name: string) =>
+        iconAction(t('action.insert', { name }), insertIcon(12), () => { insertCommand(name); }, props.inputActions === undefined);
+
+      /**
+       * Show this skill's instruction file where the Host's own skill references
+       * show it: the right-sidebar preview, which renders its Markdown. The
+       * panel offers this whenever the row carries an address, which the Host
+       * computes from the skill's instruction file — a skill the runtime
+       * registered in memory has no file, and a Host predating the addressing
+       * grammar cannot name one, and both ship no address at all. The sidebar
+       * service itself is looked up on click, not here: see `preview.ts`.
+       */
+      const previewButton = (skill: SkillEntry) => {
+        const address = skill.fileAddress;
+        if (address === undefined) return null;
+        return iconAction(
+          t('action.preview', { name: skill.name }),
+          previewIcon(12),
+          () => { openPreviewResource(ctx, address); },
+        );
+      };
 
       const skillRow = (skill: SkillEntry) =>
         disclosureRow(`skill:${skill.name}`, skill.enabled, skill.name, skill.description, [
           stateMeta(skill),
+          previewButton(skill),
           insertButton(skill.name),
           blockedChip(blocked[skill.name] ?? 0),
           switchControl('skill', skill.name, skill.enabled),
-        ], ROW_ROOT_CLASS);
+        ], ROW_ROOT_CLASS, undefined, h(IconSkill, { size: 14 }));
 
       const mcpToolRow = (tool: McpServerEntry['tools'][number], serverEnabled: boolean) =>
         disclosureRow(`mcp-tool:${tool.name}`, tool.enabled, tool.label, tool.description, [
           blockedChip(blocked[tool.name] ?? 0),
           serverEnabled ? switchControl('mcp-tool', tool.name, tool.enabled) : null,
-        ], MCP_TOOL_ROOT_CLASS);
+        ], MCP_TOOL_ROOT_CLASS, undefined, h(IconApi, { size: 14 }));
 
       const serverRow = (server: McpServerEntry) => {
         const serverBlocked = server.tools.reduce((sum, tool) => sum + (blocked[tool.name] ?? 0), 0);
@@ -763,7 +811,7 @@ export function apply(ctx: SlotContext): void {
                   font: 'inherit',
                 },
               },
-              h('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
+              leadingFor(h(IconContextInjection, { size: 14 }) as React.ReactNode, disclosure.open),
             ),
             nameText(server.server),
             server.unavailable === true
@@ -797,7 +845,7 @@ export function apply(ctx: SlotContext): void {
                       : `${t('action.reload', { name: server.server })}\n${t('action.reloadHint')}`,
                     onClick: () => { reconnectServer(server.server); },
                   },
-                  h('span', { className: 'ci-reconnect-glyph', 'aria-hidden': true }, reconnectIcon(12)),
+                  h('span', { className: 'ci-reconnect-glyph', 'aria-hidden': true }, reconnectIcon(14)),
                   t('action.reload.label'),
                 )
               : null,
@@ -830,7 +878,7 @@ export function apply(ctx: SlotContext): void {
           // run_code is the reserved Code Mode transport: the registry
           // refuses to restrict it, so no switch.
           tool.reserved === true ? null : switchControl('system-tool', tool.name, tool.enabled),
-        ]);
+        ], ROW_ROOT_CLASS, undefined, h(IconApi, { size: 14 }));
 
       const emptyNote = (text: string) =>
         h('div', { key: `empty:${text}`, style: { color: TOK.textTertiary, padding: '8px 2px' } }, text);
@@ -1033,7 +1081,7 @@ export function apply(ctx: SlotContext): void {
                           pointerEvents: 'none',
                         },
                       },
-                      searchIcon(12),
+                      searchIcon(14),
                     ),
                     h(Input, {
                       className: 'ci-filter',
@@ -1154,7 +1202,7 @@ export function apply(ctx: SlotContext): void {
                             openGlobalSettings(t('preset.nav'));
                           },
                         },
-                        h('span', { className: 'ci-feedback-icon', 'aria-hidden': true }, h(IconSettings, { size: 12 })),
+                        h('span', { className: 'ci-feedback-icon', 'aria-hidden': true }, h(IconSettings, { size: 16 })),
                         t('footer.openSettings'),
                       )
                     : h('span');

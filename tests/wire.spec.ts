@@ -201,6 +201,18 @@ describe('skill entry rejection', () => {
     );
     expect(withoutGroup?.skills[0]?.group).toBeUndefined();
   });
+
+  it('carries the preview address through, treating a non-string address as absent', () => {
+    const address = 'dsh-resource://file/session/s1/.dsh/skills/x/SKILL.md';
+    const withAddress = parseInspectorPayload(
+      withSkill({ name: 'x', state: 'loaded', enabled: true, loadCount: 1, source: 'user-dsh', provider: 'filesystem', fileAddress: address }),
+    );
+    expect(withAddress?.skills[0]?.fileAddress).toBe(address);
+    const withoutAddress = parseInspectorPayload(
+      withSkill({ name: 'x', state: 'loaded', enabled: true, loadCount: 1, source: 'user-dsh', provider: 'filesystem', fileAddress: 42 }),
+    );
+    expect(withoutAddress?.skills[0]?.fileAddress).toBeUndefined();
+  });
 });
 
 describe('MCP server source', () => {

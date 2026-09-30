@@ -7,7 +7,7 @@ import { Tabs } from '@base-ui/react/tabs';
 import { Menu } from '@deepseek-ai/dsh-client-ui-primitives';
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives';
 // Icon names differ across host generations; icons.ts resolves whichever exists.
-import { IconChevronDown, IconFolderClose, IconRefresh, IconSearch } from './icons.js';
+import { IconApi, IconChevronDown, IconFolderClose, IconRefresh, IconSearch, IconSkill } from './icons.js';
 
 /** The 0.1.7 design-system SegmentedControl, as far as this panel reads it. */
 type SegmentedKind = 'all' | 'skills' | 'mcp' | 'system';
@@ -23,6 +23,7 @@ type SegmentedControlComponent = (props: {
 import { resolveDisclosure } from './disclosure.js';
 import { chevronIcon, disclosureRow } from './disclosure-row.js';
 import { capabilitySwitch } from './switch.js';
+import { IconTriangleRight } from './icons.js';
 import { filterPreset } from './preset-filter.js';
 import {
   getPresetToolsSnapshot,
@@ -193,7 +194,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                 'span',
                 { className: 'ci-folder-icon', style: { display: 'inline-grid', placeItems: 'center', opacity: 0, transition: 'opacity 0.15s' } },
                 // The host's own folder glyph, same as the session panel's dividers.
-                React.createElement(IconFolderClose, { size: 12 }),
+                React.createElement(IconFolderClose, { size: 14 }),
               )
             : null,
           `${label} (${items.length})`,
@@ -235,6 +236,9 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
         className: 'ci-preset-disclosure',
         headerClassName: 'ci-row-head ci-preset-tool-row',
         spacerClassName: 'ci-preset-spacer',
+        // The host's own rows lead with a domain glyph; without one this list
+        // is a column of chevrons. See disclosure-row.ts for the slot itself.
+        icon: React.createElement(IconSkill, { size: 14 }),
         heading: React.createElement(
           'span',
           { className: 'ci-preset-tool-name' },
@@ -275,6 +279,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
         className: 'ci-preset-disclosure',
         headerClassName: 'ci-row-head ci-preset-tool-row',
         spacerClassName: 'ci-preset-spacer',
+        icon: React.createElement(IconApi, { size: 14 }),
         heading: React.createElement('span', { className: 'ci-preset-tool-name' }, tool.label),
         actions: [toggle(tool, presetId)],
         ...(tool.description === undefined
@@ -332,7 +337,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
         React.createElement(
           Collapsible.Trigger,
           { className: 'ci-preset-part-trigger' },
-          React.createElement('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
+          React.createElement(IconTriangleRight, { size: 14 }),
           React.createElement('h3', { className: 'ci-preset-part-title' }, title),
         ),
         React.createElement('p', { className: 'ci-preset-part-sub' }, t('group.count', { shown, total })),
@@ -376,7 +381,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                 className: 'ci-disclosure-trigger ci-preset-server-trigger',
                 disabled: disclosure.disabled,
               },
-              React.createElement('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon),
+              React.createElement('span', { className: 'ci-chevron', 'aria-hidden': true }, chevronIcon(disclosure.open)),
               React.createElement(
                 'span',
                 { className: 'ci-preset-tool-copy' },
@@ -425,7 +430,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
                     void reconnectPresetServer(server.server).finally(() => { setTimeout(() => { setReconnecting(null); }, 2500); });
                   },
                 },
-                React.createElement('span', { className: 'ci-reconnect-glyph', 'aria-hidden': true }, React.createElement(IconRefresh, { size: 12 })),
+                React.createElement('span', { className: 'ci-reconnect-glyph', 'aria-hidden': true }, React.createElement(IconRefresh, { size: 14 })),
                 t('action.reload.label'),
               )
               : null,
@@ -495,7 +500,7 @@ export function PresetToolSection(props: PresetToolSectionProps): React.ReactEle
             React.createElement(
               'div',
               { className: 'ci-search' },
-              React.createElement(IconSearch, { size: 16 }),
+              React.createElement(IconSearch, { size: 14 }),
               React.createElement(Input, {
                 className: 'ci-filter ci-preset-filter',
                 value: query,

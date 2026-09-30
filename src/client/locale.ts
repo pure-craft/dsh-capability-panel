@@ -22,6 +22,7 @@ export const zh: Record<string, string> = {
   'action.enable': '开启 {name}',
   'action.disable': '关闭 {name}',
   'action.insert': '把 /{name} 填入输入框',
+  'action.preview': '在侧边栏打开 {name} 的指令文件',
   'server.tools': '{count} 工具',
   'server.tool.one': '1 个工具',
   // Honest wording only: the panel can prove "declared" and "no tools
@@ -101,6 +102,7 @@ export const en: Record<string, string> = {
   'action.enable': 'Enable {name}',
   'action.disable': 'Disable {name}',
   'action.insert': 'Insert /{name} into the composer',
+  'action.preview': 'Open the instruction file for {name} in the side panel',
   'server.tools': '{count} tools',
   'server.tool.one': '1 tool',
   // Honest wording only: the panel can prove "declared" and "no tools
