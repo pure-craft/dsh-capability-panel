@@ -60,18 +60,19 @@ function entryNamespace(ctx: HostServices): string {
 function bindSection(settings: unknown, namespace: string): { read: SectionRead; write: SectionWrite } | undefined {
   if (settings === null || typeof settings !== 'object') return undefined;
   const host = settings as SettingsLike;
-  if (typeof host.register === 'function') {
-    // The legacy scope is memoized against the same service instance for the
-    // same reason the pair is: a second register() for one namespace throws
-    // "already registered".
-    let scope: SettingsScopeLike<ToolkitSettings> | undefined;
-    const bind = (): SettingsScopeLike<ToolkitSettings> =>
-      (scope ??= host.register!(namespace, ToolkitSettingsSchemaShape, { applies: 'live' }));
-    return {
-      read: () => normalizeToolkitSettings(bind().get()),
-      write: (section) => bind().replace(section),
-    };
-  }
+  // The 0.1.7 form API wins whenever the host exposes it: this plugin's data
+  // lives on the profile entry's own Config, and `describe()`/`replace()` are
+  // the only verbs that reach it. The legacy `register()` shape is kept as the
+  // ≤0.1.6 fallback only.
+  //
+  // Ordering matters, not just for storage: a host can expose BOTH generations
+  // (compatibility patches such as dsh-purge's settings shim re-add `register`
+  // to a host that already has describe/replace). Probing `register` first
+  // takes that branch, which reads the pre-0.1.7 settings document — ignoring
+  // the entry Config, so configured values look empty — and throws
+  // "already registered" on any rebind (a fresh accessor, a replaced service,
+  // an HMR reload), because the shim keeps one registration per namespace.
+  // On the panel route that surfaces as HTTP 500 on every read.
   if (typeof host.describe === 'function' && typeof host.replace === 'function') {
     const read: SectionRead = () => {
       for (const descriptor of host.describe!()) {
@@ -84,6 +85,18 @@ function bindSection(settings: unknown, namespace: string): { read: SectionRead;
       throw new Error(`settings entry "${namespace}" is not configurable`);
     };
     return { read, write: (section) => host.replace!(namespace, section) };
+  }
+  if (typeof host.register === 'function') {
+    // The legacy scope is memoized against the same service instance for the
+    // same reason the pair is: a second register() for one namespace throws
+    // "already registered".
+    let scope: SettingsScopeLike<ToolkitSettings> | undefined;
+    const bind = (): SettingsScopeLike<ToolkitSettings> =>
+      (scope ??= host.register!(namespace, ToolkitSettingsSchemaShape, { applies: 'live' }));
+    return {
+      read: () => normalizeToolkitSettings(bind().get()),
+      write: (section) => bind().replace(section),
+    };
   }
   return undefined;
 }

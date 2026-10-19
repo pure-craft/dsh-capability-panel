@@ -87,6 +87,30 @@ describe('toolkit settings access', () => {
       services['settings'] = { describe: () => [{ ns: TOOLKIT_SETTINGS_NAMESPACE, value: {} }], replace: () => Promise.resolve() };
       expect(access.scope()?.get()).toEqual({ presets: {}, presetSkills: {}, sessions: {} });
     });
+
+    // A host can expose BOTH generations: 0.1.7 ships describe/replace, and a
+    // compatibility patch (dsh-purge's settings shim) re-adds the legacy
+    // `register`. Probing register first takes that branch — it reads the
+    // pre-0.1.7 document instead of the entry Config, and throws
+    // "already registered" on any rebind — so the panel route answered 500 on
+    // every read. The modern shape must win whenever it is available.
+    it('prefers describe/replace when a host exposes both settings APIs', async () => {
+      const replace = vi.fn(() => Promise.resolve());
+      const register = vi.fn(() => ({
+        get: () => ({ presets: { legacy: ['from-shim'] }, presetSkills: {}, sessions: {} }),
+        replace: () => Promise.resolve(),
+      }));
+      const settings = {
+        register,
+        describe: () => [{ ns: TOOLKIT_SETTINGS_NAMESPACE, value: { presets: { alpha: ['bash'] } } }],
+        replace,
+      };
+      const access = createToolkitSettingsAccess(ctxFor(settings));
+      expect(access.scope()?.get().presets).toEqual({ alpha: ['bash'] });
+      await access.scope()?.replace({ presets: {} });
+      expect(register).not.toHaveBeenCalled();
+      expect(replace).toHaveBeenCalledWith(TOOLKIT_SETTINGS_NAMESPACE, { presets: {} });
+    });
   });
 
   describe('serialize', () => {
