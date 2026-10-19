@@ -4,7 +4,13 @@ All notable changes to this project will be documented here. The format follows 
 
 - 面向用户的改动(Add/Change/Fix/Remove)必须记录;内部重构在不改变行为时可归入 Internal。
 - 每条一行,从用户视角写(他得到/失去什么),不复制 commit message。
-- 发版流程:Unreleased 切段 → 版本号 + 日期 → `git tag vX.Y.Z` → `npm publish` → `gh release create`。
+- 发版流程:Unreleased 切段 → 版本号 + 日期 → `git tag vX.Y.Z` → 推送 tag，由 GitHub Actions 经 OIDC trusted publishing 发布 npm 并创建 Release（不要本地 `npm publish`）。
+
+## [1.4.2] - 2026-10-19
+
+### Fixed
+
+- 修复：宿主同时提供 describe/replace 与 legacy register 时（装了给 settings 补 register 的兼容补丁），「设置 → 能力面板」每次读取都返回 HTTP 500 `already registered`——现在优先走现代 API，legacy 仅作老宿主兜底。
 
 ## [1.4.1] - 2026-10-16
 

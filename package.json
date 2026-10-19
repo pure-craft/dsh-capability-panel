@@ -1,6 +1,6 @@
 {
   "name": "dsh-capability-panel",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Manage MCP servers, skills, and tools for your DeepSeek Harness agent — true in-context state (loaded/truncated/evicted) and per-session switches for every capability.",
   "license": "MIT",
   "type": "module",
