@@ -6,6 +6,15 @@ All notable changes to this project will be documented here. The format follows 
 - 每条一行,从用户视角写(他得到/失去什么),不复制 commit message。
 - 发版流程:Unreleased 切段 → 版本号 + 日期 → `git tag vX.Y.Z` → 推送 tag，由 GitHub Actions 经 OIDC trusted publishing 发布 npm 并创建 Release（不要本地 `npm publish`）。
 
+## [1.4.3] - 2026-11-27
+
+### Fixed
+
+- 新建会话与切换预设时直接读取本插件的实时配置，避免反复扫描全部插件设置；只有技能禁用配置时不再扫描工具列表，旧版宿主继续使用兼容读取路径。
+- 修复默认禁用与会话显式启用之间反复重放限制的问题，避免工具注册变化引发连续扫描或将用户已开启的工具重新禁用。
+- 工具关闭失败不再留下用户切换标记，工具随后注册时仍正确应用预设默认禁用。
+- 开启 MCP 服务器会清除其旧的单工具关闭记录，避免后续重放或重启将工具再次关闭；关闭服务器后新增的工具也会补齐限制。
+
 ## [1.4.2] - 2026-10-19
 
 ### Fixed
