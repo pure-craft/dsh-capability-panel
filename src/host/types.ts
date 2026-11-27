@@ -117,6 +117,8 @@ export interface SessionOverrideState {
 }
 
 export interface ToolkitSettings {
+  /** Visibility only; usage collection continues when the entry is hidden. */
+  readonly insightsEntry?: boolean;
   readonly presets: Readonly<Record<string, readonly string[]>>;
   /**
    * Disabled skills, keyed by preset id. Kept in its own map rather than mixed
@@ -235,6 +237,8 @@ export interface HostServices {
    * never assumed.
    */
   readonly fiber?: {
+    /** Validated live Config; volatile settings edits update it without remounting. */
+    readonly effectiveConfig?: unknown;
     readonly entry?: { readonly options?: { readonly id?: unknown } };
   };
   readonly webServer?: {
@@ -296,6 +300,7 @@ export interface HostServices {
     ) => Promise<{ tools?: readonly { name?: unknown }[] }>,
   ): void;
   effect(factory: () => (() => void) | void, label?: string): void;
+  inject?(dependencies: string[], callback: () => void): unknown;
 }
 
 export interface ScopedSkillsRegistry {

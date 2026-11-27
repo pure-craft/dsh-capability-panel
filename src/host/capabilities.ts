@@ -223,7 +223,6 @@ export function createCapabilityController(
       }
       return;
     }
-    if (existing !== undefined) return;
     const { agent, tools } = getAgentTools(sessionId);
     const toolService = ctx.get('tools', false);
     if (toolService === undefined) throw new HttpError(503, 'tools service unavailable');
@@ -231,8 +230,13 @@ export function createCapabilityController(
     const names = [...toolService.schemas()]
       .map((schema) => schema.name)
       .filter((name): name is string => typeof name === 'string' && name.startsWith(prefix));
+    if (existing !== undefined && names.every((name) => existing.names.includes(name))) return;
     if (names.length === 0) throw new HttpError(404, `MCP server "${server}" exposes no tools`);
-    state.mcpServers.set(server, { dispose: tools.restrict({ deny: names }), names });
+    // Install the expanded mask before retiring the old one: no permission gap,
+    // and an unchanged roster emits no registry events on the trailing sweep.
+    const dispose = tools.restrict({ deny: names });
+    state.mcpServers.set(server, { dispose, names });
+    existing?.dispose();
     ensurePromptNote(agent, state);
   };
 
@@ -303,7 +307,7 @@ export function createCapabilityController(
 
     const scopedTools = agent.ctx?.get('tools') as ScopedToolsRegistry | undefined;
     const toolsService = ctx.get('tools', false);
-    if (scopedTools !== undefined && toolsService !== undefined) {
+    if (defaults.tools.length > 0 && scopedTools !== undefined && toolsService !== undefined) {
       const globalNames = new Set<string>();
       const scopedNames = new Set<string>();
       for (const schema of toolsService.schemas()) {
@@ -347,14 +351,15 @@ export function createCapabilityController(
           // Promote any per-tool masks an earlier partial application left
           // (e.g. the server was mid-startup at seed time) into the
           // server-level entry — one owner per server, no double bookkeeping.
-          for (const [name, dispose] of [...st.mcpTools]) {
+          const dispose = scopedTools.restrict({ deny: fullNames });
+          st.mcpServers.set(group.server, { dispose, names: fullNames });
+          for (const [name, disposeTool] of [...st.mcpTools]) {
             if (name.startsWith(prefix)) {
-              dispose();
+              disposeTool();
               st.mcpTools.delete(name);
             }
           }
           existingMask?.dispose();
-          st.mcpServers.set(group.server, { dispose: scopedTools.restrict({ deny: fullNames }), names: fullNames });
           maskedAny = true;
           continue;
         }
@@ -442,7 +447,14 @@ export function createCapabilityController(
         // A panel toggle landing mid-restore (restore awaits skill I/O per
         // entry) is newer than the record on disk; re-applying the stored
         // position would silently diverge memory from it.
-        if (states.get(sessionId)?.userToggled.has(`${kind}:${name}`) === true) continue;
+        const toggled = states.get(sessionId)?.userToggled;
+        if (toggled?.has(`${kind}:${name}`) === true) continue;
+        // A successful server toggle supersedes older per-tool disk records.
+        // A subsequent live tool toggle has its own marker and current mask.
+        if (kind === 'mcp-tool') {
+          const server = name.slice('mcp__'.length, name.indexOf('__', 'mcp__'.length));
+          if (toggled?.has(`mcp-server:${server}`) === true) continue;
+        }
         try {
           if (kind === 'skill') await setSkill(sessionId, name, enabled);
           else if (kind === 'mcp-server') setServer(sessionId, name, enabled);
@@ -508,16 +520,55 @@ export function createCapabilityController(
      * change would be I/O for nobody).
      */
     remask: (sessionId, defaults, overrides) => enqueue(sessionId, async () => {
-      if (defaults.tools.length > 0) await seed(sessionId, defaults, false);
+      // Resolve explicit session enables BEFORE seeding. Registering a default
+      // mask only to dispose it during restore emits tools/change twice; the
+      // enforcement listener's trailing sweep would repeat that forever. Live
+      // toggles outrank the persisted snapshot just as they do in restoreImpl.
+      const state = states.get(sessionId);
+      // Explicit live server disables must follow roster growth even before
+      // their persistence write completes (the disk snapshot may still say on).
+      for (const server of state?.mcpServers.keys() ?? []) {
+        if (state?.userToggled.has(`mcp-server:${server}`) === true) setServer(sessionId, server, false);
+      }
+      const tools = defaults.tools.filter((name) => {
+        if (!name.startsWith('mcp__')) {
+          if (state?.userToggled.has(`system-tool:${name}`) === true) return state.systemTools.has(name);
+          return overrides?.systemTools[name] !== true;
+        }
+        const server = name.slice('mcp__'.length, name.indexOf('__', 'mcp__'.length));
+        // Live tool masks are already applied by set(); do not promote them
+        // back into a default server mask, which would undo a later enable.
+        if (state?.userToggled.has(`mcp-tool:${name}`) === true) return false;
+        if (state?.userToggled.has(`mcp-server:${server}`) === true) return false;
+        return overrides?.mcpServers[server] !== true && overrides?.mcpTools[name] !== true;
+      });
+      if (tools.length > 0) await seed(sessionId, { tools, skills: [] }, false);
       if (overrides !== undefined) {
-        await restoreImpl(sessionId, { skills: {}, mcpServers: overrides.mcpServers, mcpTools: overrides.mcpTools, systemTools: overrides.systemTools });
+        // Enables were applied on creation/reseed (or by set). Replaying a
+        // server enable here would remove a standing per-tool override before
+        // restoring it, causing the same registry-change echo on every sweep.
+        const disabledOnly = (positions: Readonly<Record<string, boolean>>): Record<string, boolean> =>
+          Object.fromEntries(Object.entries(positions).filter(([, enabled]) => !enabled));
+        await restoreImpl(sessionId, {
+          skills: {},
+          mcpServers: disabledOnly(overrides.mcpServers),
+          mcpTools: disabledOnly(overrides.mcpTools),
+          systemTools: disabledOnly(overrides.systemTools),
+        });
       }
     }),
     set: (sessionId, kind, name, enabled) => enqueue(sessionId, async () => {
-      stateFor(sessionId).userToggled.add(`${kind}:${name}`);
       if (kind === 'skill') await setSkill(sessionId, name, enabled);
       else if (kind === 'mcp-server') setServer(sessionId, name, enabled);
       else setTool(sessionId, name, enabled, kind === 'system-tool');
+      const state = stateFor(sessionId);
+      if (kind === 'mcp-server') {
+        const prefix = `mcp-tool:mcp__${name}__`;
+        for (const marker of state.userToggled) {
+          if (marker.startsWith(prefix)) state.userToggled.delete(marker);
+        }
+      }
+      state.userToggled.add(`${kind}:${name}`);
       appendStats({ ts: new Date().toISOString(), sessionId, kind: enabled ? 'enable' : 'disable', name: `${kind}:${name}` });
     }),
   };

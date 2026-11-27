@@ -45,6 +45,14 @@ This plugin turns both into one panel at the right of the composer.
 - **One-click command fill.** A skill row's paper-plane button drops `/skill-name` into the composer, ready for your Enter.
 - **Fast filtering.** Match on name, description, or the visible state pill ("truncated" / "已截断" both work), with matching descriptions auto-expanded.
 
+## Tool insights (MVP)
+
+- **A separate entry.** Tool insights in the conversation composer defaults to the current workspace; **Left navigation → Tool insights** works without a session and opens the global view. Switch workspace/global scope, preset views, and Tools/Skills categories. Unused first is the default; count rankings have small bars. There is no daily trend view.
+- **Statistics scope is not switch scope.** Insight switches reuse the existing session capability operation: they affect future calls in the current session only, never preset or global capability configuration. A specific preset filter displays recorded usage read-only rather than treating another preset's statistics as the current session's inventory. Without a session, capabilities cannot be disabled. Nothing is disabled automatically.
+- **Missing does not mean zero.** Only observed records are covered. Incomplete historical coverage shows an insufficient-data notice, and an absent record is not automatically classified as unused. Persisted historical indexes are usage-count lower bounds; after a host restart, logs must be revalidated before coverage can be considered complete again. They cannot establish that a capability was never used.
+- **History indexing is manual.** Click **Index historical sessions** to process at most 2000 events and visit 20 sessions per batch, with a remaining-session count. Click again to continue when needed; opening the page never triggers an automatic full-history scan.
+- **Hide the entry independently.** **Show tool insights entry** changes only the conversation entry's visibility, not usage collection. Insights remain accessible in the left navigation when the entry is hidden.
+
 ## Production-grade by default
 
 - **Thoroughly tested**: 580+ tests with typecheck, type-aware lint, and 100% coverage gates (statements/branches/functions/lines) enforced in CI on every push and PR.
@@ -72,7 +80,7 @@ Restart dsh for the install to take effect.
 
 Requires a DeepSeek Harness web profile (`dsh web`), dsh ≥ 0.1.2-alpha.4 (older versions run with load states degraded). One build serves everything up to the latest 0.1.7; only "open a preset's folder by name" is unavailable on 0.1.7+ (the newer roster no longer carries paths), everything else stays fully functional. All `@deepseek-ai/*` runtime pieces are provided by the host as peer dependencies — there is nothing else to install.
 
-**Zero configuration** — the plugin has no settings of its own. After the restart you will find it in two places:
+**No setup required** — the tool insights composer entry can be hidden independently on the insights page. After the restart, access the plugin from:
 
 - the **panel icon** at the right of any conversation's composer — that opens the session panel
 - **Settings → Capability Panel** — the per-preset default capabilities

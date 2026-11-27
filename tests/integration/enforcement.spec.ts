@@ -228,9 +228,12 @@ describe('denials are counted', () => {
     expect((JSON.parse(body) as { blocked: Record<string, number> }).blocked['bash']).toBe(1);
   });
 
-  it('ignores a successful call', () => {
+  it('does not count a successful call to a masked tool', async () => {
     const host = bootHost();
-    expect(() => { host.onResult({ agent: { id: 's1' }, name: 'bash' }, {}); }).not.toThrow();
+    await disable(host.route.handler, 'system-tool', 'bash');
+    const before = await readStatsBody(host.route.handler);
+    host.onResult({ agent: { id: 's1' }, name: 'bash' }, {});
+    expect(await readStatsBody(host.route.handler)).toEqual(before);
   });
 });
 
@@ -239,15 +242,22 @@ describe('the result listener ignores what it should', () => {
     const host = bootHost();
     await disable(host.route.handler, 'system-tool', 'bash');
 
-    expect(() => { host.onResult({ name: 'bash' }, { isError: true, error: { message: 'x' } }); }).not.toThrow();
-    expect(() => { host.onResult({ agent: { id: 42 }, name: 'bash' }, { isError: true, error: {} }); }).not.toThrow();
+    const before = await readStatsBody(host.route.handler);
+    const denial = { isError: true, error: { message: 'capability-panel: tool disabled "bash"' } };
+    host.onResult({ name: 'bash' }, denial);
+    host.onResult({ agent: { id: 42 }, name: 'bash' }, denial);
+    expect(await readStatsBody(host.route.handler)).toEqual(before);
   });
 
-  it('ignores a session that never switched anything off', () => {
+  it('ignores a session that never switched anything off', async () => {
     const host = bootHost();
-    expect(() => {
-      host.onResult({ agent: { id: 'untouched' }, name: 'bash' }, { isError: true, error: { message: 'x' } });
-    }).not.toThrow();
+    await disable(host.route.handler, 'system-tool', 'bash');
+    const before = await readStatsBody(host.route.handler);
+    host.onResult(
+      { agent: { id: 'untouched' }, name: 'bash' },
+      { isError: true, error: { message: 'capability-panel: tool disabled "bash"' } },
+    );
+    expect(await readStatsBody(host.route.handler)).toEqual(before);
   });
 
   it('does not count an error unrelated to a mask', async () => {
@@ -276,7 +286,9 @@ describe('the result listener ignores what it should', () => {
     const host = bootHost();
     await disable(host.route.handler, 'system-tool', 'bash');
 
-    expect(() => { host.onResult({ agent: { id: 's1' }, name: 'bash' }, { isError: true }); }).not.toThrow();
+    const before = await readStatsBody(host.route.handler);
+    host.onResult({ agent: { id: 's1' }, name: 'bash' }, { isError: true });
+    expect(await readStatsBody(host.route.handler)).toEqual(before);
   });
 });
 

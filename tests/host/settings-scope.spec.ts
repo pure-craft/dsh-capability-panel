@@ -113,6 +113,67 @@ describe('toolkit settings access', () => {
     });
   });
 
+  describe('live reads without inventory scans', () => {
+    it('reads current effective Config without describe, including external replacements', async () => {
+      const describe = vi.fn(() => { throw new Error('full inventory must stay lazy'); });
+      const fiber: { effectiveConfig: object; entry: { options: { id: string } } } = {
+        effectiveConfig: { presets: { alpha: ['bash'] } }, entry: { options: { id: 'custom-entry' } },
+      };
+      const settings = {
+        describe,
+        replace: vi.fn((_namespace: string, section: object) => {
+          fiber.effectiveConfig = section;
+          return Promise.resolve();
+        }),
+      };
+      const access = createToolkitSettingsAccess(ctxFor(settings, fiber));
+      expect(describe).not.toHaveBeenCalled();
+      const scope = access.scope()!;
+      expect(scope.get()).toEqual({ presets: { alpha: ['bash'] }, presetSkills: {}, sessions: {} });
+      fiber.effectiveConfig = { presets: { beta: ['read'] } };
+      expect(scope.get().presets).toEqual({ beta: ['read'] });
+      await scope.replace({ sessions: { s: { skills: { office: false } } } });
+      expect(scope.get().sessions).toEqual({ s: { skills: { office: false } } });
+      expect(settings.replace).toHaveBeenCalledWith('custom-entry', { sessions: { s: { skills: { office: false } } } });
+      expect(describe).not.toHaveBeenCalled();
+    });
+
+    it.each([null, [], 42])('falls back to descriptors for unsupported effective Config %s', (effectiveConfig) => {
+      const describe = vi.fn(() => [{ ns: TOOLKIT_SETTINGS_NAMESPACE, value: { presets: { alpha: ['bash'] } } }]);
+      const access = createToolkitSettingsAccess(ctxFor({ describe, replace: () => Promise.resolve() }, { effectiveConfig }));
+      expect(access.scope()?.get().presets).toEqual({ alpha: ['bash'] });
+      expect(describe).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a missing descriptor rather than silently discarding stored restrictions', () => {
+      const access = createToolkitSettingsAccess(ctxFor({ describe: () => [], replace: () => Promise.resolve() }));
+      expect(() => access.scope()?.get()).toThrow('settings entry "capability-panel" is not configurable');
+    });
+
+    it('memoizes legacy registration across fresh Cordis proxies but rebinds a real replacement', () => {
+      const makeService = (name: string) => ({
+        register: vi.fn(function (this: unknown) {
+          expect(this).not.toBe(service);
+          return { get: () => ({ presets: { [name]: ['bash'] } }), replace: () => Promise.resolve() };
+        }),
+      });
+      let service = makeService('alpha');
+      const first = service;
+      const ctx = {
+        get: () => new Proxy(service, {
+          get: (target, key, receiver): unknown => key === Symbol.for('cordis.original') ? target : Reflect.get(target, key, receiver) as unknown,
+        }),
+      } as never;
+      const access = createToolkitSettingsAccess(ctx);
+      expect(access.scope()?.get().presets).toEqual({ alpha: ['bash'] });
+      access.scope()?.get();
+      expect(first.register).toHaveBeenCalledTimes(1);
+      service = makeService('beta');
+      expect(access.scope()?.get().presets).toEqual({ beta: ['bash'] });
+      expect(service.register).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('serialize', () => {
     it('runs work in submission order and keeps the queue alive after a failure', async () => {
       const access = createToolkitSettingsAccess(ctxFor(undefined));

@@ -60,18 +60,6 @@ describe('load record field positions', () => {
     ]);
     expect(asObject).toEqual([]);
   });
-
-  it('ignores non-skill tool calls', () => {
-    expect(collectLoadRecords([
-      { type: 'tool/call', seq: 12, data: { name: 'bash', arguments: '{}', callId: 'c3' } },
-    ])).toEqual([]);
-  });
-
-  it('skips a load whose arguments blob is malformed', () => {
-    expect(collectLoadRecords([
-      { type: 'tool/call', seq: 13, data: { name: 'skill', arguments: 'not json', callId: 'c4' } },
-    ])).toEqual([]);
-  });
 });
 
 

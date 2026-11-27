@@ -9,8 +9,8 @@ describe('ToolkitSettingsSchema', () => {
   // form validator rejects a volatile node beneath an enclosing volatile one.
   it('marks every persisted field volatile so the entry stays configurable', () => {
     const fields = (ToolkitSettingsSchema as unknown as { dict: Record<string, { meta?: { volatile?: boolean } }> }).dict;
-    expect(Object.keys(fields)).toEqual(['presets', 'presetSkills', 'sessions']);
-    for (const key of ['presets', 'presetSkills', 'sessions'] as const) {
+    expect(Object.keys(fields)).toEqual(['insightsEntry', 'presets', 'presetSkills', 'sessions']);
+    for (const key of ['insightsEntry', 'presets', 'presetSkills', 'sessions'] as const) {
       expect(fields[key]?.meta?.volatile).toBe(true);
     }
   });
@@ -24,7 +24,7 @@ describe('ToolkitSettingsSchema', () => {
       refs: Record<string, { meta?: { volatile?: boolean }; dict?: Record<string, number> } | undefined>;
     };
     const root = json.refs[String(json.uid)];
-    for (const key of ['presets', 'presetSkills', 'sessions'] as const) {
+    for (const key of ['insightsEntry', 'presets', 'presetSkills', 'sessions'] as const) {
       const field = json.refs[String(root?.dict?.[key])];
       expect(field?.meta?.volatile).toBe(true);
     }
@@ -36,6 +36,8 @@ describe('normalizeToolkitSettings', () => {
   // written before a key existed, or absent entirely, must still read as the
   // three empty maps the schema's defaults promise.
   it('fills every absent map so readers never guard', () => {
+    expect(normalizeToolkitSettings({ insightsEntry: false }).insightsEntry).toBe(false);
+    expect(normalizeToolkitSettings({ insightsEntry: 'invalid' }).insightsEntry).toBeUndefined();
     expect(normalizeToolkitSettings(undefined)).toEqual({ presets: {}, presetSkills: {}, sessions: {} });
     expect(normalizeToolkitSettings(null)).toEqual({ presets: {}, presetSkills: {}, sessions: {} });
     expect(normalizeToolkitSettings({ presets: { alpha: ['bash'] } })).toEqual({

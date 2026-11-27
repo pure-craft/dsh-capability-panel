@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { openPreviewResource, resolvePreviewOpener } from '../../src/client/preview.js';
 
 /** A plugin context whose optional lookup answers with `value`. */
-const context = (value: unknown) => ({ get: () => value });
+const context = (value: unknown) => ({ get: (name: string) => name === 'sidebarRight' ? value : undefined });
 
 describe('resolvePreviewOpener', () => {
   it('opens whatever address it is handed through the host service', () => {
@@ -54,7 +54,7 @@ describe('openPreviewResource', () => {
     // every row silently lost its preview action and never got it back.
     // A service that arrives only later: the lookup must read it per call.
     const box: { service?: unknown } = {};
-    const ctx = { get: () => box.service };
+    const ctx = { get: (name: string) => name === 'sidebarRight' ? box.service : undefined };
     expect(resolvePreviewOpener(ctx)).toBeUndefined();
     const openResource = vi.fn();
     box.service = { openResource };

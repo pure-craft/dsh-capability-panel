@@ -320,7 +320,7 @@ describe('buildPayload MCP source with preset', () => {
       list: () => [],
     };
     const tools = {
-      schemas() { return []; },
+      schemas: (scope?: unknown) => scope === undefined ? [] : [{ name: 'mcp__local__read' }],
     };
     const agentPresets = {
       composedPreset: () => 'my-preset',
@@ -336,7 +336,7 @@ describe('buildPayload MCP source with preset', () => {
       },
     };
     const payload = await buildPayload(services as never, 's1', EMPTY_STATE);
-    expect(payload.sessionId).toBe('s1');
+    expect(payload.mcp.find((server) => server.server === 'local')).toMatchObject({ source: 'My Preset', path: '/tmp' });
   });
 
   it('falls back to preset id when preset name is unavailable', async () => {
@@ -346,7 +346,7 @@ describe('buildPayload MCP source with preset', () => {
       list: () => [],
     };
     const tools = {
-      schemas() { return []; },
+      schemas: (scope?: unknown) => scope === undefined ? [] : [{ name: 'mcp__local__read' }],
     };
     const agentPresets = {
       composedPreset: () => 'my-preset',
@@ -362,7 +362,9 @@ describe('buildPayload MCP source with preset', () => {
       },
     };
     const payload = await buildPayload(services as never, 's1', EMPTY_STATE);
-    expect(payload.sessionId).toBe('s1');
+    const server = payload.mcp.find((row) => row.server === 'local');
+    expect(server?.source).toBe('my-preset');
+    expect(server).not.toHaveProperty('path');
   });
 
   it('handles a failing preset list gracefully', async () => {
@@ -372,7 +374,7 @@ describe('buildPayload MCP source with preset', () => {
       list: () => [],
     };
     const tools = {
-      schemas() { return []; },
+      schemas: (scope?: unknown) => scope === undefined ? [] : [{ name: 'mcp__local__read' }],
     };
     const agentPresets = {
       composedPreset: () => 'my-preset',
@@ -388,7 +390,9 @@ describe('buildPayload MCP source with preset', () => {
       },
     };
     const payload = await buildPayload(services as never, 's1', EMPTY_STATE);
-    expect(payload.sessionId).toBe('s1');
+    const server = payload.mcp.find((row) => row.server === 'local');
+    expect(server?.source).toBe('my-preset');
+    expect(server).not.toHaveProperty('path');
   });
 
   // dsh 0.1.7's roster rows carry no path and no trust. The session payload

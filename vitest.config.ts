@@ -16,9 +16,9 @@ export default defineConfig({
         'src/host/types.ts',
         // The rendering half needs a browser-grade harness: React, Base UI,
         // and the host's primitives all resolve through the page's module
-        // loader. It is covered instead by the composition test driving its
-        // real route, and by the pure logic it delegates to — store.ts,
-        // filter.ts, and disclosure.ts each gate at 100% on their own.
+        // loader. Host composition tests validate the real HTTP route, not
+        // these client entry points. Delegated pure logic is gated separately;
+        // actual host UI interaction still needs browser integration coverage.
         'src/client/index.ts',
         'src/client/preset-section.ts',
       ],
@@ -33,7 +33,7 @@ export default defineConfig({
         // line or branch is either a missing test or dead code the gate is
         // correctly flagging for deletion — both are actionable, neither is
         // waived.
-        'src/{loopback,wire,preset-wire,stats,load-state}.ts': {
+        'src/{loopback,wire,preset-wire,insights-wire,stats,load-state}.ts': {
           statements: 100,
           branches: 100,
           functions: 100,
@@ -45,7 +45,7 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
-        'src/client/{store,preset-filter,preset-store,filter,filter-core,disclosure,disclosure-row,row-icon,switch,locale,styles,icons,preview}.ts': {
+        'src/client/{store,preset-filter,preset-store,filter,filter-core,disclosure,disclosure-row,row-icon,switch,locale,styles,icons,preview,insights-model,insights-locale,insights-styles}.ts': {
           statements: 100,
           branches: 100,
           functions: 100,

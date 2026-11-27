@@ -192,10 +192,11 @@ describe('scheduleLegacyRecovery', () => {
 
   it('runs immediately on a loader that predates await()', async () => {
     const { ctx } = ctxWith({ entries: () => [] });
-    const { access } = accessWith(EMPTY);
-    // No settings.yaml.imported in this file's DSH_HOME → a clean no-op skip.
+    writeFileSync(join(env['DSH_HOME']!, 'settings.yaml.imported'), LEGACY_DOC);
+    const { access, replaces } = accessWith(EMPTY);
     scheduleLegacyRecovery(ctx, access);
     await flush();
+    expect(replaces).toEqual([{ presets: { 'probe-custom': ['web_search'] }, presetSkills: {}, sessions: {} }]);
   });
 
   it('stops once the plugin is disposed', async () => {

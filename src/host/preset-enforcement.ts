@@ -128,7 +128,10 @@ export function registerPresetEnforcement(
                   && (Object.keys(overrides.mcpServers).length > 0
                     || Object.keys(overrides.mcpTools).length > 0
                     || Object.keys(overrides.systemTools).length > 0);
-                if (!hasToolDefaults && !hasToolOverrides) continue;
+                // A live disable can precede (or outlive a failed) settings
+                // write. Its server mask still must cover newly registered tools.
+                const hasLiveServerMasks = (capabilities.state(sessionId)?.mcpServers.size ?? 0) > 0;
+                if (!hasToolDefaults && !hasToolOverrides && !hasLiveServerMasks) continue;
                 await capabilities.remask(
                   sessionId,
                   defaults ?? { tools: [], skills: [] },

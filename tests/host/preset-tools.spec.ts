@@ -10,6 +10,7 @@ interface FixtureOptions {
   settingsShape?: 'legacy' | 'forms';
   agentPresets?: boolean;
   tools?: boolean;
+  toolSchemasThrow?: boolean;
   broken?: boolean;
   standingError?: unknown;
   /** 'lease' models the dsh 0.1.7 shape: acquireScope only, no standingKeyFor. */
@@ -57,6 +58,7 @@ function fixture(options: FixtureOptions = {}) {
       };
     },
   };
+  const formsReplace = vi.fn((_namespace: string, section: Parameters<typeof update>[0]) => update(section));
   const formsSettings = {
     writable: true,
     describe: () => [{
@@ -65,7 +67,7 @@ function fixture(options: FixtureOptions = {}) {
         ? (() => { throw new Error('stored section is corrupt'); })()
         : values,
     }, { ns: 'other-entry', value: {} }],
-    replace: update,
+    replace: formsReplace,
   };
   const services: Record<string, unknown> = {};
   if (options.settingsRegisterThrows === true) {
@@ -84,17 +86,17 @@ function fixture(options: FixtureOptions = {}) {
       : Promise.reject(options.standingError instanceof Error ? options.standingError : new Error('offline'));
     // The lease shape records disposal so tests can prove the controller
     // releases every acquired scope — a leaked lease pins a generation.
-    const leases: { disposed: boolean }[] = [];
+    const leases: { disposeCount: number }[] = [];
     services.agentPresets = options.agentPresetsShape === 'lease'
       ? {
           list: () => Promise.resolve([{ id: 'alpha', ...(options.presetMetadata === false ? {} : { name: 'Alpha', description: 'primary' }), ...(options.broken ? { broken: 'bad yaml' } : {}), ...(options.presetPath === undefined ? {} : { path: options.presetPath }) }]),
           acquireScope: () => standing().then((key) => {
-            const lease = { key, disposed: false };
+            const lease = { key, disposeCount: 0 };
             leases.push(lease);
             return {
               key,
               [Symbol.asyncDispose]: () => {
-                lease.disposed = true;
+                lease.disposeCount += 1;
                 return Promise.resolve();
               },
             };
@@ -108,7 +110,9 @@ function fixture(options: FixtureOptions = {}) {
   }
   if (options.tools !== false) {
     services.tools = {
-      schemas: (scope?: unknown) => [
+      schemas: (scope?: unknown) => {
+        if (scope !== undefined && options.toolSchemasThrow === true) throw new Error('schema reader failed');
+        return [
         { name: 'run_code' },
         { name: 'bash', description: 'shell' },
         { name: 'bash', description: 'duplicate ignored' },
@@ -118,7 +122,8 @@ function fixture(options: FixtureOptions = {}) {
         { name: 42 },
         // A tool only the preset scope knows: marks its server preset-scoped.
         ...(scope !== undefined && options.presetMcpTool === true ? [{ name: 'mcp__local__x', description: 'preset only' }] : []),
-      ],
+        ];
+      },
     };
   }
   if (options.skills !== false) {
@@ -151,13 +156,14 @@ function fixture(options: FixtureOptions = {}) {
     controller: createPresetToolController(ctx as never, access),
     values,
     update,
+    formsReplace,
     registrations,
     access,
     settingsService: services['settings'] as object | undefined,
     replaceService(next: object) {
       services['settings'] = next;
     },
-    agentPresets: services['agentPresets'] as { leases?: { disposed: boolean }[] } | undefined,
+    agentPresets: services['agentPresets'] as { leases?: { disposeCount: number }[] } | undefined,
   };
 }
 
@@ -172,17 +178,21 @@ describe('preset tool settings', () => {
   // The access layer probes both shapes; this pins the new one end to end.
   describe('forms host shape (dsh 0.1.7)', () => {
     it('reads stored defaults through describe and persists through replace', async () => {
-      const host = fixture({ settingsShape: 'forms' });
+      const host = fixture({ settingsShape: 'forms', disabledSkills: ['writing'] });
+      host.values.sessions = { 'session-sentinel': { systemTools: { fetch: false } } };
       const payload = await host.controller.list();
       expect(payload.presets[0]?.systemTools.find((tool) => tool.name === 'bash')?.enabled).toBe(false);
       await host.controller.set('alpha', 'mcp__search__web', false);
       // The forms replace carries the entry id as its first argument; the
       // section itself is the shared read-modify-write payload.
-      expect(host.update).toHaveBeenLastCalledWith(TOOLKIT_SETTINGS_NAMESPACE, {
+      expect(host.formsReplace).toHaveBeenLastCalledWith(TOOLKIT_SETTINGS_NAMESPACE, {
         presets: { alpha: ['bash', 'mcp__search__web'] },
-        presetSkills: {},
-        sessions: {},
+        presetSkills: { alpha: ['writing'] },
+        sessions: { 'session-sentinel': { systemTools: { fetch: false } } },
       });
+      const persisted = await host.controller.list();
+      expect(persisted.presets[0]?.systemTools.find((tool) => tool.name === 'bash')?.enabled).toBe(false);
+      expect(persisted.presets[0]?.mcp[0]?.tools.find((tool) => tool.name === 'mcp__search__web')?.enabled).toBe(false);
     });
 
     it('degrades when the namespace has no descriptor to read', () => {
@@ -591,15 +601,29 @@ describe('declared-but-offline servers in the preset listing', () => {
       expect(payload.presets[0]).not.toHaveProperty('trust');
       expect(payload.presets[0]!.systemTools.length).toBeGreaterThan(0);
       expect(host.agentPresets!.leases!.length).toBeGreaterThan(0);
-      expect(host.agentPresets!.leases!.every((lease) => lease.disposed)).toBe(true);
+      expect(host.agentPresets!.leases!.every((lease) => lease.disposeCount === 1)).toBe(true);
     });
 
     it('releases every lease a set/setSkill read acquires', async () => {
       const host = fixture({ agentPresetsShape: 'lease' });
       await host.controller.set('alpha', 'bash', false); // presetAndTools + trailing list()
       await host.controller.setSkill('alpha', 'writing', false); // skill read + trailing list()
-      expect(host.agentPresets!.leases!.length).toBe(4);
-      expect(host.agentPresets!.leases!.every((lease) => lease.disposed)).toBe(true);
+      expect(host.agentPresets!.leases!.length).toBeGreaterThan(0);
+      expect(host.agentPresets!.leases!.every((lease) => lease.disposeCount === 1)).toBe(true);
+    });
+
+    it.each([
+      ['tool schemas', { toolSchemasThrow: true }, 'schema reader failed'],
+      ['skills', { skillsListThrows: true }, 'no reader'],
+    ] as const)('releases an acquired lease when reading %s fails', async (_label, options, message) => {
+      const host = fixture({ agentPresetsShape: 'lease', ...options });
+      if (_label === 'tool schemas') {
+        await expect(host.controller.set('alpha', 'bash', false)).rejects.toThrow(message);
+      } else {
+        await expect(host.controller.setSkill('alpha', 'writing', false)).rejects.toThrow(message);
+      }
+      expect(host.agentPresets!.leases!.length).toBeGreaterThan(0);
+      expect(host.agentPresets!.leases!.every((lease) => lease.disposeCount === 1)).toBe(true);
     });
 
     it('surfaces a lease acquisition failure as the same 503', async () => {

@@ -3,7 +3,7 @@
 # any side, bring the others along and re-record with:
 #   git hash-object README.md README.en.md README.ja.md README.ko.md
 # Primary README.md is Chinese; English lives in README.en.md.
-README.md: baf5a3d59206e2a114fceb1a9812f7739d866d22
-README.en.md: 891c22a0a70e281e55142e3d36b55ae704151704
-README.ja.md: d4dd5cea4f420bf53281be3391ce4f9680b94da7
-README.ko.md: b05927303d86b27f38eede7b7b734422569634c5
+README.md: 3ee2a9eeb348d52b82e8e3e2b462cc17b85955d7
+README.en.md: 94f8157aee0bf054e11210ff2f5b1f28eebaef18
+README.ja.md: 24f2ff688c85514ce3b0f1913c378b511f90cef6
+README.ko.md: 6642d94a3782b4889beb10bd5d7b7837d58d620b

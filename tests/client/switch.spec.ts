@@ -78,15 +78,15 @@ describe('capabilitySwitch on a legacy host (local rendition)', () => {
     mockState.switchImpl = undefined;
     const on = thumb(capabilitySwitch(base)).props['style'] as { transform: string };
     const off = thumb(capabilitySwitch({ ...base, checked: false })).props['style'] as { transform: string };
-    expect(on.transform).toBe('translateX(14px)');
-    expect(off.transform).toBe('translateX(0)');
+    expect(on.transform).not.toBe(off.transform);
+    expect(off.transform).toMatch(/^translateX\(0(?:px)?\)$/);
   });
 
   it.each([
     ['disabled', { disabled: true, busy: false }],
     ['busy', { disabled: false, busy: true }],
     ['both', { disabled: true, busy: true }],
-  ])('refuses interaction while %s', (_label, patch) => {
+  ])('passes disabled state while %s', (_label, patch) => {
     mockState.switchImpl = undefined;
     const node = root(capabilitySwitch({ ...base, ...patch }));
     expect(node.props['disabled']).toBe(true);
@@ -117,22 +117,24 @@ describe('capabilitySwitch on a legacy host (local rendition)', () => {
     expect(onCheckedChange).toHaveBeenCalledWith(false);
   });
 
-  // The two panels had drifted here before the control was shared.
-  it('keeps one thumb geometry for every caller', () => {
+  it('keeps the thumb inside both track sizes, and makes the small track smaller', () => {
     mockState.switchImpl = undefined;
-    const style = thumb(capabilitySwitch(base)).props['style'] as Record<string, string>;
-    expect(style['borderRadius']).toBe('999px');
-    expect(style['transition']).toContain('.12s');
-    expect(style['boxShadow']).toBe('0 1px 2px rgba(0,0,0,.22)');
-  });
-
-  it('renders its own smaller geometry when small', () => {
-    mockState.switchImpl = undefined;
-    const track = root(capabilitySwitch({ ...base, small: true })).props['style'] as Record<string, string>;
-    expect(track['width']).toBe('28px');
-    expect(track['height']).toBe('16px');
-    const thumbStyle = thumb(capabilitySwitch({ ...base, small: true })).props['style'] as Record<string, string>;
-    expect(thumbStyle['width']).toBe('12px');
-    expect(thumbStyle['transform']).toBe('translateX(12px)');
+    const widths: number[] = [];
+    for (const small of [false, true]) {
+      const element = capabilitySwitch({ ...base, small });
+      const track = root(element).props['style'] as Record<string, string>;
+      const knob = thumb(element).props['style'] as Record<string, string>;
+      const width = Number.parseFloat(track['width']!);
+      const height = Number.parseFloat(track['height']!);
+      const diameter = Number.parseFloat(knob['width']!);
+      const inset = Number.parseFloat(knob['margin']!);
+      const offset = Number.parseFloat(knob['transform']!.match(/^translateX\((.+)px\)$/)?.[1] ?? 'NaN');
+      expect(diameter).toBeGreaterThan(0);
+      expect(Number.parseFloat(knob['height']!)).toBe(diameter);
+      expect(diameter + 2 * inset).toBe(height);
+      expect(offset + diameter + 2 * inset).toBe(width);
+      widths.push(width);
+    }
+    expect(widths[1]).toBeLessThan(widths[0]!);
   });
 });

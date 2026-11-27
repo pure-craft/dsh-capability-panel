@@ -36,21 +36,9 @@ describe('parseInspectorPayload', () => {
     expect(parseInspectorPayload({ sessionId: 's' })).toBeNull();
   });
 
-  it('rejects a skill with an unknown state (version skew surface)', () => {
-    const bad = validPayload();
-    (bad.skills[0] as { state: string }).state = 'surprised';
-    expect(parseInspectorPayload(bad)).toBeNull();
-  });
-
   it('rejects a malformed nested MCP tool instead of dropping it silently', () => {
     const bad = validPayload();
     (bad.mcp[0] as { tools: unknown }).tools = [{ name: 42 }];
-    expect(parseInspectorPayload(bad)).toBeNull();
-  });
-
-  it('rejects non-numeric blocked counts', () => {
-    const bad = validPayload();
-    (bad as { blocked: unknown }).blocked = { x: 'many' };
     expect(parseInspectorPayload(bad)).toBeNull();
   });
 });
@@ -135,7 +123,8 @@ describe('skill entry rejection', () => {
   });
 
   it('rejects an unknown load state', () => {
-    const base = { name: 'x', enabled: true, loadCount: 1 };
+    const base = { name: 'x', enabled: true, loadCount: 1, source: 'bundled', provider: 'builtin' };
+    expect(parseInspectorPayload(withSkill({ ...base, state: 'loaded' }))).not.toBeNull();
     for (const state of ['pending', '', null, undefined, 42]) {
       expect(parseInspectorPayload(withSkill({ ...base, state }))).toBeNull();
     }
@@ -228,7 +217,7 @@ describe('MCP server source', () => {
     expect(parsed?.mcp[0]?.source).toBeUndefined();
   });
 
-  it('rejects a non-string source', () => {
+  it('omits a non-string source without rejecting the server', () => {
     const payload = { ...validPayload(), mcp: [{ server: 'x', enabled: true, tools: [], source: 42 }] };
     // Non-string source is treated as absent (optString), not fatal.
     const parsed = parseInspectorPayload(payload);

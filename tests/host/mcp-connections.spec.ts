@@ -66,11 +66,27 @@ describe('restartMcpServer', () => {
   it('disposes then refreshes the matching entry', async () => {
     const target = entry('@deepseek-ai/dsh-mcp-client', 'ida');
     const other = entry('@deepseek-ai/dsh-mcp-client', 'dnspy');
-    await restartMcpServer(hostWith([other, target]), 'ida');
+    let finishDispose!: () => void;
+    target._dispose.mockImplementation(() => new Promise<void>((resolve) => { finishDispose = resolve; }));
+    const pending = restartMcpServer(hostWith([other, target]), 'ida');
+    expect(target._dispose).toHaveBeenCalledOnce();
+    expect(target.refresh).not.toHaveBeenCalled();
+    finishDispose();
+    await pending;
     expect(target._dispose).toHaveBeenCalledOnce();
     expect(target.refresh).toHaveBeenCalledOnce();
     expect(other._dispose).not.toHaveBeenCalled();
     expect(other.refresh).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh after disposal fails and propagates refresh failures', async () => {
+    const target = entry('@deepseek-ai/dsh-mcp-client', 'ida');
+    target._dispose.mockRejectedValueOnce(new Error('dispose failed'));
+    await expect(restartMcpServer(hostWith([target]), 'ida')).rejects.toThrow('dispose failed');
+    expect(target.refresh).not.toHaveBeenCalled();
+    target.refresh.mockRejectedValueOnce(new Error('refresh failed'));
+    await expect(restartMcpServer(hostWith([target]), 'ida')).rejects.toThrow('refresh failed');
+    expect(target.refresh).toHaveBeenCalledOnce();
   });
 
   it('404s when the server is not configured', async () => {

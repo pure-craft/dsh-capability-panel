@@ -73,6 +73,7 @@
     "@deepseek-ai/schemastery": "3.18.4",
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",
+    "@types/react-dom": "^18.3.7",
     "@vitest/coverage-v8": "^4.1.11",
     "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
@@ -105,5 +106,8 @@
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "pnpm@10.17.1"
+  "packageManager": "pnpm@10.17.1",
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
 }

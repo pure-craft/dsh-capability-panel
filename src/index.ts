@@ -1,3 +1,4 @@
+import { createInsightsController } from './host/insights.js';
 import { createCapabilityController } from './host/capabilities.js';
 import { scheduleLegacyRecovery } from './host/legacy-import.js';
 import { registerPresetEnforcement } from './host/preset-enforcement.js';
@@ -47,7 +48,10 @@ export function apply(ctx: HostServices): void {
   const presetTools = createPresetToolController(ctx, settingsAccess);
   const sessionOverrides = createSessionOverrideStore(settingsAccess);
   registerPresetEnforcement(ctx, capabilities, presetTools, sessionOverrides);
-  const handler = createRouteHandler(ctx, capabilities, stats, blockedCounts, presetTools, sessionOverrides);
+  const insights = createInsightsController(ctx);
+  ctx.inject?.(['sessionProjections'], () => { insights.connect(); });
+  ctx.effect(() => () => { void insights.dispose().catch(() => {}); }, 'capability-panel: insights');
+  const handler = createRouteHandler(ctx, capabilities, stats, blockedCounts, presetTools, sessionOverrides, insights, settingsAccess);
 
   ctx.effect(
     () => webServer.register({ kind: 'prefix', path: ROUTE, handler }),

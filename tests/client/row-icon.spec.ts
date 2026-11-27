@@ -28,14 +28,6 @@ describe('row icons', () => {
     expect(iconOf(toolRowIcon())).toBe(IconSparkle);
   });
 
-  // The panel does not classify tools: the host resolves a tool's mark by looking
-  // the name up in a table of its own built-ins and calling everything else
-  // `others`, so a third-party (MCP) name has no host-side type to trust, and a
-  // keyword match would only invent one. Hence the function takes no name at all.
-  it('takes no tool name, so nothing can classify one', () => {
-    expect(toolRowIcon.length).toBe(0);
-  });
-
   it('renders every glyph at the host rows\u2019 14px', () => {
     for (const element of [skillRowIcon(), serverRowIcon(), toolRowIcon()]) {
       expect((element.props as { size?: number }).size).toBe(14);

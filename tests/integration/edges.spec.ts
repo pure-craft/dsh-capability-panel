@@ -4,6 +4,7 @@
  * source — reject, degrade, or ignore — and this file pins those verdicts so a
  * refactor cannot quietly turn one into a silent success.
  */
+import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { env } from 'node:process';
@@ -123,22 +124,18 @@ async function postRaw(
     socket: { remoteAddress: '127.0.0.1' },
   };
   if (streamable) {
-    let onData: ((chunk: unknown) => void) | undefined;
-    let onEnd: (() => void) | undefined;
-    let onError: ((error: unknown) => void) | undefined;
+    const events = new EventEmitter();
     req['on'] = (event: string, listener: (chunk?: unknown) => void) => {
-      if (event === 'data') onData = listener;
-      if (event === 'end') onEnd = listener;
-      if (event === 'error') onError = listener;
-      // Emit on a microtask: a real stream fires after every listener is
-      // attached, not synchronously inside the second on() call.
-      queueMicrotask(() => {
-        for (const chunk of Array.isArray(raw) ? raw : [raw]) onData?.(chunk);
-        if (streamError !== undefined) onError?.(streamError);
-        else onEnd?.();
-      });
+      events.on(event, listener);
       return req;
     };
+    // Deliver the body once, after synchronous listener registration. An
+    // EventEmitter also preserves non-Error failures used by the error tests.
+    queueMicrotask(() => {
+      for (const chunk of Array.isArray(raw) ? raw : [raw]) events.emit('data', chunk);
+      if (streamError !== undefined) events.emit('error', streamError);
+      else events.emit('end');
+    });
   }
   await handler(req, { writeHead(code: number) { status = code; }, end(chunk?: string) { out = chunk ?? ''; } });
   return { status, body: out };
@@ -183,14 +180,15 @@ describe('unknown sub-paths', () => {
     },
   );
 
-  // The point is that each real path is still ROUTED -- not 404 -- whatever
-  // its handler then answers. This fixture has no agent-presets service, so
-  // /presets legitimately reports 503.
-  it('still routes the three real paths', async () => {
+  // No agent-presets service is supplied, so that endpoint must report its
+  // unavailable dependency; healthy catalog/stats endpoints must still succeed.
+  it.each([
+    ['/api/capability-panel?session=s1', 200],
+    ['/api/capability-panel/presets', 503],
+    ['/api/capability-panel/stats', 200],
+  ] as const)('routes %s with status %i', async (path, status) => {
     const route = bootHost();
-    for (const path of ['/api/capability-panel?session=s1', '/api/capability-panel/presets', '/api/capability-panel/stats']) {
-      expect((await requestText(route.handler, 'GET', path)).status, path).not.toBe(404);
-    }
+    expect((await requestText(route.handler, 'GET', path)).status).toBe(status);
   });
 });
 

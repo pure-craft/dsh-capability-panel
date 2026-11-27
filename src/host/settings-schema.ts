@@ -63,6 +63,7 @@ const SessionOverrideSchema = z.object({
  * guard, while with them the access layer can hand back a complete section.
  */
 export const ToolkitSettingsSchema: Schemastery = z.object({
+  insightsEntry: volatileField(z.boolean().default(true)),
   presets: volatileField(z.dict(z.array(z.string())).default({})),
   presetSkills: volatileField(z.dict(z.array(z.string())).default({})),
   sessions: volatileField(z.dict(SessionOverrideSchema).default({})),
@@ -77,6 +78,7 @@ export const ToolkitSettingsSchema: Schemastery = z.object({
  * `z.object` infers out of this module's public surface.
  */
 export const ToolkitSettingsSchemaShape: unknown = z.object({
+  insightsEntry: z.boolean().default(true),
   presets: z.dict(z.array(z.string())).default({}),
   presetSkills: z.dict(z.array(z.string())).default({}),
   sessions: z.dict(SessionOverrideSchema).default({}),
@@ -89,5 +91,6 @@ export function normalizeToolkitSettings(value: unknown): ToolkitSettings {
     presets: section.presets ?? {},
     presetSkills: section.presetSkills ?? {},
     sessions: section.sessions ?? {},
+    ...(typeof section.insightsEntry === 'boolean' ? { insightsEntry: section.insightsEntry } : {}),
   };
 }

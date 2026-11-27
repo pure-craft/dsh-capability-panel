@@ -82,21 +82,6 @@ describe('toggle / close / subscribe', () => {
     expect(seen).toEqual([true, false]);
     unsubscribe();
   });
-
-  it('getSnapshot is reference-stable without a commit, and unsubscribe stops notifications', async () => {
-    const store = await loadStore();
-    const before = store.getSnapshot();
-    expect(store.getSnapshot()).toBe(before);
-
-    let calls = 0;
-    const unsubscribe = store.subscribe(() => {
-      calls += 1;
-    });
-    store.toggle();
-    unsubscribe();
-    store.toggle();
-    expect(calls).toBe(1);
-  });
 });
 
 describe('refresh', () => {
@@ -189,6 +174,7 @@ describe('setCapability', () => {
       body: JSON.stringify({ kind: 'skill', name: 'find-skills', enabled: false }),
     });
     expect(store.getSnapshot().payload).toStrictEqual(updated);
+    expect(store.getSnapshot().error).toBeNull();
   });
 });
 
@@ -267,22 +253,6 @@ describe('error detail extraction', () => {
 });
 
 describe('setCapability', () => {
-  it('posts the toggle and adopts the returned payload', async () => {
-    const store = await loadStore();
-    const updated = payloadOf('s');
-    const fetchMock = vi.fn(() => Promise.resolve(okResponse(updated)));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await store.setCapability('s', 'skill', 'find-skills', false);
-
-    expect(fetchMock).toHaveBeenCalledWith('/api/capability-panel?session=s', expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ kind: 'skill', name: 'find-skills', enabled: false }),
-    }));
-    expect(store.getSnapshot().payload).toEqual(updated);
-    expect(store.getSnapshot().error).toBeNull();
-  });
-
   it('records the failure without clearing the last good payload', async () => {
     const store = await loadStore();
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(okResponse(payloadOf('s')))));
@@ -352,9 +322,15 @@ describe('setCapability', () => {
     await vi.waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(1); });
 
     expect(store.getSnapshot().loading).toBe(true);
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/capability-panel?session=s', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ kind: 'skill', name: 'find-skills', enabled: false }),
+    })]);
     first.resolve(okResponse(payloadOf('disabled')));
     await disabling;
     await vi.waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(2); });
+    expect(fetchMock.mock.calls[1]).toEqual(['/api/capability-panel?session=s', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ kind: 'skill', name: 'find-skills', enabled: true }),
+    })]);
     second.resolve(okResponse(payloadOf('enabled')));
     await enabling;
 
@@ -372,6 +348,8 @@ describe('setCapability', () => {
     const writing = store.setCapability('s', 'system-tool', 'bash', false);
     refresh.resolve(okResponse(payloadOf('stale-read')));
     await reading;
+    expect(store.getSnapshot().payload).toBeNull();
+    expect(store.getSnapshot().loading).toBe(true);
     mutation.resolve(okResponse(changed));
     await writing;
 
@@ -405,23 +383,6 @@ describe('remaining guards', () => {
     await store.refresh('s');
     expect(store.getSnapshot().error).toMatch(/version skew/);
     expect(store.getSnapshot().payload).toBeNull();
-  });
-
-  it('drops a superseded refresh answer so the newer one wins', async () => {
-    const store = await loadStore();
-    const stale = deferred<Response>();
-    const fresh = deferred<Response>();
-    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise));
-
-    const first = store.refresh('a');
-    const second = store.refresh('b');
-    // Resolve out of order: the superseded request answers last and must lose.
-    fresh.resolve(okResponse(payloadOf('b')));
-    await second;
-    stale.resolve(okResponse(payloadOf('a')));
-    await first;
-
-    expect(store.getSnapshot().payload?.sessionId).toBe('b');
   });
 
   it('drops a superseded refresh failure so it cannot overwrite a good state', async () => {

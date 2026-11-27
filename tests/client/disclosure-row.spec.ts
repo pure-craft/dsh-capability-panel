@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => (await import('./primitives-stub.js')).primitivesStub);
 
 import { chevronIcon, disclosureRow, leadingFor } from '../../src/client/disclosure-row.js';
+import { IconChevronDown, IconChevronUp } from '../../src/client/icons.js';
 
 interface Node {
   readonly type: unknown;
@@ -120,9 +121,8 @@ describe('disclosureRow', () => {
     const open = asNode(chevronIcon(true));
     expect(closed).toBeDefined();
     expect(open).toBeDefined();
-    // Two glyphs off the host's icon table, not one glyph turned by CSS: a
-    // rotated down-chevron would point sideways, which is the drift this pins.
-    expect(closed!.type).not.toBe(open!.type);
+    expect(closed!.type).toBe(IconChevronDown);
+    expect(open!.type).toBe(IconChevronUp);
   });
 });
 
@@ -152,10 +152,12 @@ describe('leading slot with a domain glyph', () => {
     const row = disclosureRow({ ...base, icon });
     expect(find(row, (el) => el.props['className'] === 'ci-row-icon')).toBeDefined();
     expect(find(row, (el) => el.props['className'] === 'ci-leading')).toBeDefined();
-    expect(asNode(row)!.props['children']).toBeDefined();
+    expect(find(row, (el) => el.props['className'] === 'ci-preset-spacer')).toBeUndefined();
+    expect(find(row, (el) => (el.props['style'] as { width?: string } | undefined)?.width === '18px')).toBeUndefined();
+    expect(find(row, (el) => el.props['className'] === 'ci-disclosure-trigger')).toBeUndefined();
   });
 
-  it('lines the leading box up across all three row shapes', () => {
+  it('uses the shared leading box across all three row shapes', () => {
     const shapes = [
       disclosureRow({ ...base, icon, detail: 'd' }),
       disclosureRow({ ...base, icon, expanded: true, detail: 'd' }),

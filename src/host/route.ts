@@ -1,3 +1,5 @@
+import type { InsightsBackfillResult, InsightsPayload, InsightsQuery } from '../insights-contract.js';
+import type { ToolkitSettingsAccess } from './settings-scope.js';
 import { isLoopback } from '../loopback.js';
 import { buildPayload, EMPTY_STATE, parentDir } from './catalog.js';
 import type { CapabilityController } from './capabilities.js';
@@ -100,6 +102,11 @@ function validateToggle(sessionId: string | null, body: unknown): { sessionId: s
   return { sessionId, kind: record.kind as CapabilityKind, name: record.name, enabled: record.enabled };
 }
 
+export interface InsightsRoutes {
+  read(query: InsightsQuery): Promise<InsightsPayload>;
+  backfill(query: InsightsQuery): Promise<InsightsBackfillResult>;
+}
+
 export function createRouteHandler(
   services: HostServices,
   capabilities: CapabilityController,
@@ -107,6 +114,8 @@ export function createRouteHandler(
   blockedCounts: Record<string, number>,
   presetTools: PresetToolController,
   sessionOverrides: SessionOverrideStore,
+  insights?: InsightsRoutes,
+  settingsAccess?: ToolkitSettingsAccess,
 ): (req: IncomingLike, res: ServerResponseLike) => Promise<void> {
   return async (req, res) => {
     if (!isLoopback(req)) {
@@ -116,6 +125,41 @@ export function createRouteHandler(
     }
     try {
       const url = new URL(req.url ?? '/', 'http://dsh.local');
+      if (url.pathname === `${ROUTE}/insights/preferences`) {
+        if (req.method !== 'GET' && req.method !== 'POST') {
+          json(res, 405, { error: 'method not allowed' });
+          return;
+        }
+        const scope = settingsAccess?.scope();
+        if (scope === undefined) throw new HttpError(503, 'insights settings unavailable');
+        if (req.method === 'POST') {
+          if (!validatePresetContentType(req, res)) return;
+          const body = await readRequestBody(req);
+          if (body === null || typeof body !== 'object' || typeof (body as { insightsEntry?: unknown }).insightsEntry !== 'boolean') {
+            throw new ClientRequestError('insightsEntry must be boolean');
+          }
+          const enabled = (body as { insightsEntry: boolean }).insightsEntry;
+          await settingsAccess!.serialize(() => scope.replace({ ...scope.get(), insightsEntry: enabled }));
+        }
+        json(res, 200, { insightsEntry: scope.get().insightsEntry ?? true });
+        return;
+      }
+      if (url.pathname === `${ROUTE}/insights` || url.pathname === `${ROUTE}/insights/backfill`) {
+        const backfill = url.pathname.endsWith('/backfill');
+        if (req.method !== (backfill ? 'POST' : 'GET')) {
+          json(res, 405, { error: 'method not allowed' });
+          return;
+        }
+        if (backfill && !validatePresetContentType(req, res)) return;
+        if (insights === undefined) throw new HttpError(503, 'insights unavailable');
+        const requestedScope = url.searchParams.get('scope') ?? 'workspace';
+        if (requestedScope !== 'workspace' && requestedScope !== 'global') throw new ClientRequestError('invalid insights scope');
+        const sessionId = url.searchParams.get('session');
+        const presetId = url.searchParams.get('preset');
+        const query: InsightsQuery = { scope: requestedScope, ...(sessionId ? { sessionId } : {}), ...(presetId ? { presetId } : {}) };
+        json(res, 200, backfill ? await insights.backfill(query) : await insights.read(query));
+        return;
+      }
       if (url.pathname === `${ROUTE}/presets`) {
         if (req.method !== 'GET' && req.method !== 'POST') {
           res.writeHead(405, { allow: 'GET, POST', 'content-type': 'text/plain; charset=utf-8' });

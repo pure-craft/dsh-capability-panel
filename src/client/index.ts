@@ -34,6 +34,8 @@ import { capabilitySwitch } from './switch.js';
 import { PresetToolSection } from './preset-section.js';
 import { resetPresetTools } from './preset-store.js';
 import { openPreviewResource } from './preview.js';
+import { InsightsSection, INSIGHTS_CSS } from './insights.js';
+import { insightsText } from './insights-locale.js';
 
 const ROUTE = '/api/capability-panel';
 
@@ -163,7 +165,7 @@ export function apply(ctx: SlotContext): void {
     if (typeof document === 'undefined') return () => {};
     const style = document.createElement('style');
     style.dataset.plugin = 'dsh-capability-panel';
-    style.textContent = PANEL_CSS;
+    style.textContent = PANEL_CSS + INSIGHTS_CSS;
     document.head.appendChild(style);
     return () => { style.remove(); };
   }, 'capability-panel: stylesheet');
@@ -206,6 +208,22 @@ export function apply(ctx: SlotContext): void {
     ),
   );
 
+  // The sidebar owns navigation, labels, selected state and icon sizing.
+  // Keep this entry available so a hidden composer shortcut can be restored.
+  ctx.slots.inject('sidebar.panellist', () =>
+    ctx.slots.register(
+      { name: 'sidebar.panellist', id: 'capability-panel-insights', order: 21, label: () => insightsText(ctx.locale.getSnapshot().active, 'title') },
+      (props: { size: number }) => h(IconSliders, { size: props.size }),
+    ),
+  );
+  ctx.slots.inject('main', () =>
+    ctx.slots.register(
+      { name: 'main', key: 'capability-panel-insights' },
+      () => h('div', { style: { height: '100%', overflow: 'auto', padding: '24px', boxSizing: 'border-box' } },
+        h(InsightsSection, { initialScope: 'global', subscribeLocale, getLocaleSnapshot })),
+    ),
+  );
+
   ctx.slots.inject('conversation.input.right', () =>
     ctx.slots.register({ name: 'conversation.input.right', id: 'capability-panel', order: 1000 }, (props: DockProps) => {
       const snap = react.useSyncExternalStore(subscribe, getSnapshot);
@@ -218,6 +236,17 @@ export function apply(ctx: SlotContext): void {
       const [expanded, setExpanded] = react.useState<Record<string, boolean>>({});
       const [query, setQuery] = react.useState('');
       const [tab, setTab] = react.useState('skills');
+      const [showInsights, setShowInsights] = react.useState(false);
+      const [insightsEntry, setInsightsEntry] = react.useState(true);
+      react.useEffect(() => {
+        let active = true;
+        if (snap.open) void fetch(`${ROUTE}/insights/preferences`, { credentials: 'same-origin' })
+          .then(async response => { if (!response.ok) return; const value: unknown = await response.json();
+            if (active && value !== null && typeof value === 'object' && 'insightsEntry' in value && typeof value.insightsEntry === 'boolean') setInsightsEntry(value.insightsEntry);
+          }).catch(() => {});
+        return () => { active = false; };
+      }, [snap.open]);
+      react.useEffect(() => { setShowInsights(false); }, [props.sessionId]);
       // Which server is mid-reconnect: its button spins and disables until the
       // request settles, so a click reads as "starting" not "nothing happened".
       const [reconnecting, setReconnecting] = react.useState<string | null>(null);
@@ -990,6 +1019,7 @@ export function apply(ctx: SlotContext): void {
                   },
                 },
 
+              showInsights ? h(InsightsSection, { sessionId: props.sessionId, subscribeLocale, getLocaleSnapshot, onEntryChange: setInsightsEntry }) : h(React.Fragment, {},
               // Header: the filter is always one keystroke away — opening the
               // panel lands focus in this input (first focusable in the popup),
               // so no toggle stands between the user and narrowing the list.
@@ -1092,6 +1122,7 @@ export function apply(ctx: SlotContext): void {
               ...notices,
               ...body,
               ),
+              ),
 
               // A quiet feedback link at the panel foot: when the honest
               // "no tools registered" state or anything else confuses a user,
@@ -1115,6 +1146,11 @@ export function apply(ctx: SlotContext): void {
                     borderTop: '0.5px solid var(--dsw-alias-border-l2, rgba(0,0,0,.1))',
                   },
                 },
+                insightsEntry || showInsights ? h('button', {
+                  type: 'button', className: 'ci-feedback-link',
+                  style: { marginRight: 'auto', border: 'none', background: 'transparent', font: 'inherit', cursor: 'pointer' },
+                  onClick: () => { setShowInsights(value => !value); },
+                }, showInsights ? t('preset.nav') : insightsText(ctx.locale.getSnapshot().active, 'title')) : null,
                 h('a', {
                   href: FEEDBACK_URL,
                   target: '_blank',
