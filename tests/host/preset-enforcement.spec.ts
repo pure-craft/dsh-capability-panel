@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCapabilityController } from '../../src/host/capabilities.js';
 import { registerPresetEnforcement } from '../../src/host/preset-enforcement.js';
+import { createSessionOverrideStore } from '../../src/host/session-overrides.js';
 
 interface FixtureOptions {
   defaults?: { tools: string[]; skills: string[] } | undefined;
@@ -82,6 +83,7 @@ function fixture(options: FixtureOptions = {}) {
   let lateArrived = false;
   const arriveLateTools = (): void => { lateArrived = true; };
   const toolsChangeListeners: (() => unknown)[] = [];
+  let schemaReads = 0;
   const ctx = {
     get(name: string): unknown {
       if (name === 'agents' && options.agentsGetThrows === true) throw new Error('registry gone');
@@ -98,7 +100,9 @@ function fixture(options: FixtureOptions = {}) {
       }
       if (name === 'tools') {
         return {
-          schemas: (scope?: unknown) => [
+          schemas: (scope?: unknown) => {
+            schemaReads += 1;
+            return [
             { name: 'run_code', description: 'transport' },
             { name: 'bash', description: 'shell' },
             { name: 'fetch', description: 'network' },
@@ -112,7 +116,8 @@ function fixture(options: FixtureOptions = {}) {
             ...(options.presentTools ?? []).map((name) => ({ name, description: 'extra' })),
             ...(lateArrived ? (options.lateTools ?? []).map((name) => ({ name, description: 'late' })) : []),
             ...(scope === undefined ? [{ name: 'global_only', description: 'no agent scope' }] : []),
-          ],
+            ];
+          },
           guard: () => () => {},
         };
       }
@@ -169,6 +174,7 @@ function fixture(options: FixtureOptions = {}) {
 
   return {
     capabilities,
+    schemaReads: () => schemaReads,
     agent,
     setDefaults(next: { tools: string[]; skills: string[] } | undefined) {
       currentDefaults = next;
@@ -205,6 +211,72 @@ function fixture(options: FixtureOptions = {}) {
 const defaults = (tools: string[] = [], skills: string[] = []): { defaults: { tools: string[]; skills: string[] } } => ({ defaults: { tools, skills } });
 
 describe('preset enforcement', () => {
+  it('does not record a failed toggle as intent when the default tool registers later', async () => {
+    const fx = fixture({ ...defaults(['late']), lateTools: ['late'] });
+    await expect(fx.capabilities.set('session-1', 'system-tool', 'late', false)).rejects.toThrow('not available');
+    expect(fx.capabilities.state('session-1')?.userToggled.size).toBe(0);
+    fx.arriveLateTools();
+    await fx.emitToolsChange();
+    expect(fx.capabilities.state('session-1')?.systemTools.has('late')).toBe(true);
+  });
+
+  it('lets a live server enable supersede stale tool positions, then honors a newer tool disable', async () => {
+    const overrides = { skills: {}, mcpServers: {}, mcpTools: { mcp__search__web: false }, systemTools: {} };
+    const fx = fixture({ ...defaults(['mcp__search__web']), overrides, restrictEmitsChange: true });
+    await fx.emitCreated();
+    await fx.capabilities.set('session-1', 'mcp-tool', 'mcp__search__web', false);
+    await fx.capabilities.set('session-1', 'mcp-server', 'search', true);
+    expect(fx.capabilities.state('session-1')?.userToggled.has('mcp-tool:mcp__search__web')).toBe(false);
+    await fx.emitToolsChange();
+    expect(fx.capabilities.state('session-1')?.mcpTools.size).toBe(0);
+    expect(fx.capabilities.state('session-1')?.mcpServers.size).toBe(0);
+    await fx.capabilities.set('session-1', 'mcp-tool', 'mcp__search__web', false);
+    await fx.emitToolsChange();
+    expect(fx.capabilities.state('session-1')?.mcpTools.has('mcp__search__web')).toBe(true);
+    await fx.capabilities.set('session-1', 'mcp-tool', 'mcp__search__web', true);
+    await fx.emitToolsChange();
+    expect(fx.capabilities.state('session-1')?.mcpTools.size).toBe(0);
+    expect(fx.capabilities.state('session-1')?.mcpServers.size).toBe(0);
+  });
+
+  it.each([false, true])('expands explicit server masks without a gap or registry loop (live=%s)', async (live) => {
+    const overrides = { skills: {}, mcpServers: { search: false }, mcpTools: {}, systemTools: {} };
+    // A live disable must work even before its record reaches disk.
+    const fx = fixture({ overrides: live ? undefined : overrides, lateTools: ['mcp__search__image'], restrictEmitsChange: true });
+    await fx.emitCreated();
+    if (live) await fx.capabilities.set('session-1', 'mcp-server', 'search', false);
+    const previous = fx.capabilities.state('session-1')!.mcpServers.get('search')!.dispose;
+    fx.arriveLateTools();
+    await fx.emitToolsChange();
+    const mask = fx.capabilities.state('session-1')!.mcpServers.get('search')!;
+    expect(mask.names).toContain('mcp__search__image');
+    expect(previous).toHaveBeenCalledTimes(1);
+    const previousMock = vi.mocked(previous);
+    expect(fx.restrict.mock.invocationCallOrder.at(-1)).toBeLessThan(previousMock.mock.invocationCallOrder[0]!);
+    const restrictCount = fx.restrict.mock.calls.length;
+    await fx.emitToolsChange();
+    expect(fx.restrict).toHaveBeenCalledTimes(restrictCount);
+    expect(fx.restrictDisposers.at(-1)).not.toHaveBeenCalled();
+  });
+
+  it('restores the persisted server enable after restart without resurrecting older tool disables', async () => {
+    let stored = { presets: {}, presetSkills: {}, sessions: {} } as import('../../src/host/types.js').ToolkitSettings;
+    const store = createSessionOverrideStore({
+      scope: () => ({ get: () => stored, replace: (next: object) => { stored = next as typeof stored; return Promise.resolve(); } }),
+      serialize: (work) => work(),
+    });
+    await store.record('session-1', 'mcp-tool', 'mcp__search__web', false);
+    await store.record('session-1', 'mcp-server', 'search', true);
+    const fx = fixture({ ...defaults(['mcp__search__web']), overrides: store.overridesFor('session-1') });
+    await fx.emitCreated();
+    await fx.emitToolsChange();
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+    await store.record('session-1', 'mcp-tool', 'mcp__search__web', false);
+    const restarted = fixture({ ...defaults(['mcp__search__web']), overrides: store.overridesFor('session-1') });
+    await restarted.emitCreated();
+    await restarted.emitToolsChange();
+    expect(restarted.capabilities.state('session-1')?.mcpTools.has('mcp__search__web')).toBe(true);
+  });
   it('seeds stored tool and skill defaults into the session state', async () => {
     const fx = fixture({ ...defaults(['bash', 'mcp__search__web', 'mcp__search__image'], ['writing']), presentTools: ['mcp__search__image'] });
     await fx.emitCreated();
@@ -579,6 +651,79 @@ describe('server-row enable sweeps per-tool masks', () => {
 });
 
 describe('tools/change remask for late-registering tools', () => {
+  it('does not scan tool schemas for skill-only defaults', async () => {
+    const fx = fixture(defaults([], ['writing']));
+    await fx.emitCreated();
+    expect(fx.schemaReads()).toBe(0);
+    expect(fx.registeredSkills).toHaveLength(1);
+  });
+
+  it('does not transiently mask persisted re-enables on an echoing registry', async () => {
+    const options = {
+      ...defaults(['bash', 'mcp__search__web', 'mcp__late__run']),
+      presentTools: ['mcp__late__run', 'mcp__late__sync'],
+      overrides: { skills: {}, mcpServers: { search: true }, mcpTools: { mcp__late__run: true }, systemTools: { bash: true } },
+      restrictEmitsChange: false,
+    };
+    const fx = fixture(options);
+    await fx.emitCreated();
+    const before = fx.restrictDisposers.length;
+    options.restrictEmitsChange = true;
+    await fx.emitToolsChange();
+    expect(fx.restrictDisposers).toHaveLength(before);
+    expect(fx.capabilities.state('session-1')).toBeUndefined();
+  });
+
+  it('keeps a per-tool disable under a persisted server enable without mask churn', async () => {
+    const options = {
+      ...defaults(['mcp__search__web']),
+      overrides: { skills: {}, mcpServers: { search: true }, mcpTools: { mcp__search__web: false }, systemTools: {} },
+      restrictEmitsChange: false,
+    };
+    const fx = fixture(options);
+    await fx.emitCreated();
+    const before = fx.restrictDisposers.length;
+    options.restrictEmitsChange = true;
+    await fx.emitToolsChange();
+    expect(fx.restrictDisposers).toHaveLength(before);
+    expect(fx.capabilities.state('session-1')!.mcpTools.has('mcp__search__web')).toBe(true);
+  });
+
+  it('keeps live re-enables above stale stored tool positions', async () => {
+    const fx = fixture({
+      ...defaults(['bash', 'mcp__search__web', 'mcp__late__run']),
+      presentTools: ['mcp__late__run', 'mcp__late__sync'],
+      overrides: { skills: {}, mcpServers: {}, mcpTools: {}, systemTools: { bash: false } },
+    });
+    await fx.emitCreated();
+    await fx.capabilities.set('session-1', 'system-tool', 'bash', true);
+    await fx.capabilities.set('session-1', 'mcp-server', 'search', true);
+    await fx.capabilities.set('session-1', 'mcp-tool', 'mcp__late__run', true);
+    const before = fx.restrictDisposers.length;
+    await fx.emitToolsChange();
+    expect(fx.restrictDisposers).toHaveLength(before);
+    const state = fx.capabilities.state('session-1')!;
+    expect(state.systemTools.size + state.mcpServers.size + state.mcpTools.size).toBe(0);
+  });
+
+  it('retains live tool disables while remasking defaults', async () => {
+    const fx = fixture({
+      ...defaults(['bash', 'mcp__search__web', 'mcp__late__run']),
+      presentTools: ['mcp__late__run', 'mcp__late__sync'],
+    });
+    await fx.emitCreated();
+    await fx.capabilities.set('session-1', 'system-tool', 'bash', false);
+    await fx.capabilities.set('session-1', 'mcp-server', 'search', false);
+    await fx.capabilities.set('session-1', 'mcp-tool', 'mcp__late__run', false);
+    const before = fx.restrictDisposers.length;
+    await fx.emitToolsChange();
+    expect(fx.restrictDisposers).toHaveLength(before);
+    const state = fx.capabilities.state('session-1')!;
+    expect(state.systemTools.has('bash')).toBe(true);
+    expect(state.mcpServers.has('search')).toBe(true);
+    expect(state.mcpTools.has('mcp__late__run')).toBe(true);
+  });
+
   it('masks a default whose names only registered after the session started', async () => {
     const fx = fixture({ ...defaults(['mcp__late__run'], []), lateTools: ['mcp__late__run'] });
     await fx.emitCreated();

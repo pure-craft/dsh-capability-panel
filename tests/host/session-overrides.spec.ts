@@ -68,6 +68,16 @@ describe('record', () => {
     expect(values.sessions['s1']).toMatchObject({ systemTools: { bash: true } });
   });
 
+  it.each([true, false])('server position %s supersedes only its own older tool records', async (enabled) => {
+    const { store } = fixture();
+    await store.record('s1', 'mcp-tool', 'mcp__search__web', false);
+    await store.record('s1', 'mcp-tool', 'mcp__other__web', false);
+    await store.record('s1', 'mcp-server', 'search', enabled);
+    expect(store.overridesFor('s1')?.mcpTools).toEqual({ mcp__other__web: false });
+    await store.record('s1', 'mcp-tool', 'mcp__search__web', false);
+    expect(store.overridesFor('s1')?.mcpTools).toEqual({ mcp__other__web: false, mcp__search__web: false });
+  });
+
   it('keeps different sessions in separate records', async () => {
     const { store, values } = fixture();
 

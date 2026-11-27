@@ -66,13 +66,17 @@ export function createSessionOverrideStore(access: ToolkitSettingsAccess): Sessi
         const stored = scope.get();
         const kindKey = KIND_KEYS[kind];
         const current = stored.sessions[sessionId];
-        const next: SessionOverrideState = {
+        const next = {
           skills: { ...current?.skills },
           mcpServers: { ...current?.mcpServers },
           mcpTools: { ...current?.mcpTools },
           systemTools: { ...current?.systemTools },
           [kindKey]: { ...current?.[kindKey], [name]: enabled },
         };
+        if (kind === 'mcp-server') {
+          const prefix = `mcp__${name}__`;
+          next.mcpTools = Object.fromEntries(Object.entries(next.mcpTools).filter(([tool]) => !tool.startsWith(prefix)));
+        }
         // Rebuild rather than mutate: dropping the id first and re-appending
         // it makes it the newest entry, so the cap evicts oldest-first
         // (Object.entries preserves string-key insertion order).

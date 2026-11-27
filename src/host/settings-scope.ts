@@ -51,18 +51,17 @@ function entryNamespace(ctx: HostServices): string {
  *
  * dsh ≤ 0.1.6 exposed `register(ns, schema)` returning a scope with
  * get/replace. The 0.1.7 forms rewrite dropped `register` entirely: values now
- * live on the plugin entry's own Config (volatile fields), reads come through
- * `describe()` descriptors, and writes go through `replace(ns, section)` —
- * which resets every live field before applying the section, so passing the
- * complete three-key section is exactly what that verb expects. The caller
- * caches the pair against the service instance; a replaced service rebinds.
+ * live on the plugin fiber's effectiveConfig (volatile fields). Read that live
+ * Config directly: describe() projects EVERY plugin's schema, defaults and
+ * secrets, even when only our own section is needed. Hosts without that fiber
+ * surface retain the descriptor fallback. Writes still use replace(ns, section).
  */
-function bindSection(settings: unknown, namespace: string): { read: SectionRead; write: SectionWrite } | undefined {
+function bindSection(settings: unknown, namespace: string, ctx: HostServices): { read: SectionRead; write: SectionWrite } | undefined {
   if (settings === null || typeof settings !== 'object') return undefined;
   const host = settings as SettingsLike;
   // The 0.1.7 form API wins whenever the host exposes it: this plugin's data
-  // lives on the profile entry's own Config, and `describe()`/`replace()` are
-  // the only verbs that reach it. The legacy `register()` shape is kept as the
+  // lives on the profile entry's own Config, read directly when available or
+  // via `describe()`, and written through `replace()`. `register()` remains the
   // ≤0.1.6 fallback only.
   //
   // Ordering matters, not just for storage: a host can expose BOTH generations
@@ -75,6 +74,13 @@ function bindSection(settings: unknown, namespace: string): { read: SectionRead;
   // On the panel route that surfaces as HTTP 500 on every read.
   if (typeof host.describe === 'function' && typeof host.replace === 'function') {
     const read: SectionRead = () => {
+      // Read anew on every call, not from apply's captured config or a cached
+      // descriptor: volatile edits and external profile reloads must take effect
+      // immediately, including while the panel is closed.
+      const config = ctx.fiber?.effectiveConfig;
+      if (config !== null && typeof config === 'object' && !Array.isArray(config)) {
+        return normalizeToolkitSettings(config);
+      }
       for (const descriptor of host.describe!()) {
         if (descriptor.ns !== namespace) continue;
         // `describe()` already projects the schema-declared form, so a section
@@ -123,10 +129,10 @@ export interface ToolkitSettingsAccess {
 
 export function createToolkitSettingsAccess(ctx: HostServices): ToolkitSettingsAccess {
   let writeQueue: Promise<unknown> = Promise.resolve();
-  // The bound pair is cached while the SAME settings instance answers; a
-  // replaced service (an HMR reload publishes a new one) rebinds. Without the
-  // cache, the legacy shape would re-`register` on every read and its second
-  // registration throws "already registered".
+  // Cordis returns a fresh traceable proxy on each get(). Compare its original
+  // target for identity only; retain the proxy for receiver-bound calls so the
+  // caller's isolation/effect context is not lost. A real replacement rebinds.
+  // This also prevents duplicate legacy register() calls behind fresh proxies.
   let cachedService: unknown;
   let cachedPair: { read: SectionRead; write: SectionWrite } | undefined;
   return {
@@ -137,9 +143,12 @@ export function createToolkitSettingsAccess(ctx: HostServices): ToolkitSettingsA
       // undefined and keeps this lazy — the next read retries.
       const settings = ctx.get('settings', false);
       if (settings === undefined) return undefined;
-      if (settings !== cachedService || cachedPair === undefined) {
-        cachedService = settings;
-        cachedPair = bindSection(settings, entryNamespace(ctx));
+      const identity: unknown = settings !== null && typeof settings === 'object'
+        ? Reflect.get(settings, Symbol.for('cordis.original')) ?? settings
+        : settings;
+      if (identity !== cachedService || cachedPair === undefined) {
+        cachedService = identity;
+        cachedPair = bindSection(settings, entryNamespace(ctx), ctx);
       }
       if (cachedPair === undefined) return undefined;
       return { get: cachedPair.read, replace: cachedPair.write };

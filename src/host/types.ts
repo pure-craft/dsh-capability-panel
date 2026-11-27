@@ -235,6 +235,8 @@ export interface HostServices {
    * never assumed.
    */
   readonly fiber?: {
+    /** Validated live Config; volatile settings edits update it without remounting. */
+    readonly effectiveConfig?: unknown;
     readonly entry?: { readonly options?: { readonly id?: unknown } };
   };
   readonly webServer?: {
